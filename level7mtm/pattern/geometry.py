@@ -231,12 +231,14 @@ class Path:
 
     def point_at_length(self, d: float, tol: float = 0.005) -> Pt:
         """Point at arc length d from the start (negative d counts from the end)."""
-        total = self.length(tol)
+        pts = self.flatten(tol)
+        total = sum(dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
         if d < 0:
             d = total + d
         if d < -1e-6 or d > total + 1e-6:
             raise GeometryError(f"distance {d:.2f} outside path length {total:.2f}")
-        pts = self.flatten(tol / 10)
+        if d >= total:
+            return pts[-1]
         acc = 0.0
         for i in range(len(pts) - 1):
             L = dist(pts[i], pts[i + 1])

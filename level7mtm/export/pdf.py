@@ -111,12 +111,12 @@ def write_pdf(result, path: str, header: dict, measurements: list[tuple[str, str
             for poly, dash in ((p.cut, None), (p.seam, (3, 2))):
                 pts = [tr((x + dx, y_ + dy)) for x, y_ in poly]
                 c.setDash(*(dash or ()))
-                path = c.beginPath()
-                path.moveTo(*pts[0])
+                pth = c.beginPath()
+                pth.moveTo(*pts[0])
                 for q in pts[1:]:
-                    path.lineTo(*q)
-                path.close()
-                c.drawPath(path)
+                    pth.lineTo(*q)
+                pth.close()
+                c.drawPath(pth)
             c.setDash()
             if p.grain:
                 a, b = (tr((q[0] + dx, q[1] + dy)) for q in p.grain)
