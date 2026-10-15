@@ -4,8 +4,8 @@
  "table_id": "alshiaka-2027",
  "version": "0.1.0",
  "description": {
-  "ar": "ربط متغيرات X في GRAFIS بقياسات الطلب. مقترح من أوصاف معادلات Z في ملف MDL — يحتاج تأكيد صاحب المشروع لكل صف.",
-  "en": "GRAFIS X-values from order measurements. Proposed from the Z formula descriptions in the MDL — each row needs owner confirmation."
+  "ar": "ربط متغيرات X للجزء 002 (basic thobe) بقياسات الطلب. مقترح من أوصاف معادلات Z — يحتاج تأكيد صاحب المشروع لكل صف. تنبيه: الجزء 005 (bassic-3) يستخدم أرقام X نفسها بمعانٍ مختلفة (مثل X1/2 = طول الرقبة القلاب)، فأرقام X ليست عامة على كل الأجزاء.",
+  "en": "X values of part 002 (basic thobe) from order measurements. Proposed from the Z descriptions — each row needs owner confirmation. Note: part 005 (bassic-3) uses the same X numbers with different meanings (e.g. X1/2 = gallab collar length), so X numbers are not global across parts."
  },
  "unit": "mm",
  "entries": [
@@ -136,5 +136,6 @@
    "evidence": "Z79 «اسفل اليد» = X37",
    "status": "proposed"
   }
- ]
+ ],
+ "part": "002 basic thobe"
 }

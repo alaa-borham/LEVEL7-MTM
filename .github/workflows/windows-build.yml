@@ -1,0 +1,120 @@
+name: windows-build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: LEVEL7 Nesting source (integration test)
+        uses: actions/checkout@v4
+        with:
+          repository: alaa-borham/LEVEL7-Nesting
+          path: level7-nesting
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x64
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+          python -m pip install -e . --no-deps
+          python -m pip install shapely==2.2.0 pyclipper==1.4.0 openpyxl==3.1.5
+
+      - name: Unit + integration tests (Windows)
+        env:
+          QT_QPA_PLATFORM: offscreen
+          LEVEL7_NESTING_SRC: ${{ github.workspace }}\level7-nesting
+          LEVEL7MTM_SHOTS: ui-shots
+        run: python -m pytest -q -rs --junitxml=test-results.xml
+
+      - name: PyInstaller build
+        run: pyinstaller packaging/level7mtm.spec --noconfirm --clean
+
+      - name: Frozen executable smoke test (full path XML -> pattern -> exports -> nesting file)
+        shell: pwsh
+        run: |
+          $exe = "dist\LEVEL7MTM\level7mtm-cli.exe"
+          $d = "frozen-ws"
+          & $exe --data $d import reference\erp\Order-9-52-1_0.xml reference\erp\Order-9-53-1_2.xml
+          if ($LASTEXITCODE -ne 0) { throw "import failed" }
+          & $exe --data $d list
+          & $exe --data $d calc 9-53-1_2
+          if ($LASTEXITCODE -ne 0) { throw "calculation failed" }
+          & $exe --data $d calc 9-52-1_0
+          & $exe --data $d export 9-53-1_2 dxf -o frozen.dxf
+          & $exe --data $d export 9-53-1_2 pdf -o frozen.pdf
+          & $exe --data $d nest 9-53-1_2 9-52-1_0 -o frozen-TEST.l7n --test
+          foreach ($f in "frozen.dxf","frozen.pdf","frozen-TEST.l7n") { if (!(Test-Path $f)) { throw "$f missing" } }
+          & $exe --data $d nest 9-53-1_2 -o frozen-prod.l7n
+          if ($LASTEXITCODE -eq 0) { throw "a non-approved order must not be sent to production nesting" }
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $env:LEVEL7MTM_DATA = (Resolve-Path $d).Path
+          $p = Start-Process "dist\LEVEL7MTM\LEVEL7MTM.exe" -PassThru
+          Start-Sleep -Seconds 12
+          if ($p.HasExited) { throw "GUI exited early with code $($p.ExitCode)" }
+          Stop-Process -Id $p.Id
+
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          $ver = python -c "import level7mtm; print(level7mtm.__version__)"
+          & $iscc "/DAppVersion=$ver" packaging\installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc failed" }
+
+      - name: Silent install test (no Python on PATH, desktop shortcut, launch)
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist\installer\*-Setup.exe | Select-Object -First 1
+          Start-Process $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/ALLUSERS','/TASKS="desktopicon"','/LOG=install.log' -Wait
+          $dir = "${env:ProgramFiles}\LEVEL7 MTM"
+          if (!(Test-Path "$dir\LEVEL7MTM.exe")) { Get-Content install.log; throw "not installed" }
+          if (!(Test-Path "${env:PUBLIC}\Desktop\LEVEL7 MTM.lnk")) { throw "desktop shortcut missing" }
+          # run the installed program with Python removed from PATH
+          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notmatch 'Python|hostedtoolcache' }) -join ';'
+          & "$dir\level7mtm-cli.exe" --data installed-ws import "reference\erp\Order-9-53-1_2.xml"
+          if ($LASTEXITCODE -ne 0) { throw "installed CLI failed" }
+          & "$dir\level7mtm-cli.exe" --data installed-ws calc 9-53-1_2
+          if ($LASTEXITCODE -ne 0) { throw "installed CLI calculation failed" }
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $p = Start-Process "$dir\LEVEL7MTM.exe" -PassThru
+          Start-Sleep -Seconds 12
+          if ($p.HasExited) { throw "installed GUI exited early with code $($p.ExitCode)" }
+          Stop-Process -Id $p.Id
+          Write-Host "installed OK"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LEVEL7MTM-Setup
+          path: dist/installer/*.exe
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-evidence
+          path: |
+            test-results.xml
+            ui-shots/
+            frozen.dxf
+            frozen.pdf
+            frozen-TEST.l7n
+            install.log
