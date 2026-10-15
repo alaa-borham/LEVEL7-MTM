@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>سؤال قياسات MDL</title>
+<style>
+  body { margin: 0; background: #fff; font-family: Tahoma, Arial, sans-serif; color: #1a1a1a; width: 1000px; }
+  .wrap { padding: 28px 36px; }
+  h1 { text-align: center; font-size: 28px; margin: 0 0 6px; }
+  .sub { text-align: center; color: #555; font-size: 16px; margin-bottom: 22px; }
+  h2 { font-size: 20px; margin: 18px 0 10px; }
+  .num { color: #fff; background: #2563eb; border-radius: 50%; display: inline-block; width: 30px; height: 30px; text-align: center; line-height: 30px; margin-left: 8px; font-size: 17px; }
+  table { border-collapse: collapse; width: 100%; font-size: 16px; }
+  th, td { border: 1px solid #cbd5e1; padding: 7px 10px; text-align: center; }
+  th { background: #f1f5f9; }
+  td.code { direction: ltr; font-family: Consolas, monospace; }
+  td.q { background: #fef9c3; color: #a16207; font-weight: bold; }
+  td.warn { background: #fee2e2; }
+  .grid { display: flex; flex-wrap: wrap; gap: 8px; direction: ltr; justify-content: flex-end; }
+  .chip { border: 1.5px solid #16a34a; background: #dcfce7; color: #14532d; border-radius: 6px; padding: 5px 10px; font-family: Consolas, monospace; font-size: 15px; }
+  .box { border: 1.5px solid #94a3b8; border-radius: 10px; background: #f8fafc; padding: 12px 16px; margin-top: 10px; font-size: 16px; line-height: 1.8; }
+  .ask { border-color: #2563eb; background: #eff6ff; }
+  .note { color: #555; font-size: 14px; }
+  .ltr { direction: ltr; unicode-bidi: embed; font-family: Consolas, monospace; }
+</style>
+</head>
+<body><div class="wrap">
+  <h1>سؤال: كيف ترتبط قياسات الطلب بمعادلات MDL؟</h1>
+  <div class="sub">من الملف <span class="ltr">1-S- alshiaka-2027.mdl</span> — الجزء <span class="ltr">basic thobe</span></div>
+
+  <h2><span class="num">1</span>جدول المقاسات <span class="ltr">T2M</span>: الأسماء حروف فقط</h2>
+  <table>
+    <tr><th>الصف</th><th>الحرف</th><th class="ltr">52-S</th><th class="ltr">56-S</th><th class="ltr">62-S</th><th>المعنى؟</th></tr>
+    <tr><td class="code">T2M1</td><td class="code">A</td><td>128</td><td>147</td><td>160</td><td class="q">؟</td></tr>
+    <tr><td class="code">T2M10</td><td class="code">J</td><td>370</td><td>420</td><td>450</td><td class="q">؟</td></tr>
+    <tr><td class="code">T2M26</td><td class="code">Z</td><td>1320</td><td>1420</td><td>1570</td><td class="q">؟ (طول الثوب؟)</td></tr>
+    <tr><td class="code">T2M36</td><td class="code">AJ</td><td>550</td><td>600</td><td>655</td><td class="q">؟</td></tr>
+    <tr class="warn"><td class="code">T2M23</td><td class="code">W</td><td>200</td><td>175</td><td>50</td><td class="q">؟ يقل مع كبر المقاس</td></tr>
+  </table>
+  <div class="note">الجدول فيه 44 صفًا (من A إلى AR) بالملليمتر. هل هي قياسات جسم، أم قياسات منتج، أم قيم إنشاء ثابتة لكل مقاس؟</div>
+
+  <h2><span class="num">2</span>وجدت في الملف أسماء متغيرات لها رموز</h2>
+  <div class="grid">
+    <span class="chip">shoulder--B</span><span class="chip">chest girth</span><span class="chip">waist girth--D</span>
+    <span class="chip">collar--E1</span><span class="chip">buttom girth--F1</span><span class="chip">bottom width--F2</span>
+    <span class="chip">sleeve length kabk--C1</span><span class="chip">sleeve length sadaa--CC1</span><span class="chip">armhole high--C2</span>
+    <span class="chip">kabk width--C5</span><span class="chip">sadaa width--CC5</span><span class="chip">jabzour--G1</span>
+    <span class="chip">TK LENGTH--I</span><span class="chip">Chest pocket length--H1</span><span class="chip">Side pocket length--J1</span>
+  </div>
+
+  <h2><span class="num">3</span>المطلوب ربطه</h2>
+  <table>
+    <tr><th>قياس الطلب (XML)</th><th>متغير MDL المقابل؟</th></tr>
+    <tr><td class="code">SH  Shoulder</td><td class="code">shoulder--B ؟</td></tr>
+    <tr><td class="code">CH  Chest</td><td class="code">chest girth ؟</td></tr>
+    <tr><td class="code">WA  Waist</td><td class="code">waist girth--D ؟</td></tr>
+    <tr><td class="code">BO  Bottom / WB Width bottom</td><td class="code">buttom girth--F1 / bottom width--F2 ؟</td></tr>
+    <tr><td class="code">FL  Front Length</td><td class="q">؟</td></tr>
+  </table>
+
+  <div class="box ask">
+    <b>من فضلك أرسل لقطات شاشة من GRAFIS:</b><br>
+    ١. نافذة جدول المقاسات للجزء <span class="ltr">basic thobe</span>، بحيث تظهر أسماء الصفوف A… AR إن وُجدت.<br>
+    ٢. نافذة المتغيرات أو المعادلات التي تستخدم قياسات الجسم، وفيها شكل الجسم (<span class="ltr">Slim2 / Athlete1</span>).<br>
+    ٣. لقطة لخطوة إنشاء واحدة تستخدم معادلة، مثل عرض الصدر.
+  </div>
+  <div class="note" style="margin-top:10px">الهدف: نقل المعادلات كما هي إلى LEVEL7 بدل تخمينها من شكل البترون.</div>
+</div></body>
+</html>
