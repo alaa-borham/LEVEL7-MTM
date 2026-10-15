@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>ربط XML بمتغيرات MDL</title>
+<style>
+  body { margin: 0; background: #fff; font-family: Tahoma, Arial, sans-serif; color: #1a1a1a; width: 1000px; }
+  .wrap { padding: 26px 36px; }
+  h1 { text-align: center; font-size: 26px; margin: 0 0 6px; }
+  .sub { text-align: center; color: #555; font-size: 15px; margin-bottom: 18px; }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  th, td { border: 1px solid #cbd5e1; padding: 6px 9px; text-align: center; }
+  th { background: #f1f5f9; }
+  .c { direction: ltr; font-family: Consolas, monospace; }
+  .ok { background: #dcfce7; color: #14532d; }
+  .mid { background: #fef9c3; color: #854d0e; }
+  .no { background: #fee2e2; color: #7f1d1d; }
+  .legend { display: flex; gap: 14px; justify-content: center; margin: 12px 0 0; font-size: 14px; }
+  .legend span { padding: 4px 10px; border-radius: 5px; }
+  .box { border: 1.5px solid #2563eb; background: #eff6ff; border-radius: 10px; padding: 10px 16px; margin-top: 14px; font-size: 15px; line-height: 1.8; }
+</style>
+</head>
+<body><div class="wrap">
+  <h1>مسودة ربط قياسات XML بمتغيرات MDL — للتأكيد</h1>
+  <div class="sub">اقتراح مبني على تشابه الأسماء فقط. لن يُستخدم في الحساب قبل أن تؤكده أو تصححه.</div>
+  <table>
+    <tr><th>XML</th><th>الاسم في XML</th><th>متغير MDL المقترح</th><th>درجة الثقة</th><th>صحيح؟ / التصحيح</th></tr>
+    <tr><td class="c">FL</td><td class="c">Front Length</td><td class="c">—</td><td class="no">لم أجد متغيرًا</td><td></td></tr>
+    <tr><td class="c">SH</td><td class="c">Shoulder</td><td class="c">shoulder--B</td><td class="ok">عالية</td><td></td></tr>
+    <tr><td class="c">SLS</td><td class="c">Sleeve S</td><td class="c">sleeve length sadaa--CC1</td><td class="ok">عالية</td><td></td></tr>
+    <tr><td class="c">CH</td><td class="c">Chest</td><td class="c">chest girth</td><td class="mid">متوسطة (بلا رمز)</td><td></td></tr>
+    <tr><td class="c">WA</td><td class="c">Waist</td><td class="c">waist girth--D</td><td class="ok">عالية</td><td></td></tr>
+    <tr><td class="c">HP</td><td class="c">Hip</td><td class="c">hip width</td><td class="mid">متوسطة (بلا رمز)</td><td></td></tr>
+    <tr><td class="c">BO</td><td class="c">Bottom</td><td class="c">buttom girth--F1</td><td class="ok">عالية</td><td></td></tr>
+    <tr><td class="c">WB</td><td class="c">Width bottom</td><td class="c">bottom width--F2</td><td class="ok">عالية</td><td></td></tr>
+    <tr><td class="c">AH</td><td class="c">Arm Hole</td><td class="c">armhole high--C2 / C3</td><td class="mid">أيهما؟</td><td></td></tr>
+    <tr><td class="c">EB</td><td class="c">Elbow</td><td class="c">elbow / elbow2</td><td class="mid">أيهما؟</td><td></td></tr>
+    <tr><td class="c">WRS</td><td class="c">Wrist S</td><td class="c">sadaa round--CC4</td><td class="mid">متوسطة</td><td></td></tr>
+    <tr><td class="c">SWS</td><td class="c">sleeve width sadaa</td><td class="c">sadaa width--CC5</td><td class="ok">عالية</td><td></td></tr>
+    <tr><td class="c">COS / COG</td><td class="c">Collar S / Collar G</td><td class="c">collar--E1 / collar length--E1</td><td class="mid">أيهما لكل نوع؟</td><td></td></tr>
+    <tr><td class="c">JL</td><td class="c">Jabzour Length</td><td class="c">jabzour--G1</td><td class="ok">عالية</td><td></td></tr>
+    <tr><td class="c">TKL</td><td class="c">Takhlees Length</td><td class="c">TK LENGTH--I</td><td class="ok">عالية</td><td></td></tr>
+    <tr><td class="c">TKWD</td><td class="c">Takhlees Width down</td><td class="c">TK DOWN</td><td class="mid">متوسطة</td><td></td></tr>
+    <tr><td class="c">DSR</td><td class="c">Down Sholder R</td><td class="c">down FRONT Rr</td><td class="mid">متوسطة</td><td></td></tr>
+    <tr><td class="c">DSL</td><td class="c">Down Sholder L</td><td class="c">down FRONT Lr</td><td class="mid">متوسطة</td><td></td></tr>
+  </table>
+  <div class="legend">
+    <span class="ok">عالية: الاسم متطابق تقريبًا</span>
+    <span class="mid">متوسطة: يحتاج تأكيد</span>
+    <span class="no">غير موجود</span>
+  </div>
+  <div class="box">
+    <b>متغيرات في MDL لا يقابلها قياس في XML:</b>
+    <span class="c">sleeve length kabk--C1, kabk length--C4, kabk width--C5, Half sleeve size--C7, Chest pocket length--H1, Chest pocket width--H2, Side pocket length--J1, Side pocket opening--J1</span><br>
+    هل قيمها ثابتة من جدول المقاسات، أم تُحسب من قياسات أخرى، أم ستأتي في XML عند اختيار الكم الكبك أو الجيوب؟
+  </div>
+</div></body>
+</html>
