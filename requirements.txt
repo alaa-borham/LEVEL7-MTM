@@ -1,0 +1,7 @@
+# Runtime dependencies — pinned versions used for the tested build
+PySide6-Essentials==6.12.0   # LGPL-3.0 (Qt for Python), dynamically linked
+ezdxf==1.4.4                 # MIT — DXF export
+defusedxml==0.7.1            # PSF — safe XML parsing
+reportlab==5.0.1             # BSD — PDF review sheet
+arabic-reshaper==3.0.0       # MIT — Arabic shaping in PDF
+python-bidi==0.6.6           # LGPL-3.0 — bidi reordering in PDF

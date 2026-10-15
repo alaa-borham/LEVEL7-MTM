@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "level7-mtm"
+dynamic = ["version"]
+description = "LEVEL7 MTM - made-to-measure pattern generation from ERP orders"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+dependencies = [
+    "PySide6-Essentials>=6.6,<7",
+    "ezdxf>=1.1,<2",
+    "defusedxml>=0.7,<1",
+    "reportlab>=4,<6",
+    "arabic-reshaper>=3,<4",
+    "python-bidi>=0.4,<1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pyinstaller>=6.3"]
+
+[project.scripts]
+level7mtm = "level7mtm.cli:main"
+
+[project.gui-scripts]
+level7mtm-gui = "level7mtm.ui.app:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "level7mtm.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["level7mtm*"]
+
+[tool.setuptools.package-data]
+level7mtm = ["resources/**/*", "resources/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,1303 @@
+{
+ "format": "level7mtm-model",
+ "format_version": 1,
+ "model_id": "thobe-engine-test",
+ "version": "0.1.0",
+ "status": "engine_test",
+ "product": "saudi-thobe",
+ "name": {
+  "ar": "ثوب سعودي — نموذج اختبار المحرك",
+  "en": "Saudi thobe — engine test model"
+ },
+ "notice": {
+  "ar": "نموذج لاختبار المحرك فقط. ليس بترون العميل. المتغيرات المعلّمة grafis منقولة من ملف MDL، أما خطوات الإنشاء فهي افتراضات للاختبار ولا تمثل بترون GRAFIS. ممنوع اعتماده للإنتاج.",
+  "en": "Engine test only. NOT the customer pattern. Variables marked 'grafis' are copied from the MDL file; the construction steps are test assumptions and do not reproduce the GRAFIS pattern. Cannot be approved for production."
+ },
+ "units": "mm",
+ "inputs": [
+  {
+   "name": "X1",
+   "label": {
+    "ar": "الطول",
+    "en": "Length"
+   },
+   "kind": "length",
+   "range": [
+    1000,
+    1800
+   ]
+  },
+  {
+   "name": "X3",
+   "label": {
+    "ar": "الكتف",
+    "en": "Shoulder"
+   },
+   "kind": "flat_width",
+   "range": [
+    350,
+    650
+   ]
+  },
+  {
+   "name": "X4",
+   "label": {
+    "ar": "نزول الكتف أمام R",
+    "en": "Shoulder drop R"
+   },
+   "kind": "length",
+   "range": [
+    20,
+    120
+   ]
+  },
+  {
+   "name": "X5",
+   "label": {
+    "ar": "نزول الكتف أمام L",
+    "en": "Shoulder drop L"
+   },
+   "kind": "length",
+   "range": [
+    20,
+    120
+   ]
+  },
+  {
+   "name": "X6",
+   "label": {
+    "ar": "أعلى الذراع",
+    "en": "Upper arm"
+   },
+   "kind": "half_girth",
+   "range": [
+    150,
+    400
+   ]
+  },
+  {
+   "name": "X7",
+   "label": {
+    "ar": "الرقبة",
+    "en": "Neck"
+   },
+   "kind": "girth",
+   "range": [
+    330,
+    520
+   ]
+  },
+  {
+   "name": "X9",
+   "label": {
+    "ar": "الصدر",
+    "en": "Chest"
+   },
+   "kind": "half_girth",
+   "range": [
+    450,
+    900
+   ]
+  },
+  {
+   "name": "X12",
+   "label": {
+    "ar": "الوسط",
+    "en": "Waist"
+   },
+   "kind": "half_girth",
+   "range": [
+    400,
+    900
+   ]
+  },
+  {
+   "name": "X13",
+   "label": {
+    "ar": "الأرداف",
+    "en": "Hip"
+   },
+   "kind": "half_girth",
+   "range": [
+    450,
+    950
+   ]
+  },
+  {
+   "name": "X14",
+   "label": {
+    "ar": "أسفل",
+    "en": "Bottom"
+   },
+   "kind": "half_girth",
+   "range": [
+    550,
+    1100
+   ]
+  },
+  {
+   "name": "X31",
+   "label": {
+    "ar": "طول الكم السادة",
+    "en": "Sleeve length (plain)"
+   },
+   "kind": "length",
+   "range": [
+    450,
+    800
+   ]
+  },
+  {
+   "name": "X37",
+   "label": {
+    "ar": "أسفل اليد",
+    "en": "Wrist"
+   },
+   "kind": "half_girth",
+   "range": [
+    100,
+    250
+   ]
+  }
+ ],
+ "options": {
+  "body_shape": {
+   "label": {
+    "ar": "شكل الجسم",
+    "en": "Body shape"
+   },
+   "values": {
+    "slim2": {
+     "ar": "Slim2",
+     "en": "Slim2"
+    },
+    "athlete1": {
+     "ar": "Athlete1",
+     "en": "Athlete1"
+    }
+   }
+  },
+  "collar": {
+   "label": {
+    "ar": "الرقبة",
+    "en": "Collar"
+   },
+   "values": {
+    "square": {
+     "ar": "رقبة مربعة",
+     "en": "Collar square"
+    },
+    "classic": {
+     "ar": "قلاب كلاسيك",
+     "en": "Gallab classic"
+    }
+   }
+  },
+  "sleeve": {
+   "label": {
+    "ar": "الكم",
+    "en": "Sleeve"
+   },
+   "values": {
+    "saada": {
+     "ar": "كم سادة",
+     "en": "Plain sleeve"
+    },
+    "kabak": {
+     "ar": "كم كبك",
+     "en": "Cuff sleeve"
+    }
+   }
+  },
+  "jabzour": {
+   "label": {
+    "ar": "الجبزور",
+    "en": "Placket"
+   },
+   "values": {
+    "splender": {
+     "ar": "سبلندر",
+     "en": "Splender"
+    }
+   }
+  },
+  "pocket_chest": {
+   "label": {
+    "ar": "جيب الصدر",
+    "en": "Chest pocket"
+   },
+   "values": {
+    "cut": {
+     "ar": "مقصوص",
+     "en": "Cut"
+    },
+    "none": {
+     "ar": "بدون",
+     "en": "None"
+    }
+   }
+  },
+  "pocket_side": {
+   "label": {
+    "ar": "الجيب الجانبي",
+    "en": "Side pocket"
+   },
+   "values": {
+    "hidden": {
+     "ar": "مخفي",
+     "en": "Hidden"
+    },
+    "none": {
+     "ar": "بدون",
+     "en": "None"
+    }
+   }
+  }
+ },
+ "constraints": [
+  {
+   "expr": "not option.sleeve.kabak",
+   "message": "Cuff sleeve (kabak) is not implemented in the engine test model — كم الكبك غير منفذ في نموذج الاختبار"
+  }
+ ],
+ "variables": {
+  "Z1": {
+   "formula": "CMDIF[X4>50]{X4/20}{0}",
+   "source": "grafis:part2:Z1"
+  },
+  "Z2": {
+   "formula": "CMDIF[X4>50]{X4/24}{0}",
+   "source": "grafis:part2:Z2"
+  },
+  "Z5": {
+   "formula": "X6/2",
+   "source": "grafis:part2:Z5",
+   "description": {
+    "ar": "اعلي الزراع"
+   }
+  },
+  "Z6": {
+   "formula": "X7/6.7+Z1",
+   "source": "grafis:part2:Z6",
+   "description": {
+    "ar": "فتحه الرقبه عرض"
+   }
+  },
+  "Z7": {
+   "formula": "X7/5.3+Z2",
+   "source": "grafis:part2:Z7",
+   "description": {
+    "ar": "فتحه الرقبه طول"
+   }
+  },
+  "Z8": {
+   "formula": "CMDIF[X4>=64]{61}[X4<64]{50}{55}",
+   "source": "grafis:part2:Z8",
+   "description": {
+    "ar": "فتحه الرقبه خلف"
+   }
+  },
+  "Z9": {
+   "formula": "X3/2",
+   "source": "grafis:part2:Z9",
+   "description": {
+    "ar": "الكتف"
+   }
+  },
+  "Z11": {
+   "formula": "X4-(X4/8)",
+   "source": "grafis:part2:Z11",
+   "description": {
+    "ar": "نزول الكتف امام R"
+   }
+  },
+  "Z12": {
+   "formula": "X5-1",
+   "source": "grafis:part2:Z12",
+   "description": {
+    "ar": "نزول الكتف امام L"
+   }
+  },
+  "Z18": {
+   "formula": "X1",
+   "source": "grafis:part2:Z18",
+   "description": {
+    "ar": "الطول"
+   }
+  },
+  "Z42": {
+   "formula": "X9/2",
+   "source": "grafis:part2:Z42",
+   "description": {
+    "ar": "الصدر"
+   }
+  },
+  "Z44": {
+   "formula": "X12/2",
+   "source": "grafis:part2:Z44",
+   "description": {
+    "ar": "الوسط"
+   }
+  },
+  "Z45": {
+   "formula": "X13/2",
+   "source": "grafis:part2:Z45",
+   "description": {
+    "ar": "الارداف"
+   }
+  },
+  "Z46": {
+   "formula": "X14/2",
+   "source": "grafis:part2:Z46",
+   "description": {
+    "ar": "اسفل"
+   }
+  },
+  "Z65": {
+   "formula": "X31",
+   "source": "grafis:part2:Z65",
+   "description": {
+    "ar": "طول الكم الساده"
+   }
+  },
+  "ease_q": {
+   "formula": "if(option.body_shape.athlete1, 20, 12)",
+   "source": "assumption",
+   "description": {
+    "en": "TEST ease per quarter (assumption, not a GRAFIS rule)"
+   }
+  },
+  "chest_y": {
+   "formula": "Z5 + 110",
+   "source": "assumption"
+  },
+  "waist_y": {
+   "formula": "chest_y + 200",
+   "source": "assumption"
+  },
+  "hip_y": {
+   "formula": "waist_y + 200",
+   "source": "assumption"
+  },
+  "cap_h": {
+   "formula": "Z5 * 0.55",
+   "source": "assumption"
+  },
+  "bicep_half": {
+   "formula": "Z5 + 25",
+   "source": "assumption"
+  },
+  "cuff_half": {
+   "formula": "X37/2 + 15",
+   "source": "assumption"
+  },
+  "collar_h": {
+   "formula": "35",
+   "source": "assumption"
+  },
+  "cap_ease": {
+   "formula": "15",
+   "source": "assumption",
+   "description": {
+    "en": "TEST sleeve cap ease (assumption)"
+   }
+  }
+ },
+ "points": {
+  "FNR": {
+   "xy": [
+    "Z6",
+    "0"
+   ]
+  },
+  "FNL": {
+   "xy": [
+    "-Z6",
+    "0"
+   ]
+  },
+  "FCN": {
+   "xy": [
+    "0",
+    "-Z7"
+   ]
+  },
+  "FSR": {
+   "xy": [
+    "Z9",
+    "-Z11"
+   ]
+  },
+  "FSL": {
+   "xy": [
+    "-Z9",
+    "-Z12"
+   ]
+  },
+  "FCR": {
+   "xy": [
+    "Z42 + ease_q",
+    "-chest_y"
+   ]
+  },
+  "FCL": {
+   "xy": [
+    "-(Z42 + ease_q)",
+    "-chest_y"
+   ]
+  },
+  "FWR": {
+   "xy": [
+    "Z44 + ease_q",
+    "-waist_y"
+   ]
+  },
+  "FWL": {
+   "xy": [
+    "-(Z44 + ease_q)",
+    "-waist_y"
+   ]
+  },
+  "FHR": {
+   "xy": [
+    "Z45 + ease_q",
+    "-hip_y"
+   ]
+  },
+  "FHL": {
+   "xy": [
+    "-(Z45 + ease_q)",
+    "-hip_y"
+   ]
+  },
+  "FBR": {
+   "xy": [
+    "Z46",
+    "-Z18"
+   ]
+  },
+  "FBL": {
+   "xy": [
+    "-Z46",
+    "-Z18"
+   ]
+  },
+  "FGT": {
+   "xy": [
+    "0",
+    "-chest_y"
+   ]
+  },
+  "FGB": {
+   "xy": [
+    "0",
+    "-hip_y"
+   ]
+  },
+  "FLB": {
+   "xy": [
+    "0",
+    "-(chest_y + 80)"
+   ]
+  },
+  "BNR": {
+   "xy": [
+    "Z6",
+    "0"
+   ]
+  },
+  "BNL": {
+   "xy": [
+    "-Z6",
+    "0"
+   ]
+  },
+  "BCN": {
+   "xy": [
+    "0",
+    "-Z8/3"
+   ]
+  },
+  "BSR": {
+   "xy": [
+    "Z9",
+    "-Z11"
+   ]
+  },
+  "BSL": {
+   "xy": [
+    "-Z9",
+    "-Z12"
+   ]
+  },
+  "BCR": {
+   "xy": [
+    "Z42 + ease_q",
+    "-chest_y"
+   ]
+  },
+  "BCL": {
+   "xy": [
+    "-(Z42 + ease_q)",
+    "-chest_y"
+   ]
+  },
+  "BWR": {
+   "xy": [
+    "Z44 + ease_q",
+    "-waist_y"
+   ]
+  },
+  "BWL": {
+   "xy": [
+    "-(Z44 + ease_q)",
+    "-waist_y"
+   ]
+  },
+  "BHR": {
+   "xy": [
+    "Z45 + ease_q",
+    "-hip_y"
+   ]
+  },
+  "BHL": {
+   "xy": [
+    "-(Z45 + ease_q)",
+    "-hip_y"
+   ]
+  },
+  "BBR": {
+   "xy": [
+    "Z46",
+    "-Z18"
+   ]
+  },
+  "BBL": {
+   "xy": [
+    "-Z46",
+    "-Z18"
+   ]
+  },
+  "BGT": {
+   "xy": [
+    "0",
+    "-chest_y"
+   ]
+  },
+  "BGB": {
+   "xy": [
+    "0",
+    "-hip_y"
+   ]
+  },
+  "BLB": {
+   "xy": [
+    "0",
+    "-(chest_y + 80)"
+   ]
+  },
+  "SUL": {
+   "xy": [
+    "-bicep_half",
+    "0"
+   ]
+  },
+  "SUR": {
+   "xy": [
+    "bicep_half",
+    "0"
+   ]
+  },
+  "STP": {
+   "xy": [
+    "0",
+    "cap_h"
+   ]
+  },
+  "SWR": {
+   "xy": [
+    "cuff_half",
+    "cap_h - Z65"
+   ]
+  },
+  "SWL": {
+   "xy": [
+    "-cuff_half",
+    "cap_h - Z65"
+   ]
+  },
+  "SGT": {
+   "xy": [
+    "0",
+    "-40"
+   ]
+  },
+  "SGB": {
+   "xy": [
+    "0",
+    "cap_h - Z65 + 80"
+   ]
+  },
+  "SLB": {
+   "xy": [
+    "0",
+    "-120"
+   ]
+  },
+  "C0": {
+   "xy": [
+    "0",
+    "0"
+   ]
+  },
+  "C1": {
+   "xy": [
+    "len.front_neck_r + len.front_neck_l + len.back_neck_r + len.back_neck_l",
+    "0"
+   ]
+  },
+  "C2": {
+   "xy": [
+    "C1.x",
+    "collar_h"
+   ]
+  },
+  "C3": {
+   "xy": [
+    "0",
+    "collar_h"
+   ]
+  },
+  "CGL": {
+   "xy": [
+    "C1.x * 0.25",
+    "collar_h / 2"
+   ]
+  },
+  "CGR": {
+   "xy": [
+    "C1.x * 0.75",
+    "collar_h / 2"
+   ]
+  },
+  "CLB": {
+   "xy": [
+    "C1.x * 0.5",
+    "collar_h / 2"
+   ]
+  }
+ },
+ "paths": {
+  "front_hem": {
+   "line": [
+    "FBL",
+    "FBR"
+   ]
+  },
+  "front_side_r": {
+   "chain": [
+    "fsr1",
+    "fsr2",
+    "fsr3"
+   ]
+  },
+  "fsr1": {
+   "line": [
+    "FBR",
+    "FHR"
+   ]
+  },
+  "fsr2": {
+   "line": [
+    "FHR",
+    "FWR"
+   ]
+  },
+  "fsr3": {
+   "line": [
+    "FWR",
+    "FCR"
+   ]
+  },
+  "front_arm_r": {
+   "curve": [
+    "FCR",
+    "FSR"
+   ],
+   "start_angle": "180",
+   "end_angle": "75",
+   "fa": "0.45",
+   "fb": "0.4"
+  },
+  "front_shoulder_r": {
+   "line": [
+    "FSR",
+    "FNR"
+   ]
+  },
+  "front_neck_r": {
+   "curve": [
+    "FNR",
+    "FCN"
+   ],
+   "start_angle": "-90",
+   "end_angle": "180"
+  },
+  "front_neck_l": {
+   "curve": [
+    "FCN",
+    "FNL"
+   ],
+   "start_angle": "180",
+   "end_angle": "90"
+  },
+  "front_shoulder_l": {
+   "line": [
+    "FNL",
+    "FSL"
+   ]
+  },
+  "front_arm_l": {
+   "curve": [
+    "FSL",
+    "FCL"
+   ],
+   "start_angle": "-105",
+   "end_angle": "180",
+   "fa": "0.4",
+   "fb": "0.45"
+  },
+  "front_side_l": {
+   "chain": [
+    "fsl1",
+    "fsl2",
+    "fsl3"
+   ]
+  },
+  "fsl1": {
+   "line": [
+    "FCL",
+    "FWL"
+   ]
+  },
+  "fsl2": {
+   "line": [
+    "FWL",
+    "FHL"
+   ]
+  },
+  "fsl3": {
+   "line": [
+    "FHL",
+    "FBL"
+   ]
+  },
+  "back_hem": {
+   "line": [
+    "BBL",
+    "BBR"
+   ]
+  },
+  "back_side_r": {
+   "chain": [
+    "bsr1",
+    "bsr2",
+    "bsr3"
+   ]
+  },
+  "bsr1": {
+   "line": [
+    "BBR",
+    "BHR"
+   ]
+  },
+  "bsr2": {
+   "line": [
+    "BHR",
+    "BWR"
+   ]
+  },
+  "bsr3": {
+   "line": [
+    "BWR",
+    "BCR"
+   ]
+  },
+  "back_arm_r": {
+   "curve": [
+    "BCR",
+    "BSR"
+   ],
+   "start_angle": "180",
+   "end_angle": "80",
+   "fa": "0.45",
+   "fb": "0.4"
+  },
+  "back_shoulder_r": {
+   "line": [
+    "BSR",
+    "BNR"
+   ]
+  },
+  "back_neck_r": {
+   "curve": [
+    "BNR",
+    "BCN"
+   ],
+   "start_angle": "-100",
+   "end_angle": "180"
+  },
+  "back_neck_l": {
+   "curve": [
+    "BCN",
+    "BNL"
+   ],
+   "start_angle": "180",
+   "end_angle": "100"
+  },
+  "back_shoulder_l": {
+   "line": [
+    "BNL",
+    "BSL"
+   ]
+  },
+  "back_arm_l": {
+   "curve": [
+    "BSL",
+    "BCL"
+   ],
+   "start_angle": "-100",
+   "end_angle": "180",
+   "fa": "0.4",
+   "fb": "0.45"
+  },
+  "back_side_l": {
+   "chain": [
+    "bsl1",
+    "bsl2",
+    "bsl3"
+   ]
+  },
+  "bsl1": {
+   "line": [
+    "BCL",
+    "BWL"
+   ]
+  },
+  "bsl2": {
+   "line": [
+    "BWL",
+    "BHL"
+   ]
+  },
+  "bsl3": {
+   "line": [
+    "BHL",
+    "BBL"
+   ]
+  },
+  "sleeve_cuff": {
+   "line": [
+    "SWL",
+    "SWR"
+   ]
+  },
+  "sleeve_side_r": {
+   "line": [
+    "SWR",
+    "SUR"
+   ]
+  },
+  "sleeve_cap_r": {
+   "curve": [
+    "SUR",
+    "STP"
+   ],
+   "start_angle": "120",
+   "end_angle": "180",
+   "fa": "0.4",
+   "fb": "0.45"
+  },
+  "sleeve_cap_l": {
+   "curve": [
+    "STP",
+    "SUL"
+   ],
+   "start_angle": "180",
+   "end_angle": "240",
+   "fa": "0.45",
+   "fb": "0.4"
+  },
+  "sleeve_side_l": {
+   "line": [
+    "SUL",
+    "SWL"
+   ]
+  },
+  "collar_bottom": {
+   "line": [
+    "C0",
+    "C1"
+   ]
+  },
+  "collar_end_r": {
+   "line": [
+    "C1",
+    "C2"
+   ]
+  },
+  "collar_top": {
+   "line": [
+    "C2",
+    "C3"
+   ]
+  },
+  "collar_end_l": {
+   "line": [
+    "C3",
+    "C0"
+   ]
+  }
+ },
+ "pieces": [
+  {
+   "id": "front",
+   "name": {
+    "ar": "أمام",
+    "en": "Front"
+   },
+   "material": "O",
+   "copies": {
+    "normal": 1,
+    "mirrored": 0
+   },
+   "outline": [
+    {
+     "path": "front_hem",
+     "edge": "hem",
+     "allowance": "30"
+    },
+    {
+     "path": "front_side_r",
+     "edge": "side_r",
+     "allowance": "10"
+    },
+    {
+     "path": "front_arm_r",
+     "edge": "arm_r",
+     "allowance": "10"
+    },
+    {
+     "path": "front_shoulder_r",
+     "edge": "shoulder_r",
+     "allowance": "10"
+    },
+    {
+     "path": "front_neck_r",
+     "edge": "neck_r",
+     "allowance": "8"
+    },
+    {
+     "path": "front_neck_l",
+     "edge": "neck_l",
+     "allowance": "8"
+    },
+    {
+     "path": "front_shoulder_l",
+     "edge": "shoulder_l",
+     "allowance": "10"
+    },
+    {
+     "path": "front_arm_l",
+     "edge": "arm_l",
+     "allowance": "10"
+    },
+    {
+     "path": "front_side_l",
+     "edge": "side_l",
+     "allowance": "10"
+    }
+   ],
+   "notches": [
+    {
+     "edge": "side_r",
+     "dist": "len.fsr1 + len.fsr2",
+     "id": "waist_r",
+     "pair": "back:waist_r"
+    },
+    {
+     "edge": "side_l",
+     "dist": "len.fsl1",
+     "id": "waist_l",
+     "pair": "back:waist_l"
+    }
+   ],
+   "grain": [
+    "FGT",
+    "FGB"
+   ],
+   "labels": [
+    {
+     "text": "FRONT / أمام — ENGINE TEST",
+     "at": "FLB",
+     "height": 12
+    }
+   ]
+  },
+  {
+   "id": "back",
+   "name": {
+    "ar": "خلف",
+    "en": "Back"
+   },
+   "material": "O",
+   "copies": {
+    "normal": 1,
+    "mirrored": 0
+   },
+   "outline": [
+    {
+     "path": "back_hem",
+     "edge": "hem",
+     "allowance": "30"
+    },
+    {
+     "path": "back_side_r",
+     "edge": "side_r",
+     "allowance": "10"
+    },
+    {
+     "path": "back_arm_r",
+     "edge": "arm_r",
+     "allowance": "10"
+    },
+    {
+     "path": "back_shoulder_r",
+     "edge": "shoulder_r",
+     "allowance": "10"
+    },
+    {
+     "path": "back_neck_r",
+     "edge": "neck_r",
+     "allowance": "8"
+    },
+    {
+     "path": "back_neck_l",
+     "edge": "neck_l",
+     "allowance": "8"
+    },
+    {
+     "path": "back_shoulder_l",
+     "edge": "shoulder_l",
+     "allowance": "10"
+    },
+    {
+     "path": "back_arm_l",
+     "edge": "arm_l",
+     "allowance": "10"
+    },
+    {
+     "path": "back_side_l",
+     "edge": "side_l",
+     "allowance": "10"
+    }
+   ],
+   "notches": [
+    {
+     "edge": "side_r",
+     "dist": "len.bsr1 + len.bsr2",
+     "id": "waist_r"
+    },
+    {
+     "edge": "side_l",
+     "dist": "len.bsl1",
+     "id": "waist_l"
+    }
+   ],
+   "grain": [
+    "BGT",
+    "BGB"
+   ],
+   "labels": [
+    {
+     "text": "BACK / خلف — ENGINE TEST",
+     "at": "BLB",
+     "height": 12
+    }
+   ]
+  },
+  {
+   "id": "sleeve",
+   "name": {
+    "ar": "كم سادة",
+    "en": "Plain sleeve"
+   },
+   "material": "O",
+   "when": "option.sleeve.saada",
+   "copies": {
+    "normal": 1,
+    "mirrored": 1
+   },
+   "outline": [
+    {
+     "path": "sleeve_cuff",
+     "edge": "cuff",
+     "allowance": "30"
+    },
+    {
+     "path": "sleeve_side_r",
+     "edge": "side_r",
+     "allowance": "10"
+    },
+    {
+     "path": "sleeve_cap_r",
+     "edge": "cap_r",
+     "allowance": "10"
+    },
+    {
+     "path": "sleeve_cap_l",
+     "edge": "cap_l",
+     "allowance": "10"
+    },
+    {
+     "path": "sleeve_side_l",
+     "edge": "side_l",
+     "allowance": "10"
+    }
+   ],
+   "notches": [
+    {
+     "point": "STP",
+     "edge": "cap_r",
+     "id": "cap_top"
+    }
+   ],
+   "grain": [
+    "SGT",
+    "SGB"
+   ],
+   "labels": [
+    {
+     "text": "SLEEVE — ENGINE TEST",
+     "at": "SLB",
+     "height": 12
+    }
+   ]
+  },
+  {
+   "id": "collar",
+   "name": {
+    "ar": "رقبة",
+    "en": "Collar band"
+   },
+   "material": "O",
+   "copies": {
+    "normal": 2,
+    "mirrored": 0
+   },
+   "outline": [
+    {
+     "path": "collar_bottom",
+     "edge": "bottom",
+     "allowance": "8"
+    },
+    {
+     "path": "collar_end_r",
+     "edge": "end_r",
+     "allowance": "8"
+    },
+    {
+     "path": "collar_top",
+     "edge": "top",
+     "allowance": "8"
+    },
+    {
+     "path": "collar_end_l",
+     "edge": "end_l",
+     "allowance": "8"
+    }
+   ],
+   "grain": [
+    "CGL",
+    "CGR"
+   ],
+   "rotations": [
+    0,
+    180
+   ],
+   "labels": [
+    {
+     "text": "COLLAR — TEST",
+     "at": "CLB",
+     "height": 8
+    }
+   ]
+  }
+ ],
+ "seam_relations": [
+  {
+   "a": "front:side_r",
+   "b": "back:side_r",
+   "diff": "0",
+   "tolerance": 1.0,
+   "label": "side seam R"
+  },
+  {
+   "a": "front:side_l",
+   "b": "back:side_l",
+   "diff": "0",
+   "tolerance": 1.0,
+   "label": "side seam L"
+  },
+  {
+   "a": "front:shoulder_r",
+   "b": "back:shoulder_r",
+   "diff": "0",
+   "tolerance": 1.0,
+   "label": "shoulder R"
+  },
+  {
+   "a": "front:shoulder_l",
+   "b": "back:shoulder_l",
+   "diff": "0",
+   "tolerance": 1.0,
+   "label": "shoulder L"
+  }
+ ],
+ "checks": [
+  {
+   "id": "chest_quarter",
+   "label": "Front chest quarter = X9/2 + ease",
+   "measure": "FCR.x",
+   "target": "Z42 + ease_q",
+   "tolerance": 0.5
+  },
+  {
+   "id": "length",
+   "label": "Centre front length = X1",
+   "measure": "-FBR.y",
+   "target": "X1",
+   "tolerance": 0.5
+  },
+  {
+   "id": "collar_vs_neck",
+   "label": "Collar length = neckline length",
+   "measure": "len.collar_bottom",
+   "target": "len.front_neck_r + len.front_neck_l + len.back_neck_r + len.back_neck_l",
+   "tolerance": 1.0
+  },
+  {
+   "id": "cap_vs_armhole",
+   "label": "Sleeve cap = armhole R (front+back) + cap ease — TEST rule",
+   "measure": "edge.sleeve.cap_r + edge.sleeve.cap_l",
+   "target": "edge.front.arm_r + edge.back.arm_r + cap_ease",
+   "tolerance": 5,
+   "severity": "review",
+   "pieces": [
+    "sleeve",
+    "front",
+    "back"
+   ]
+  }
+ ]
+}

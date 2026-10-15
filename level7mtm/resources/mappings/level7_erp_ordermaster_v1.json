@@ -1,0 +1,451 @@
+{
+ "format": "level7mtm-erp-mapping",
+ "format_version": 1,
+ "profile_id": "level7-erp-ordermaster",
+ "version": "1.0.0",
+ "status": "draft",
+ "description": {
+  "ar": "ملفات OrderMaster من نظام ERP (Reference=From level7). مبني على عينتين فقط: Order-9-52-1_0 و Order-9-53-1_2.",
+  "en": "ERP OrderMaster files (Reference=From level7). Built from two samples only."
+ },
+ "namespaces": {},
+ "detect": {
+  "root": "OrderMaster",
+  "attributes": {
+   "Reference": "From level7"
+  }
+ },
+ "order": {
+  "number": "@Number",
+  "reseller": "@Reseller",
+  "date": "@Order-Date",
+  "date_format": "%m/%d/%Y %I:%M:%S %p",
+  "remarks": "Remarks/text()"
+ },
+ "lines": {
+  "path": "Orders/Order",
+  "number": "@Number",
+  "date": "@Order-Date",
+  "item": "Item/@Number",
+  "quantity": {
+   "path": "Item/@Quantity",
+   "min": 1,
+   "max": 500
+  },
+  "fabric_number": "Fabric/@Number",
+  "fabric_width": {
+   "path": "Fabric/@Width",
+   "unit": "mm",
+   "note": "fabric width always taken from the order (owner)"
+  },
+  "fabric_color": "Fabric/@Color",
+  "measurement_table": "Measurement/@Measurement-Table-Name",
+  "basic_size": "Measurement/@Basic-Size"
+ },
+ "line_number": {
+  "regex": "^(?P<reseller>\\d+)-(?P<order>\\d+)-(?P<line>\\d+)_(?P<revision>\\d+)$",
+  "note": "9-53-1_2 = reseller 9, order 53, line 1, revision 2 (owner); a changed order arrives with a higher revision"
+ },
+ "measurements": {
+  "path": "Measurement/Type",
+  "code": "@Abbreviation",
+  "name": "@Name",
+  "value": "@Value",
+  "fields": {
+   "FL": {
+    "variable": "FL",
+    "label": {
+     "ar": "طول الثوب",
+     "en": "Front length"
+    },
+    "unit": "cm",
+    "kind": "length",
+    "meaning": "Finished garment length (start/end point to be documented by the owner)",
+    "required": true,
+    "range": [
+     100,
+     200
+    ],
+    "status": "unit_confirmed"
+   },
+   "SH": {
+    "variable": "SH",
+    "label": {
+     "ar": "الكتف",
+     "en": "Shoulder"
+    },
+    "unit": "cm",
+    "kind": "flat_width",
+    "meaning": "Shoulder width",
+    "required": true,
+    "range": [
+     30,
+     70
+    ],
+    "status": "unit_confirmed"
+   },
+   "SLS": {
+    "variable": "SLS",
+    "label": {
+     "ar": "طول الكم السادة",
+     "en": "Sleeve length (plain)"
+    },
+    "unit": "cm",
+    "kind": "length",
+    "meaning": "Plain sleeve length",
+    "required": false,
+    "range": [
+     40,
+     95
+    ],
+    "status": "unit_confirmed"
+   },
+   "CH": {
+    "variable": "CH",
+    "label": {
+     "ar": "الصدر",
+     "en": "Chest"
+    },
+    "unit": "cm",
+    "kind": "half_girth",
+    "meaning": "Half circumference (confirmed by owner)",
+    "required": true,
+    "range": [
+     40,
+     100
+    ],
+    "status": "confirmed"
+   },
+   "WA": {
+    "variable": "WA",
+    "label": {
+     "ar": "الوسط",
+     "en": "Waist"
+    },
+    "unit": "cm",
+    "kind": "half_girth",
+    "meaning": "Half circumference (confirmed by owner)",
+    "required": true,
+    "range": [
+     35,
+     100
+    ],
+    "status": "confirmed"
+   },
+   "HP": {
+    "variable": "HP",
+    "label": {
+     "ar": "الأرداف",
+     "en": "Hip"
+    },
+    "unit": "cm",
+    "kind": "half_girth",
+    "meaning": "Half circumference (confirmed by owner)",
+    "required": true,
+    "range": [
+     40,
+     110
+    ],
+    "status": "confirmed"
+   },
+   "BO": {
+    "variable": "BO",
+    "label": {
+     "ar": "الأسفل",
+     "en": "Bottom"
+    },
+    "unit": "cm",
+    "kind": "half_girth",
+    "meaning": "Half circumference at the hem (confirmed by owner)",
+    "required": true,
+    "range": [
+     50,
+     130
+    ],
+    "status": "confirmed"
+   },
+   "WB": {
+    "variable": "WB",
+    "label": {
+     "ar": "عرض كفة الثوب",
+     "en": "Hem band width"
+    },
+    "unit": "cm",
+    "kind": "length",
+    "meaning": "Width of the hem band at the bottom of the thobe (owner)",
+    "required": false,
+    "range": [
+     0,
+     20
+    ],
+    "status": "confirmed"
+   },
+   "AH": {
+    "variable": "AH",
+    "label": {
+     "ar": "الإبط",
+     "en": "Arm hole"
+    },
+    "unit": "cm",
+    "kind": "other",
+    "meaning": "Meaning (girth / half girth / depth) to be confirmed",
+    "required": false,
+    "range": [
+     15,
+     45
+    ],
+    "status": "proposed"
+   },
+   "EB": {
+    "variable": "EB",
+    "label": {
+     "ar": "الكوع",
+     "en": "Elbow"
+    },
+    "unit": "cm",
+    "kind": "other",
+    "meaning": "Meaning to be confirmed",
+    "required": false,
+    "range": [
+     12,
+     35
+    ],
+    "status": "proposed"
+   },
+   "WRS": {
+    "variable": "WRS",
+    "label": {
+     "ar": "المعصم (سادة)",
+     "en": "Wrist (plain sleeve)"
+    },
+    "unit": "cm",
+    "kind": "other",
+    "meaning": "Meaning to be confirmed",
+    "required": false,
+    "range": [
+     10,
+     30
+    ],
+    "status": "proposed"
+   },
+   "SWS": {
+    "variable": "SWS",
+    "label": {
+     "ar": "عرض الكم السادة",
+     "en": "Plain sleeve width"
+    },
+    "unit": "cm",
+    "kind": "length",
+    "meaning": "Plain sleeve width (owner); reference point to be documented",
+    "required": false,
+    "range": [
+     0,
+     30
+    ],
+    "status": "confirmed"
+   },
+   "COS": {
+    "variable": "COS",
+    "label": {
+     "ar": "رقبة (مربعة)",
+     "en": "Collar (square)"
+    },
+    "unit": "cm",
+    "kind": "girth",
+    "meaning": "Neck size used with 'Collar Square' (owner)",
+    "required": false,
+    "range": [
+     30,
+     55
+    ],
+    "status": "confirmed"
+   },
+   "COG": {
+    "variable": "COG",
+    "label": {
+     "ar": "رقبة (قلاب)",
+     "en": "Collar (gallab)"
+    },
+    "unit": "cm",
+    "kind": "girth",
+    "meaning": "Neck size used with 'gallab Classic' (owner)",
+    "required": false,
+    "range": [
+     30,
+     55
+    ],
+    "status": "confirmed"
+   },
+   "JL": {
+    "variable": "JL",
+    "label": {
+     "ar": "طول الجبزور",
+     "en": "Jabzour length"
+    },
+    "unit": "cm",
+    "kind": "length",
+    "meaning": "Placket length",
+    "required": false,
+    "range": [
+     20,
+     70
+    ],
+    "status": "proposed"
+   },
+   "TKL": {
+    "variable": "TKL",
+    "label": {
+     "ar": "طول التخاليص",
+     "en": "Takhlees length"
+    },
+    "unit": "cm",
+    "kind": "length",
+    "meaning": "Gusset (takhlees) length",
+    "required": false,
+    "range": [
+     5,
+     40
+    ],
+    "status": "proposed"
+   },
+   "TKWD": {
+    "variable": "TKWD",
+    "label": {
+     "ar": "عرض التخاليص أسفل",
+     "en": "Takhlees width down"
+    },
+    "unit": "cm",
+    "kind": "length",
+    "meaning": "Gusset width at the bottom",
+    "required": false,
+    "range": [
+     3,
+     25
+    ],
+    "status": "proposed"
+   },
+   "DSR": {
+    "variable": "DSR",
+    "label": {
+     "ar": "نزول الكتف يمين",
+     "en": "Shoulder drop right"
+    },
+    "unit": "cm",
+    "kind": "length",
+    "meaning": "Right shoulder drop; may differ from left (owner)",
+    "required": true,
+    "range": [
+     2,
+     15
+    ],
+    "status": "confirmed"
+   },
+   "DSL": {
+    "variable": "DSL",
+    "label": {
+     "ar": "نزول الكتف يسار",
+     "en": "Shoulder drop left"
+    },
+    "unit": "cm",
+    "kind": "length",
+    "meaning": "Left shoulder drop; may differ from right (owner)",
+    "required": true,
+    "range": [
+     2,
+     15
+    ],
+    "status": "confirmed"
+   }
+  },
+  "unknown": "review",
+  "measurement_table": "Saudi Thobe_TableMeasurement",
+  "meaning": "finished-garment measurements (product), not body measurements — ease is NOT added again"
+ },
+ "conditional_required": [
+  {
+   "when": {
+    "collar": "square"
+   },
+   "require": [
+    "COS"
+   ]
+  },
+  {
+   "when": {
+    "collar": "classic"
+   },
+   "require": [
+    "COG"
+   ]
+  },
+  {
+   "when": {
+    "sleeve": "saada"
+   },
+   "require": [
+    "SLS"
+   ]
+  }
+ ],
+ "options": {
+  "path": "Variations/Variation/@Name",
+  "match": "exact_ignore_case",
+  "map": {
+   "Slim2": {
+    "group": "body_shape",
+    "value": "slim2",
+    "label": {
+     "ar": "شكل جسم Slim2",
+     "en": "Body shape Slim2"
+    }
+   },
+   "Athlete1": {
+    "group": "body_shape",
+    "value": "athlete1",
+    "label": {
+     "ar": "شكل جسم Athlete1",
+     "en": "Body shape Athlete1"
+    }
+   },
+   "Sleeve Saada": {
+    "group": "sleeve",
+    "value": "saada"
+   },
+   "Pocket side Hidden": {
+    "group": "pocket_side",
+    "value": "hidden"
+   },
+   "Jabzour Splender": {
+    "group": "jabzour",
+    "value": "splender"
+   },
+   "Collar Square": {
+    "group": "collar",
+    "value": "square"
+   },
+   "gallab Classic": {
+    "group": "collar",
+    "value": "classic"
+   },
+   "Pocket Chest Cut": {
+    "group": "pocket_chest",
+    "value": "cut"
+   }
+  },
+  "unknown": "review"
+ },
+ "programs": {
+  "path": "Programs/Program",
+  "name": "@VariationName",
+  "value": "@Value",
+  "type": "@Type",
+  "map": {
+   "Cuff Individuel Hight": {
+    "variable": "cuff_individual_height",
+    "use_in_calculation": false,
+    "note": "stored only; not used in calculation for now (owner)"
+   }
+  },
+  "unknown": "review"
+ }
+}

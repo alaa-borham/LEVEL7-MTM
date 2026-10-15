@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+# customer pattern files (GRAFIS MDL/SCB) are NOT committed: this repository is public.
+reference/grafis/*.mdl
+reference/grafis/*.scb
+reference/grafis/*.MDL
+reference/grafis/*.SCB
+# generated reports from customer files
+reports/
+*.l7n.part

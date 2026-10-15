@@ -1,0 +1,140 @@
+{
+ "format": "level7mtm-xvars",
+ "format_version": 1,
+ "table_id": "alshiaka-2027",
+ "version": "0.1.0",
+ "description": {
+  "ar": "ربط متغيرات X في GRAFIS بقياسات الطلب. مقترح من أوصاف معادلات Z في ملف MDL — يحتاج تأكيد صاحب المشروع لكل صف.",
+  "en": "GRAFIS X-values from order measurements. Proposed from the Z formula descriptions in the MDL — each row needs owner confirmation."
+ },
+ "unit": "mm",
+ "entries": [
+  {
+   "x": "X1",
+   "source": [
+    "FL"
+   ],
+   "formula": null,
+   "evidence": "Z18 «الطول» = X1",
+   "status": "proposed"
+  },
+  {
+   "x": "X3",
+   "source": [
+    "SH"
+   ],
+   "formula": null,
+   "evidence": "Z9 «الكتف» = X3/2",
+   "status": "proposed"
+  },
+  {
+   "x": "X4",
+   "source": [
+    "DSR"
+   ],
+   "formula": null,
+   "evidence": "Z11 «نزول الكتف امام R» = X4-(X4/8)",
+   "status": "proposed"
+  },
+  {
+   "x": "X5",
+   "source": [
+    "DSL"
+   ],
+   "formula": null,
+   "evidence": "Z12 «نزول الكتف امام L» = X5-1",
+   "status": "proposed"
+  },
+  {
+   "x": "X6",
+   "source": [
+    "AH"
+   ],
+   "formula": null,
+   "evidence": "Z5 «اعلي الزراع» = X6/2",
+   "status": "proposed"
+  },
+  {
+   "x": "X7",
+   "source": [
+    "COS",
+    "COG"
+   ],
+   "formula": null,
+   "evidence": "Z6 «فتحه الرقبه عرض» = X7/6.7+Z1 (COS or COG depending on the collar option)",
+   "status": "proposed"
+  },
+  {
+   "x": "X9",
+   "source": [
+    "CH"
+   ],
+   "formula": null,
+   "evidence": "Z42 «الصدر» = X9/2",
+   "status": "proposed"
+  },
+  {
+   "x": "X12",
+   "source": [
+    "WA"
+   ],
+   "formula": null,
+   "evidence": "Z44 «الوسط» = X12/2",
+   "status": "proposed"
+  },
+  {
+   "x": "X13",
+   "source": [
+    "HP"
+   ],
+   "formula": null,
+   "evidence": "Z45 «الارداف» = X13/2",
+   "status": "proposed"
+  },
+  {
+   "x": "X14",
+   "source": [
+    "BO"
+   ],
+   "formula": null,
+   "evidence": "Z46 «اسفل» = X14/2",
+   "status": "proposed"
+  },
+  {
+   "x": "X15",
+   "source": [
+    "WB"
+   ],
+   "formula": null,
+   "evidence": "Z38 «كفه اسفل» = X15",
+   "status": "proposed"
+  },
+  {
+   "x": "X23",
+   "source": [
+    "JL"
+   ],
+   "formula": null,
+   "evidence": "Z94 «طول الجبزور من الكتف» = (X23+Z7)-70",
+   "status": "proposed"
+  },
+  {
+   "x": "X31",
+   "source": [
+    "SLS"
+   ],
+   "formula": null,
+   "evidence": "Z65 «طول الكم الساده» = X31",
+   "status": "proposed"
+  },
+  {
+   "x": "X37",
+   "source": [
+    "WRS"
+   ],
+   "formula": null,
+   "evidence": "Z79 «اسفل اليد» = X37",
+   "status": "proposed"
+  }
+ ]
+}

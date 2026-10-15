@@ -1,0 +1,13 @@
+{
+ "format": "level7mtm-finishing",
+ "format_version": 1,
+ "doc_id": "default",
+ "version": "1",
+ "status": "draft",
+ "materials": {
+  "O": {"label": {"ar": "قماش خارجي", "en": "upper fabric"}, "length_pct": 0.0, "width_pct": 0.0,
+        "definition": "expected_shrinkage", "already_applied_by_source": false, "confirmed": false}
+ },
+ "notes": {"ar": "قيم الانكماش غير محددة بعد. يجب إدخالها أو تأكيد 0% لكل خامة قبل اعتماد أي طلب للإنتاج.",
+           "en": "Shrinkage not set yet. Enter values or confirm 0% per material before approving any order for production."}
+}
