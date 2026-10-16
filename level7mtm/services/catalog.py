@@ -57,6 +57,7 @@ class Resolution:
     issues: list[Issue]
     piece_plan: dict[str, dict]            # piece id -> properties (+ "required_by")
     base_pattern: dict = field(default_factory=dict)
+    options: dict = field(default_factory=dict)            # the order's options + configured defaults
 
 
 def load_catalog(path_or_dict) -> dict:
@@ -126,6 +127,22 @@ def check_catalog(doc: dict) -> None:
                         raise CatalogError(f"{where}: GRAFIS part {n}: material is one letter (O, F, …)")
 
 
+def effective_options(style: dict, options: dict[str, str]) -> tuple[dict[str, str], list[Issue]]:
+    """Options of the order plus the owner's default for a group the order does not set (reported as info);
+    a required group without value and without default is blocking."""
+    out, issues = dict(options), []
+    for g, s in ((g, style.get("option_group_settings", {}).get(g, {})) for g in style.get("option_groups", {})):
+        if g in out:
+            continue
+        if s.get("default"):
+            out[g] = s["default"]
+            issues.append(Issue("info", "option.default", f"design option '{g}' not in the order: default "
+                                                         f"'{s['default']}' used"))
+        elif s.get("required", True):
+            issues.append(Issue("blocking", "option.missing", f"design option '{g}' not set"))
+    return out, issues
+
+
 def grafis_parts_for(style: dict, options: dict[str, str]) -> dict[int, dict] | None:
     """GRAFIS production parts for the chosen options ({part number: row}); None when not configured.
     Rows with option "" or "*" are always produced; an option row overrides a base row of the same part."""
@@ -165,7 +182,7 @@ def _in_scope(lst, value) -> bool:
 def resolve(doc: dict, product: str, style_id: str, measurements_mm: dict[str, float | None],
             options: dict[str, str], factory: str | None = None, size: str | None = None) -> Resolution:
     style = doc["products"][product]["styles"][style_id]
-    issues: list[Issue] = []
+    options, issues = effective_options(style, options)
     trace: list[RuleTrace] = []
     values: dict[str, float] = {}
     writer: dict[str, str] = {}
@@ -238,9 +255,6 @@ def resolve(doc: dict, product: str, style_id: str, measurements_mm: dict[str, f
         if options.get(orule["group"]) == orule["value"]:
             for pid in orule.get("pieces", []):
                 plan.setdefault(pid, {"required_by": []})["required_by"].append(f"{orule['group']}={orule['value']}")
-    for g in style.get("option_groups", {}):
-        if g not in options:
-            issues.append(Issue("blocking", "option.missing", f"design option '{g}' not set"))
     for pid, ent in plan.items():
         props = style.get("pieces", {}).get(pid)
         if props is None:
@@ -251,7 +265,7 @@ def resolve(doc: dict, product: str, style_id: str, measurements_mm: dict[str, f
         for orule in style.get("option_rules", []):
             if options.get(orule["group"]) == orule["value"]:
                 ent.update(copy.deepcopy(orule.get("properties", {}).get(pid, {})))
-    return Resolution(product, style_id, values, trace, issues, plan, dict(style["base_pattern"]))
+    return Resolution(product, style_id, values, trace, issues, plan, dict(style["base_pattern"]), options)
 
 
 def apply_plan(result, plan: dict[str, dict]) -> list[Issue]:

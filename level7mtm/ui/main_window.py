@@ -809,6 +809,164 @@ class GrafisPage(Page):
         self.win.pool.start(w)
 
 
+class OptionsPage(Page):
+    """Design option groups (collar, sleeve …), their values and the Variation name(s) in the XML that select them."""
+    title = "Design options"
+    GCOLS = ["Group code", "Name (ar)", "Name (en)", "Required", "Default value"]
+    VCOLS = ["Value code", "Name (ar)", "Name (en)", "Name in the XML (Variation)"]
+
+    def __init__(self, win):
+        super().__init__(win)
+        lay = QVBoxLayout(self)
+        self.info = QLabel(tr("Groups such as collar or sleeve; each value has the name(s) it has in the XML "
+                              "(Variation Name). An XML name that is not here makes the order 'needs review'."))
+        self.info.setWordWrap(True)
+        lay.addWidget(self.info)
+        lay.addWidget(QLabel(tr("Option groups")))
+        self.g = QTableWidget(0, len(self.GCOLS))
+        self.g.setHorizontalHeaderLabels([tr(c) for c in self.GCOLS])
+        self.g.horizontalHeader().setStretchLastSection(True)
+        self.g.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.g.currentCellChanged.connect(lambda r, c, pr, pc: self._switch(pr, r))
+        lay.addWidget(self.g, 2)
+        bg = QHBoxLayout()
+        for text, fn in (("Add group", self.add_group), ("Remove group", self.remove_group)):
+            b = QPushButton(tr(text))
+            b.clicked.connect(fn)
+            bg.addWidget(b)
+        bg.addStretch()
+        lay.addLayout(bg)
+        self.vlabel = QLabel()
+        lay.addWidget(self.vlabel)
+        self.v = QTableWidget(0, len(self.VCOLS))
+        self.v.setHorizontalHeaderLabels([tr(c) for c in self.VCOLS])
+        self.v.horizontalHeader().setStretchLastSection(True)
+        lay.addWidget(self.v, 3)
+        bv = QHBoxLayout()
+        for text, fn in (("Add value", self.add_value), ("Remove value", self.remove_value), ("Save", self.save)):
+            b = QPushButton(tr(text))
+            b.clicked.connect(fn)
+            bv.addWidget(b)
+        bv.addStretch()
+        lay.addLayout(bv)
+        self.groups: list[dict] = []
+        self.cur = -1
+
+    def refresh(self):
+        from ..services.options import option_table
+        self.groups = option_table(self.ws)
+        self.cur = -1
+        self._fill_groups()
+        if self.groups:
+            self.g.setCurrentCell(0, 0)
+            self._switch(-1, 0)
+
+    def _fill_groups(self):
+        self.g.blockSignals(True)
+        self.g.setRowCount(len(self.groups))
+        for i, gr in enumerate(self.groups):
+            for j, val in enumerate([gr["group"], gr["label"].get("ar", ""), gr["label"].get("en", ""), None,
+                                     gr["default"]]):
+                it = QTableWidgetItem("" if val is None else val)
+                if j == 3:
+                    it.setFlags((it.flags() | Qt.ItemIsUserCheckable) & ~Qt.ItemIsEditable)
+                    it.setCheckState(Qt.Checked if gr["required"] else Qt.Unchecked)
+                self.g.setItem(i, j, it)
+        self.g.blockSignals(False)
+        self.g.resizeColumnsToContents()
+
+    def _read_group_row(self, i):
+        from ..services.options import code
+        gr = self.groups[i]
+        t = lambda j: self.g.item(i, j).text().strip() if self.g.item(i, j) else ""   # noqa: E731
+        gr["group"] = code(t(0))
+        gr["label"] = {"ar": t(1) or t(0), "en": t(2) or t(0)}
+        gr["required"] = self.g.item(i, 3).checkState() == Qt.Checked if self.g.item(i, 3) else True
+        gr["default"] = code(t(4))
+
+    def _read_values(self):
+        from ..services.options import code
+        if not (0 <= self.cur < len(self.groups)):
+            return
+        vals = []
+        for i in range(self.v.rowCount()):
+            t = lambda j: self.v.item(i, j).text().strip() if self.v.item(i, j) else ""   # noqa: E731,B023
+            if not t(0) and not t(3):
+                continue
+            vals.append({"value": code(t(0) or t(3)), "label": {"ar": t(1) or t(0), "en": t(2) or t(0)},
+                         "erp_names": [n.strip() for n in re.split(r"[;\n]", t(3)) if n.strip()]})
+        self.groups[self.cur]["values"] = vals
+
+    def _switch(self, prev, row):
+        if 0 <= self.cur < len(self.groups):
+            self._read_values()
+        self.cur = row
+        if not (0 <= row < len(self.groups)):
+            self.v.setRowCount(0)
+            return
+        gr = self.groups[row]
+        self.vlabel.setText(f"{tr('Values of')} {gr['label'].get('ar') or gr['group']} ({gr['group']})")
+        self.v.setRowCount(len(gr["values"]))
+        for i, val in enumerate(gr["values"]):
+            for j, x in enumerate([val["value"], val["label"].get("ar", ""), val["label"].get("en", ""),
+                                   "; ".join(val["erp_names"])]):
+                self.v.setItem(i, j, QTableWidgetItem(x))
+        self.v.resizeColumnsToContents()
+
+    def add_group(self):
+        name, ok = QInputDialog.getText(self, tr("Add group"), tr("Name (ar)"))
+        if not ok or not name.strip():
+            return
+        self._read_values()
+        en, _ = QInputDialog.getText(self, tr("Add group"), tr("Group code") + " (a-z, 0-9, _)")
+        from ..services.options import code
+        gc = code(en) or f"group{len(self.groups) + 1}"
+        for i in range(len(self.groups)):
+            self._read_group_row(i)
+        self.groups.append({"group": gc, "label": {"ar": name.strip(), "en": en.strip() or gc}, "required": False,
+                            "default": "", "values": []})
+        self.cur = -1
+        self._fill_groups()
+        self.g.setCurrentCell(len(self.groups) - 1, 0)
+        self._switch(-1, len(self.groups) - 1)
+
+    def remove_group(self):
+        r = self.g.currentRow()
+        if 0 <= r < len(self.groups):
+            for i in range(len(self.groups)):
+                self._read_group_row(i)
+            del self.groups[r]
+            self.cur = -1
+            self._fill_groups()
+            self._switch(-1, min(r, len(self.groups) - 1))
+
+    def add_value(self):
+        self.v.insertRow(self.v.rowCount())
+
+    def remove_value(self):
+        if self.v.currentRow() >= 0:
+            self.v.removeRow(self.v.currentRow())
+
+    def collect(self) -> list[dict]:
+        self._read_values()
+        for i in range(len(self.groups)):
+            self._read_group_row(i)
+        return self.groups
+
+    def save(self):
+        from ..services.options import save_options
+        try:
+            out = save_options(self.ws, self.collect())
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(self, tr("Error"), str(e))
+            return
+        msg = f"{tr('Saved')}: {tr('Rules')} {out['catalog_version']}"
+        if out["mapping_version"]:
+            msg += f"\n{tr('ERP mapping profile')} {out['mapping_version']}"
+        QMessageBox.information(self, tr("Design options"), msg)
+        self.refresh()
+
+
 class XValuesPage(Page):
     """Every X value of a GRAFIS part next to the XML code(s) that fill it. Saved as a new rules version."""
     title = "X values for GRAFIS"
@@ -1255,7 +1413,7 @@ class RulesPage(Page):
                  f"{'' if t.value is None else f'{t.value:.1f}'} [{t.status}] {t.message}" for t in res.trace]
         lines += ["", tr("Production pieces") + ": " + ", ".join(res.piece_plan)]
         from ..services.catalog import grafis_parts_for
-        gp = grafis_parts_for(cat["products"][pid]["styles"][sid], rev["normalized"]["options"])
+        gp = grafis_parts_for(cat["products"][pid]["styles"][sid], res.options)
         lines += [tr("GRAFIS parts") + ": " + (", ".join(f"{n:03d} {g.get('name', '')} {g['material']} "
                                                          f"{g['copies']}+{g['mirrored']}" for n, g in sorted(gp.items()))
                                                if gp else "—")]
@@ -1454,7 +1612,7 @@ class LogPage(Page):
         self.win.close()
 
 
-PAGES = [OrdersPage, ImportPage, OrderPage, ModelPage, PreviewPage, ValidationPage, SendPage, GrafisPage, XValuesPage,
+PAGES = [OrdersPage, ImportPage, OrderPage, ModelPage, PreviewPage, ValidationPage, SendPage, GrafisPage, XValuesPage, OptionsPage,
          LibraryPage,
          RulesPage,
          SettingsPage, LogPage]

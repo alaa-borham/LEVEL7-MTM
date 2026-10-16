@@ -167,8 +167,7 @@ def _expected_parts(ws, chk: ScbCheck) -> None:
         return
     from .catalog import grafis_parts_for
     style = cat["products"][res.product]["styles"][res.style]
-    rev = ws.revision(chk.lines[0]["revision_id"])
-    gp = grafis_parts_for(style, rev["normalized"]["options"])
+    gp = grafis_parts_for(style, res.options)
     if gp is None:
         chk.issues.append(("info", "GRAFIS parts per option are not configured (Rules editor → GRAFIS parts); "
                                    "piece list shown for review only"))

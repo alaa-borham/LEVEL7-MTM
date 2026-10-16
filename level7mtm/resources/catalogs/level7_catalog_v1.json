@@ -2,7 +2,7 @@
  "format": "level7mtm-catalog",
  "format_version": 1,
  "catalog_id": "level7",
- "version": "1.2.0",
+ "version": "1.3.0",
  "status": "draft",
  "description": {
   "ar": "مكتبة المنتجات والستايلات وتعريفات القياسات وقواعد الربط. قواعد الربط تربط القياس أو خيار التصميم بمتغير البترون فقط؛ المعادلات الهندسية التي تحول المتغيرات إلى أشكال موجودة في ملف البترون الأساسي.",
@@ -1185,6 +1185,56 @@
       "mdl": "1-S- alshiaka-2027.mdl",
       "part": "002",
       "x_table_block": "(3,2,3,1)"
+     },
+     "option_group_settings": {
+      "body_shape": {
+       "label": {
+        "ar": "شكل الجسم",
+        "en": "Body shape"
+       },
+       "required": true,
+       "default": null
+      },
+      "collar": {
+       "label": {
+        "ar": "الرقبة",
+        "en": "Collar"
+       },
+       "required": true,
+       "default": null
+      },
+      "sleeve": {
+       "label": {
+        "ar": "الكم",
+        "en": "Sleeve"
+       },
+       "required": true,
+       "default": null
+      },
+      "jabzour": {
+       "label": {
+        "ar": "الجبزور",
+        "en": "Jabzour"
+       },
+       "required": true,
+       "default": null
+      },
+      "pocket_chest": {
+       "label": {
+        "ar": "جيب الصدر",
+        "en": "Chest pocket"
+       },
+       "required": true,
+       "default": null
+      },
+      "pocket_side": {
+       "label": {
+        "ar": "الجيب الجانبي",
+        "en": "Side pocket"
+       },
+       "required": true,
+       "default": null
+      }
      }
     }
    }

@@ -207,7 +207,7 @@ def test_x_value_table_editor(ws, tmp_path):
     rows[8]["codes"], rows[8]["confirmed"] = ["FW1"], True          # new XML code → front width 1
     rows[12]["codes"] = []                                          # WA no longer fills X12
     out = save_x_table(ws, MDL, 2, list(rows.values()))
-    assert out["new_codes"] == ["FW1"] and out["catalog_version"] == "1.2.1" and out["mapping_version"]
+    assert out["new_codes"] == ["FW1"] and out["catalog_version"] == "1.3.1" and out["mapping_version"]
     again = {r["x"]: r for r in x_table(ws, MDL, 2)}
     assert again[8]["codes"] == ["FW1"] and again[12]["codes"] == [] and again[1]["codes"] == ["FL"]
     _, cat = ws.active("catalog")

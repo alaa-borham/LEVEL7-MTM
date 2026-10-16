@@ -92,7 +92,7 @@ def plan_values(ws, rid: int, template: str) -> dict:
                 for n, g in sorted(tab.items()) if (p, n) not in values]
     # production parts chosen by the design options
     parts, part_rows, parts_note = None, [], ""
-    gp = grafis_parts_for(style, rev["normalized"]["options"])
+    gp = grafis_parts_for(style, res.options)
     model_parts = production(cont)
     if gp is None:
         parts_note = ("GRAFIS parts per option not configured — the model's own production parts are kept: " +
