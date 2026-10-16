@@ -15,7 +15,8 @@ from dataclasses import dataclass, field
 from .. import ENGINE_VERSION, __version__
 from ..erp.importer import ImportResult, import_bytes
 from ..erp.mapping import load_profile, profile_hash
-from ..erp.xvars import compute_x, load_xvars, xvars_hash
+from ..erp.xvars import load_xvars
+from .catalog import CatalogError, apply_plan, catalog_hash, find_style, load_catalog, resolve
 from ..pattern.finishing import ShrinkSpec, apply_shrinkage
 from ..pattern.model import evaluate_model, load_model, model_hash
 from ..pattern.serialize import issue_to, result_from_json, result_to_json
@@ -27,6 +28,7 @@ BUILTIN = [
     ("xvars", os.path.join(RES, "xvars", "alshiaka_2027_v0_1.json")),
     ("model", os.path.join(RES, "models", "thobe_engine_test_v0_1.json")),
     ("finishing", os.path.join(RES, "finishing_default_v1.json")),
+    ("catalog", os.path.join(RES, "catalogs", "level7_catalog_v1.json")),
 ]
 STATUSES = ("imported", "needs_review", "ready", "calculating", "validation_failed", "ready_for_review",
             "approved", "sent_to_nesting", "completed", "cancelled", "superseded")
@@ -46,7 +48,8 @@ class FileOutcome:
 
 
 def _doc_id_key(kind: str, body: dict) -> str:
-    return {"model": "model_id", "mapping": "profile_id", "xvars": "table_id", "finishing": "doc_id"}[kind]
+    return {"model": "model_id", "mapping": "profile_id", "xvars": "table_id", "finishing": "doc_id",
+            "catalog": "catalog_id"}[kind]
 
 
 def _sha(body: dict) -> str:
@@ -84,6 +87,8 @@ class Workspace:
             load_profile(body)
         elif kind == "xvars":
             load_xvars(body)
+        elif kind == "catalog":
+            load_catalog(body)
         key = body[_doc_id_key(kind, body)]
         ver = str(body["version"])
         sha = _sha(body)
@@ -300,39 +305,62 @@ class Workspace:
             self.db.audit(c, self.actor, "order.cancelled", "order", rev["order_id"], {"reason": reason})
 
     # ------------------------------------------------------------ generation
+    def model_for(self, model_id: str, version: str) -> int:
+        r = self.db.one("SELECT id FROM documents WHERE kind='model' AND doc_id=? AND version=?", (model_id, version))
+        if not r:
+            raise WorkflowError(f"base pattern {model_id} {version} is not in the model library")
+        return r["id"]
+
+    def resolve_order(self, rid: int) -> tuple[int, dict, object]:
+        """Catalog step only: measurements / options -> pattern variables + piece plan (no geometry)."""
+        rev = self.revision(rid)
+        cat_pk, cat = self.active("catalog")
+        raw, norm = rev["raw_line"], rev["normalized"]
+        try:
+            product, style = find_style(cat, raw.get("item"), raw.get("measurement_table"))
+        except CatalogError as e:
+            raise WorkflowError(str(e)) from None
+        mm = {k: v["value_mm"] for k, v in norm["measurements"].items()}
+        res = resolve(cat, product, style, mm, norm["options"], factory=self.db.get_setting("factory", "main"),
+                      size=raw.get("basic_size"))
+        return cat_pk, cat, res
+
     def generate(self, rid: int, model_pk: int | None = None) -> dict:
         rev = self.revision(rid)
         if rev["status"] in ("cancelled", "superseded", "approved", "sent_to_nesting", "completed"):
             raise WorkflowError(f"revision is {rev['status']}; no new calculation")
-        model_pk = model_pk or self.active("model")[0]
-        xv_pk, xv = self.active("xvars")
+        cat_pk, cat, res = self.resolve_order(rid)
+        bp = res.base_pattern
+        model_pk = model_pk or self.model_for(bp["model_id"], str(bp["version"]))
         fin_pk, fin = self.active("finishing")
         model = load_model(self.document(model_pk))
         norm = rev["normalized"]
-        mm = {k: v["value_mm"] for k, v in norm["measurements"].items()}
-        needed = [i["name"] for i in model.get("inputs", []) if i["name"].startswith("X")]
-        xvals, xprob = compute_x(xv, mm, needed)
-        inputs = {**{k: v for k, v in mm.items() if v is not None}, **xvals}
+        inputs = dict(res.inputs)                       # pattern variables only (from the rules)
         result = evaluate_model(model, inputs, norm["options"])
+        plan_issues = apply_plan(result, res.piece_plan)
         specs = {m: ShrinkSpec(m, s["length_pct"], s["width_pct"], s["definition"], s["already_applied_by_source"])
                  for m, s in fin["materials"].items()}
         finished, factors, _ = apply_shrinkage(result, specs)
-        issues = [issue_to(i) for i in finished.issues]
-        issues += [{"severity": sev, "code": "xvar", "message": msg, "position": None, "piece": None, "edge": x}
-                   for sev, x, msg in xprob]
-        status = "failed" if any(i["severity"] == "blocking" for i in issues) else "ok"
+        issues = [issue_to(i) for i in finished.issues + res.issues + plan_issues]
+        # geometry status: plan problems block approval but do not make the geometry invalid
+        status = "failed" if any(i["severity"] == "blocking" and not i["code"].startswith("plan.")
+                                 for i in issues) else "ok"
         gid = new_id()
-        input_sha = _sha({"rev": rev["data_sha256"], "model": model_hash(model), "xv": xvars_hash(xv), "fin": _sha(fin),
-                          "engine": ENGINE_VERSION})
+        input_sha = _sha({"rev": rev["data_sha256"], "model": model_hash(model), "catalog": catalog_hash(cat),
+                          "fin": _sha(fin), "engine": ENGINE_VERSION})
         body = result_to_json(finished)
         body["shrink_factors"] = {k: list(v) for k, v in factors.items()}
         body["base"] = result_to_json(result)          # geometry before shrinkage (for review / comparison)
+        body["catalog"] = {"doc": cat_pk, "catalog_id": cat["catalog_id"], "version": cat["version"],
+                           "product": res.product, "style": res.style}
+        body["rules_trace"] = [t.__dict__ for t in res.trace]
+        body["piece_plan"] = res.piece_plan
         with self.db.tx() as c:
             c.execute("UPDATE generations SET status='invalidated' WHERE revision_id=? AND status='ok'", (rid,))
-            c.execute("INSERT INTO generations(id, revision_id, model_doc, xvars_doc, finishing_doc, engine_version, "
+            c.execute("INSERT INTO generations(id, revision_id, model_doc, rules_doc, finishing_doc, engine_version, "
                       "inputs, options, result, issues, fingerprint, input_sha256, status, created_at) "
                       "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                      (gid, rid, model_pk, xv_pk, fin_pk, f"{__version__}/{ENGINE_VERSION}", json.dumps(inputs),
+                      (gid, rid, model_pk, cat_pk, fin_pk, f"{__version__}/{ENGINE_VERSION}", json.dumps(inputs),
                        json.dumps(norm["options"]), json.dumps(body, ensure_ascii=False),
                        json.dumps(issues, ensure_ascii=False), finished.geometry_fingerprint(), input_sha, status, now()))
             new_status = "ready_for_review" if status == "ok" else "validation_failed"
@@ -363,6 +391,7 @@ class Workspace:
         model = load_model(self.document(g["model_doc"]))
         fin = self.document(g["finishing_doc"])
         result = evaluate_model(model, g["inputs"], g["options"])
+        apply_plan(result, g["result"].get("piece_plan", {}))
         specs = {m: ShrinkSpec(m, s["length_pct"], s["width_pct"], s["definition"], s["already_applied_by_source"])
                  for m, s in fin["materials"].items()}
         finished, _, _ = apply_shrinkage(result, specs)
@@ -390,6 +419,9 @@ class Workspace:
         mapping = self.document(rev["mapping_doc"])
         if mapping.get("status") != "approved":
             out.append(f"ERP mapping {mapping['profile_id']} {mapping['version']} is '{mapping.get('status')}' (not approved)")
+        cat = self.document(g["rules_doc"]) if g.get("rules_doc") else None
+        if cat and cat.get("format") == "level7mtm-catalog" and cat.get("status") != "approved":
+            out.append(f"catalog {cat['catalog_id']} {cat['version']} is '{cat.get('status')}' (rules not approved)")
         fin = self.document(g["finishing_doc"])
         for m, s in fin["materials"].items():
             if not s.get("confirmed"):
@@ -475,6 +507,7 @@ class Workspace:
         g = self.generation(gid)
         rev = self.revision(g["revision_id"])
         res = result_from_json(g["result"])
+        res.pieces = [p for p in res.pieces if (p.production if kind == "dxf" else p.preview)]
         tag = f"{rev['line_number']}"
         path = path or os.path.join(self.folder, "exports", f"{tag}_{gid[:8]}.{kind}")
         info = [f"order {tag}", f"generation {gid}", f"model {res.model_id} {res.model_version} ({res.model_status})",

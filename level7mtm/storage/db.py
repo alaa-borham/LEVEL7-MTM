@@ -134,6 +134,10 @@ MIGRATIONS: list[str] = [
         active INTEGER NOT NULL DEFAULT 1
     );
     """,
+    # 3 — generations reference the catalog (rules) document instead of the old X table
+    """
+    ALTER TABLE generations RENAME COLUMN xvars_doc TO rules_doc
+    """,
 ]
 
 

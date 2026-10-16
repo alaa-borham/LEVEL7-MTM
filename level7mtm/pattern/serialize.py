@@ -38,6 +38,7 @@ def result_to_json(r: PatternResult) -> dict:
             "labels": [{**lb, "position": list(lb["position"])} for lb in p.labels],
             "internal": [_path_to(x) for x in p.internal], "edge_lengths": p.edge_lengths,
             "allow_rotation": p.allow_rotation, "allow_mirror_substitute": p.allow_mirror_substitute,
+            "preview": p.preview, "production": p.production,
         } for p in r.pieces],
         "issues": [issue_to(i) for i in r.issues], "checks": r.checks, "seam_relations": r.seam_relations,
     }
@@ -54,7 +55,7 @@ def result_from_json(d: dict) -> PatternResult:
             (tuple(p["grain"][0]), tuple(p["grain"][1])) if p.get("grain") else None,
             [{**lb, "position": tuple(lb["position"])} for lb in p["labels"]],
             [_path_from(x) for x in p["internal"]], p["edge_lengths"], p.get("allow_rotation", [0.0, 180.0]),
-            p.get("allow_mirror_substitute", False)))
+            p.get("allow_mirror_substitute", False), p.get("preview", True), p.get("production", True)))
     return PatternResult(d["model_id"], d["model_version"], d["model_status"], d["inputs"], d["options"],
                          d["variables"], {}, {}, pieces, [issue_from(i) for i in d["issues"]], d["checks"],
                          d["seam_relations"])

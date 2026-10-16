@@ -2,7 +2,7 @@ import json
 import os
 
 import pytest
-from conftest import XML_52, XML_53, approved_setup, read
+from conftest import XML_52, XML_53, approved_setup, read, use_model
 
 from level7mtm.services.workflow import WorkflowError
 from level7mtm.storage.db import Database, restore_backup
@@ -98,7 +98,7 @@ def test_approval_path_and_nesting(ws, tmp_path):
     m = json.loads(json.dumps(m))
     m["version"] = "0.1.0+test-approved-nocap"
     m["checks"] = [c for c in m["checks"] if c["id"] != "cap_vs_armhole"]
-    ws.set_active("model", ws.save_document("model", m))
+    use_model(ws, m)
     g1, g2 = ws.generate(r1), ws.generate(r2)
     assert ws.approval_blockers(g1["id"]) == []
     ws.approve(g1["id"], "test")
@@ -122,7 +122,7 @@ def test_new_model_version_does_not_change_old_generation(ws):
     m = json.loads(json.dumps(ws.document(ws.active("model")[0])))
     m["version"] = "0.2.0"
     m["variables"]["ease_q"]["formula"] = "30"
-    ws.set_active("model", ws.save_document("model", m))
+    use_model(ws, m)
     assert ws.regenerate_and_compare(g["id"])[0]                    # old result reproduces with its own version
     g2 = ws.generate(rid)
     assert g2["fingerprint"] != g["fingerprint"]

@@ -310,7 +310,7 @@ class ModelPage(Page):
         self.notice.setWordWrap(True)
         lay.addWidget(self.notice)
         self.opts = QTableWidget(0, 3)
-        self.opts.setHorizontalHeaderLabels([tr("Group"), tr("Value"), tr("Order")])
+        self.opts.setHorizontalHeaderLabels([tr("Group"), tr("Value"), tr("Order line")])
         lay.addWidget(self.opts)
         self.inputs = table(["Code", "Label", "Range", "Value (mm)"])
         lay.addWidget(self.inputs)
@@ -349,9 +349,12 @@ class ModelPage(Page):
             cb.currentIndexChanged.connect(lambda _i, g=g, cb=cb: self.set_option(g, cb.currentData()))
             self.opts.setCellWidget(i, 1, cb)
             self.opts.setItem(i, 2, QTableWidgetItem(str(sel.get(g, "—"))))
-        mm = {k: v["value_mm"] for k, v in rev["normalized"]["measurements"].items()} if rev else {}
-        from ..erp.xvars import compute_x
-        xv = compute_x(self.ws.active("xvars")[1], mm)[0] if rev else {}
+        xv = {}
+        if rev:
+            try:
+                xv = self.ws.resolve_order(rev["id"])[2].inputs
+            except WorkflowError as e:
+                self.notice.setText(self.notice.text() + f"<br><b>{e}</b>")
         fill(self.inputs, [[i["name"], label(i.get("label")), i.get("range"), xv.get(i["name"], "—")]
                            for i in m.get("inputs", [])])
 
@@ -435,6 +438,7 @@ class PreviewPage(Page):
             self.banner.setText(tr("No calculation yet"))
             return
         res = self.ws.pattern(g["id"])
+        res.pieces = [p for p in res.pieces if p.preview]       # preview flag is separate from production
         data = self.cmp.currentData()
         compare = None
         if data:
@@ -574,7 +578,7 @@ class LibraryPage(Page):
         super().__init__(win)
         lay = QVBoxLayout(self)
         self.kind = QComboBox()
-        for k in ("model", "mapping", "xvars", "finishing"):
+        for k in ("catalog", "model", "mapping", "finishing", "xvars"):
             self.kind.addItem(k, k)
         self.kind.currentIndexChanged.connect(self.refresh)
         lay.addWidget(self.kind)
@@ -610,6 +614,27 @@ class LibraryPage(Page):
             self.refresh()
 
 
+RULE_COLS = ["ID", "Source type", "Source", "Piece", "Construction", "Variable", "Value / formula", "Order",
+             "Factories", "Sizes", "Enabled", "Status", "Note"]
+MEAS_COLS = ["Code", "Name (ar)", "Name (en)", "Unit", "Kind", "Method", "Order", "Visible", "Editable", "Status"]
+PIECE_COLS = ["Piece", "Name", "Material", "Copies", "Mirrored", "Rotations", "Mirror allowed", "Preview",
+              "Production"]
+OPT_COLS = ["Group", "Value", "Pieces", "Variables (JSON)", "Properties (JSON)"]
+
+
+def _put(t: QTableWidget, rows):
+    t.setRowCount(len(rows))
+    for i, row in enumerate(rows):
+        for j, v in enumerate(row):
+            t.setItem(i, j, QTableWidgetItem("" if v is None else str(v)))
+    t.resizeColumnsToContents()
+
+
+def _rows(t: QTableWidget):
+    for i in range(t.rowCount()):
+        yield [(t.item(i, j).text().strip() if t.item(i, j) else "") for j in range(t.columnCount())]
+
+
 class RulesPage(Page):
     title = "Rules editor"
     developer_only = True
@@ -619,26 +644,46 @@ class RulesPage(Page):
         lay = QVBoxLayout(self)
         tabs = QTabWidget()
         lay.addWidget(tabs)
-        # X variables (requested by the owner: X number + name as in the MDL)
+        # unified rule editor (catalog): measurement / option -> piece / construction / variable
         wx = QWidget()
         lx = QVBoxLayout(wx)
+        top = QHBoxLayout()
+        self.style_cb = QComboBox()
+        self.style_cb.currentIndexChanged.connect(self.show_style)
+        top.addWidget(QLabel(tr("Style")))
+        top.addWidget(self.style_cb, 1)
+        lx.addLayout(top)
         self.xinfo = QLabel()
         self.xinfo.setWordWrap(True)
         lx.addWidget(self.xinfo)
-        self.xt = QTableWidget(0, 5)
-        self.xt.setHorizontalHeaderLabels(["X", tr("Source measurements"), tr("Formula"), tr("Status"), tr("Evidence")])
-        self.xt.horizontalHeader().setStretchLastSection(True)
-        lx.addWidget(self.xt)
+        sub = QTabWidget()
+        self.rt = QTableWidget(0, len(RULE_COLS))
+        self.rt.setHorizontalHeaderLabels([tr(c) for c in RULE_COLS])
+        self.mt = QTableWidget(0, len(MEAS_COLS))
+        self.mt.setHorizontalHeaderLabels([tr(c) for c in MEAS_COLS])
+        self.pt = QTableWidget(0, len(PIECE_COLS))
+        self.pt.setHorizontalHeaderLabels([tr(c) for c in PIECE_COLS])
+        self.ot = QTableWidget(0, len(OPT_COLS))
+        self.ot.setHorizontalHeaderLabels([tr(c) for c in OPT_COLS])
+        for t, name in ((self.rt, "Rules"), (self.mt, "Measurement definitions"), (self.pt, "Production pieces"),
+                        (self.ot, "Design option rules")):
+            t.horizontalHeader().setStretchLastSection(True)
+            sub.addTab(t, tr(name))
+        self.sub = sub
+        lx.addWidget(sub, 3)
         bx = QHBoxLayout()
-        for text, fn in (("Add row", lambda: self.xt.insertRow(self.xt.rowCount())),
-                         ("Remove row", lambda: self.xt.removeRow(self.xt.currentRow())),
-                         ("Save as new version", self.save_x)):
+        for text, fn in (("Add row", self.add_row), ("Remove row", self.remove_row), ("Test with order", self.test_rules),
+                         ("Save as new version", self.save_catalog)):
             b = QPushButton(tr(text))
             b.clicked.connect(fn)
             bx.addWidget(b)
         bx.addStretch()
         lx.addLayout(bx)
-        tabs.addTab(wx, tr("X variables"))
+        self.trace = QPlainTextEdit()
+        self.trace.setReadOnly(True)
+        self.trace.setMaximumHeight(170)
+        lx.addWidget(self.trace, 1)
+        tabs.addTab(wx, tr("Rules"))
         # model JSON
         wm = QWidget()
         lm = QVBoxLayout(wm)
@@ -674,33 +719,139 @@ class RulesPage(Page):
         self.mdl = None
 
     def refresh(self):
-        _, xv = self.ws.active("xvars")
-        self.xinfo.setText(f"{xv['table_id']} {xv['version']} — {label(xv.get('description'))}")
-        self.xt.setRowCount(len(xv["entries"]))
-        for i, e in enumerate(xv["entries"]):
-            for j, v in enumerate((e["x"], ", ".join(e.get("source", [])), e.get("formula") or "", e.get("status", ""),
-                                   e.get("evidence", ""))):
-                self.xt.setItem(i, j, QTableWidgetItem(v))
+        self.cat_pk, cat = self.ws.active("catalog")
+        self.cat = json.loads(json.dumps(cat))
+        self.style_cb.blockSignals(True)
+        self.style_cb.clear()
+        for pid, prod in self.cat["products"].items():
+            for sid, st in prod["styles"].items():
+                self.style_cb.addItem(f"{label(prod['name'])} / {label(st['name'])}", (pid, sid))
+        self.style_cb.blockSignals(False)
+        self.show_style()
         _, m = self.ws.active("model")
         self.edit.setPlainText(json.dumps(m, ensure_ascii=False, indent=1))
 
-    def save_x(self):
-        _, xv = self.ws.active("xvars")
-        xv = json.loads(json.dumps(xv))
-        ver, ok = QInputDialog.getText(self, tr("Version"), tr("Version"), text=xv["version"] + ".1")
+    def _style(self):
+        pid, sid = self.style_cb.currentData()
+        return self.cat["products"][pid]["styles"][sid]
+
+    def show_style(self):
+        if self.style_cb.currentData() is None:
+            return
+        st = self._style()
+        bp = st["base_pattern"]
+        self.xinfo.setText(f"{self.cat['catalog_id']} {self.cat['version']} ({self.cat.get('status')}) — "
+                           f"{tr('Base pattern')}: {bp['model_id']} {bp['version']} (piece {bp.get('base_piece')}) — "
+                           f"{bp.get('note', '')}")
+        _put(self.rt, [[r["id"], r["source"]["type"], r["source"].get("code") or
+                        f"{r['source'].get('group')}={r['source'].get('value')}", r["target"]["piece"],
+                        r["target"].get("construction", ""), r["target"]["variable"], r["value"], r.get("order", 0),
+                        ",".join(r.get("factories", ["*"])), ",".join(r.get("sizes", ["*"])),
+                        "1" if r.get("enabled", True) else "0", r.get("status", "proposed"), r.get("note", "")]
+                       for r in sorted(st["rules"], key=lambda r: (r.get("order", 0), r["id"]))])
+        _put(self.mt, [[c, m["name"].get("ar", ""), m["name"].get("en", ""), m["unit"], m["kind"],
+                        label(m.get("method")), m["order"], "1" if m.get("visible", True) else "0",
+                        "1" if m.get("editable", True) else "0", m.get("status", "")]
+                       for c, m in sorted(self.cat["measurements"].items(), key=lambda kv: kv[1]["order"])])
+        _put(self.pt, [[pid, label(p["name"]), p["material"], p["copies"], p["mirrored"],
+                        ",".join(str(int(r)) for r in p.get("rotations", [0, 180])),
+                        "1" if p.get("mirror_allowed") else "0", "1" if p.get("preview", True) else "0",
+                        "1" if p.get("production", True) else "0"] for pid, p in st["pieces"].items()])
+        _put(self.ot, [[o["group"], o["value"], ",".join(o.get("pieces", [])),
+                        json.dumps(o.get("variables", []), ensure_ascii=False),
+                        json.dumps(o.get("properties", {}), ensure_ascii=False)] for o in st["option_rules"]])
+
+    def _cur(self):
+        return self.sub.currentWidget()
+
+    def add_row(self):
+        t = self._cur()
+        t.insertRow(t.rowCount())
+
+    def remove_row(self):
+        t = self._cur()
+        if t.currentRow() >= 0:
+            t.removeRow(t.currentRow())
+
+    def _collect(self) -> dict:
+        cat = json.loads(json.dumps(self.cat))
+        pid, sid = self.style_cb.currentData()
+        st = cat["products"][pid]["styles"][sid]
+        rules = []
+        for row in _rows(self.rt):
+            if not row[0]:
+                continue
+            src = ({"type": "measurement", "code": row[2]} if row[1] != "option" else
+                   {"type": "option", "group": row[2].split("=")[0], "value": row[2].split("=")[-1]})
+            rules.append({"id": row[0], "source": src, "target": {"piece": row[3], "construction": row[4],
+                          "variable": row[5]}, "value": row[6] or "{M}", "order": float(row[7] or 0),
+                          "factories": [x for x in row[8].split(",") if x] or ["*"],
+                          "sizes": [x for x in row[9].split(",") if x] or ["*"], "enabled": row[10] != "0",
+                          "status": row[11] or "proposed", "note": row[12]})
+        st["rules"] = rules
+        meas = {}
+        for row in _rows(self.mt):
+            if not row[0]:
+                continue
+            old = cat["measurements"].get(row[0], {})
+            meas[row[0]] = {**old, "name": {"ar": row[1], "en": row[2]}, "unit": row[3] or "mm", "kind": row[4] or "other",
+                            "method": {**old.get("method", {}), "en": row[5]}, "order": float(row[6] or 0),
+                            "visible": row[7] != "0", "editable": row[8] != "0", "status": row[9] or "proposed"}
+        cat["measurements"] = meas
+        pieces = {}
+        for row in _rows(self.pt):
+            if not row[0]:
+                continue
+            old = st["pieces"].get(row[0], {})
+            pieces[row[0]] = {**old, "name": {**old.get("name", {}), "en": row[1]}, "material": row[2] or "O",
+                              "copies": int(float(row[3] or 1)), "mirrored": int(float(row[4] or 0)),
+                              "rotations": [float(x) for x in row[5].split(",") if x] or [0.0, 180.0],
+                              "mirror_allowed": row[6] == "1", "preview": row[7] != "0", "production": row[8] != "0"}
+        st["pieces"] = pieces
+        orules = []
+        for row in _rows(self.ot):
+            if not row[0]:
+                continue
+            orules.append({"group": row[0], "value": row[1], "pieces": [x for x in row[2].split(",") if x],
+                           "variables": json.loads(row[3] or "[]"), "properties": json.loads(row[4] or "{}")})
+        st["option_rules"] = orules
+        return cat
+
+    def test_rules(self):
+        from ..services.catalog import load_catalog, resolve
+        rid = self.win.current_rid
+        try:
+            cat = load_catalog(self._collect())
+        except Exception as e:  # noqa: BLE001
+            self.trace.setPlainText(f"{tr('Error')}: {e}")
+            return
+        if rid is None:
+            self.trace.setPlainText("OK (structure). " + tr("No order selected"))
+            return
+        rev = self.ws.revision(rid)
+        pid, sid = self.style_cb.currentData()
+        mm = {k: v["value_mm"] for k, v in rev["normalized"]["measurements"].items()}
+        res = resolve(cat, pid, sid, mm, rev["normalized"]["options"], self.ws.db.get_setting("factory", "main"),
+                      rev["raw_line"].get("basic_size"))
+        lines = [f"{t.rule_id:8} {t.source:14} → {t.target:34} {t.expression:14} = "
+                 f"{'' if t.value is None else f'{t.value:.1f}'} [{t.status}] {t.message}" for t in res.trace]
+        lines += ["", tr("Production pieces") + ": " + ", ".join(res.piece_plan)]
+        lines += [f"[{i.severity}] {i.message}" for i in res.issues]
+        self.trace.setPlainText("\n".join(lines))
+
+    def save_catalog(self):
+        try:
+            cat = self._collect()
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(self, tr("Error"), str(e))
+            return
+        ver, ok = QInputDialog.getText(self, tr("Version"), tr("Version"), text=str(cat["version"]) + ".1")
         if not ok:
             return
-        entries = []
-        for i in range(self.xt.rowCount()):
-            cell = lambda j: (self.xt.item(i, j).text().strip() if self.xt.item(i, j) else "")   # noqa: E731
-            if not cell(0):
-                continue
-            entries.append({"x": cell(0).upper(), "source": [s.strip() for s in cell(1).split(",") if s.strip()],
-                            "formula": cell(2) or None, "status": cell(3) or "proposed", "evidence": cell(4)})
-        xv["entries"], xv["version"] = entries, ver
-        pk = self.win.guard(lambda: self.ws.save_document("xvars", xv, "edited in X table"))
+        cat["version"] = ver
+        pk = self.win.guard(lambda: self.ws.save_document("catalog", cat, "edited in rule editor"))
         if pk:
-            self.ws.set_active("xvars", pk)
+            self.ws.set_active("catalog", pk)
             self.refresh()
 
     def _model(self):
@@ -717,11 +868,9 @@ class RulesPage(Page):
         if rid is None:
             self.out.setPlainText("OK (structure). " + tr("No order selected"))
             return
-        from ..erp.xvars import compute_x
         rev = self.ws.revision(rid)
-        mm = {k: v["value_mm"] for k, v in rev["normalized"]["measurements"].items()}
-        xv, _ = compute_x(self.ws.active("xvars")[1], mm)
-        r = evaluate_model(m, {**{k: v for k, v in mm.items() if v is not None}, **xv}, rev["normalized"]["options"])
+        xv = self.ws.resolve_order(rid)[2].inputs
+        r = evaluate_model(m, xv, rev["normalized"]["options"])
         self.out.setPlainText("\n".join([f"pieces: {[p.id for p in r.pieces]}"] +
                                         [f"[{i.severity}] {i.message}" for i in r.issues]))
 
@@ -762,12 +911,9 @@ class RulesPage(Page):
     def eval_mdl(self):
         if not self.mdl or self.win.current_rid is None:
             return
-        from ..erp.xvars import compute_x
         from ..formula.graph import solve
         from ..grafis.formulas import canonical_formula
-        rev = self.ws.revision(self.win.current_rid)
-        mm = {k: v["value_mm"] for k, v in rev["normalized"]["measurements"].items()}
-        xv, _ = compute_x(self.ws.active("xvars")[1], mm)
+        xv = {k: v for k, v in self.ws.resolve_order(self.win.current_rid)[2].inputs.items() if not k.startswith("P")}
         out = {}
         for part, pf in self.mdl.items():
             formulas = {r.name: canonical_formula(r.formula) for r in pf.records if not r.measured and not r.parse_error}

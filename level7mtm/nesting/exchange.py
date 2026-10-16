@@ -104,13 +104,13 @@ def build_exchange(lines: list[ExchangeLine], name: str, test_only: bool = False
             raise ExchangeError(f"{ln.size_key}: model status '{ln.model_status}' is not approved for production")
         if ln.quantity < 1:
             raise ExchangeError(f"{ln.size_key}: quantity {ln.quantity}")
-    materials = {p.material for ln in lines for p in ln.result.pieces}
+    materials = {p.material for ln in lines for p in ln.result.pieces if p.production}
     if len(materials) > 1:
         raise ExchangeError(f"one marker per material; got {sorted(materials)}")
     pieces: dict[str, dict] = {}
     contract_pieces = []
     for ln in lines:
-        for p in ln.result.pieces:
+        for p in (q for q in ln.result.pieces if q.production):
             uid = f"{ln.model_id}:{p.id}"
             ent = pieces.setdefault(uid, {
                 "uid": uid, "source_id": uid, "number": None, "name": p.name.get("en", p.id), "material": p.material,

@@ -16,6 +16,7 @@ RES = os.path.join(ROOT, "level7mtm", "resources")
 MODEL = os.path.join(RES, "models", "thobe_engine_test_v0_1.json")
 PROFILE = os.path.join(RES, "mappings", "level7_erp_ordermaster_v1.json")
 XVARS = os.path.join(RES, "xvars", "alshiaka_2027_v0_1.json")
+CATALOG = os.path.join(RES, "catalogs", "level7_catalog_v1.json")
 
 # order 9-53-1_2 converted to X values (mm) — from the real ERP sample
 X_9_53 = dict(X1=1570, X3=495, X4=70, X5=70, X6=235, X7=420, X9=690, X12=640, X13=700, X14=830, X31=675, X37=160)
@@ -61,11 +62,16 @@ def approved_setup(ws):
     p["version"] = "1.0.0+test-approved"
     p["status"] = "approved"
     ws.set_active("mapping", ws.save_document("mapping", p))
-    x = json.load(open(XVARS, encoding="utf-8"))
-    x["version"] = "0.1.0+test-confirmed"
-    for e in x["entries"]:
-        e["status"] = "confirmed"
-    ws.set_active("xvars", ws.save_document("xvars", x))
+    c = json.load(open(CATALOG, encoding="utf-8"))
+    c["version"] = "1.0.0+test-approved"
+    c["status"] = "approved"
+    st = c["products"]["saudi-thobe"]["styles"]["alshiaka-2027"]
+    st["base_pattern"]["version"] = m["version"]
+    for r in st["rules"]:
+        r["status"] = "confirmed"
+    for orule in st["option_rules"]:          # test only: pieces the engine-test pattern cannot draw
+        orule["pieces"] = [p for p in orule["pieces"] if p in ("sleeve", "collar")]
+    ws.set_active("catalog", ws.save_document("catalog", c))
     _, fin = ws.active("finishing")
     fin = json.loads(json.dumps(fin))
     fin["version"] = "1+test"
@@ -73,3 +79,14 @@ def approved_setup(ws):
     ws.set_active("finishing", ws.save_document("finishing", fin))
     m2 = json.load(open(MODEL, encoding="utf-8"))
     return m2
+
+
+def use_model(ws, model: dict, tag: str = "") -> int:
+    """Save a model version and a catalog version whose style uses it (the catalog selects the base pattern)."""
+    pk = ws.save_document("model", model)
+    ws.set_active("model", pk)
+    c = json.loads(json.dumps(ws.active("catalog")[1]))
+    c["version"] = f"{c['version']}+{tag or model['version']}"
+    c["products"]["saudi-thobe"]["styles"]["alshiaka-2027"]["base_pattern"]["version"] = model["version"]
+    ws.set_active("catalog", ws.save_document("catalog", c))
+    return pk

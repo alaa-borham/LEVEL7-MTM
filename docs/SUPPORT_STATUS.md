@@ -7,7 +7,10 @@
 | Versioned ERP mapping profile for the real OrderMaster format; unknown codes/fields → needs review | done, tested on 2 real files (profile status: draft) |
 | Order identity, revisions (`_n`), duplicate files, conflicting same-revision data, late older revisions | done, tested |
 | Manual measurement / option edits (recorded, invalidate calculations), manual cancel | done, tested |
-| X-value table (X number, source codes, formula, status, evidence), editable, versioned | done, tested |
+| Product catalog: products → styles → base pattern version + measurement table + options; measurement definitions independent of values | done, tested |
+| Unified rule editor: measurement/option → piece / construction / variable, value or formula ({M}), order, factory and size scope, several rules per measurement | done, tested (replaces the earlier X table) |
+| Option rules: pieces, variables, properties; piece list rebuilt per calculation; preview vs production separated; copies / mirrored / material / nesting constraints per piece | done, tested |
+| Controlled experiment "same order, only FL changed" incl. nesting re-check | done, see docs/reports/FL_EXPERIMENT.md |
 | GRAFIS MDL formula reader (335 Z records, descriptions, history, AB/GL detection) + report | done, tested on the supplied MDL |
 | Restricted formula language incl. GRAFIS CMDIF, dependency graph, cycles, undefined names | done, tested |
 | Parametric geometry: points, lines, curves, intersections, projection, path length/split, mirror | done, tested |

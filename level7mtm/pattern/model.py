@@ -51,6 +51,8 @@ class PieceResult:
     edge_lengths: dict[str, float]
     allow_rotation: list[float] = field(default_factory=lambda: [0.0, 180.0])
     allow_mirror_substitute: bool = False
+    preview: bool = True          # shown in the preview
+    production: bool = True       # sent to nesting / production exports (set by the piece plan)
 
 
 @dataclass

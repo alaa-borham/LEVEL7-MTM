@@ -1,0 +1,1101 @@
+{
+ "format": "level7mtm-catalog",
+ "format_version": 1,
+ "catalog_id": "level7",
+ "version": "1.0.0",
+ "status": "draft",
+ "description": {
+  "ar": "مكتبة المنتجات والستايلات وتعريفات القياسات وقواعد الربط. قواعد الربط تربط القياس أو خيار التصميم بمتغير البترون فقط؛ المعادلات الهندسية التي تحول المتغيرات إلى أشكال موجودة في ملف البترون الأساسي.",
+  "en": "Products, styles, measurement definitions and mapping rules. Rules only feed pattern variables; the geometry that turns variables into shapes lives in the base pattern file."
+ },
+ "factories": {
+  "main": {
+   "name": {
+    "ar": "المصنع الرئيسي",
+    "en": "Main factory"
+   }
+  }
+ },
+ "measurements": {
+  "FL": {
+   "name": {
+    "ar": "طول الثوب",
+    "en": "Front length"
+   },
+   "unit": "mm",
+   "kind": "length",
+   "method": {
+    "ar": "",
+    "en": "Finished garment length (start/end point to be documented by the owner)"
+   },
+   "order": 10,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    1000,
+    2000
+   ],
+   "status": "unit_confirmed"
+  },
+  "SH": {
+   "name": {
+    "ar": "الكتف",
+    "en": "Shoulder"
+   },
+   "unit": "mm",
+   "kind": "flat_width",
+   "method": {
+    "ar": "",
+    "en": "Shoulder width"
+   },
+   "order": 20,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    300,
+    700
+   ],
+   "status": "unit_confirmed"
+  },
+  "SLS": {
+   "name": {
+    "ar": "طول الكم السادة",
+    "en": "Sleeve length (plain)"
+   },
+   "unit": "mm",
+   "kind": "length",
+   "method": {
+    "ar": "",
+    "en": "Plain sleeve length"
+   },
+   "order": 30,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    400,
+    950
+   ],
+   "status": "unit_confirmed"
+  },
+  "CH": {
+   "name": {
+    "ar": "الصدر",
+    "en": "Chest"
+   },
+   "unit": "mm",
+   "kind": "half_girth",
+   "method": {
+    "ar": "",
+    "en": "Half circumference (confirmed by owner)"
+   },
+   "order": 40,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    400,
+    1000
+   ],
+   "status": "confirmed"
+  },
+  "WA": {
+   "name": {
+    "ar": "الوسط",
+    "en": "Waist"
+   },
+   "unit": "mm",
+   "kind": "half_girth",
+   "method": {
+    "ar": "",
+    "en": "Half circumference (confirmed by owner)"
+   },
+   "order": 50,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    350,
+    1000
+   ],
+   "status": "confirmed"
+  },
+  "HP": {
+   "name": {
+    "ar": "الأرداف",
+    "en": "Hip"
+   },
+   "unit": "mm",
+   "kind": "half_girth",
+   "method": {
+    "ar": "",
+    "en": "Half circumference (confirmed by owner)"
+   },
+   "order": 60,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    400,
+    1100
+   ],
+   "status": "confirmed"
+  },
+  "BO": {
+   "name": {
+    "ar": "الأسفل",
+    "en": "Bottom"
+   },
+   "unit": "mm",
+   "kind": "half_girth",
+   "method": {
+    "ar": "",
+    "en": "Half circumference at the hem (confirmed by owner)"
+   },
+   "order": 70,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    500,
+    1300
+   ],
+   "status": "confirmed"
+  },
+  "WB": {
+   "name": {
+    "ar": "عرض كفة الثوب",
+    "en": "Hem band width"
+   },
+   "unit": "mm",
+   "kind": "length",
+   "method": {
+    "ar": "",
+    "en": "Width of the hem band at the bottom of the thobe (owner)"
+   },
+   "order": 80,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    0,
+    200
+   ],
+   "status": "confirmed"
+  },
+  "AH": {
+   "name": {
+    "ar": "الإبط",
+    "en": "Arm hole"
+   },
+   "unit": "mm",
+   "kind": "other",
+   "method": {
+    "ar": "",
+    "en": "Meaning (girth / half girth / depth) to be confirmed"
+   },
+   "order": 90,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    150,
+    450
+   ],
+   "status": "proposed"
+  },
+  "EB": {
+   "name": {
+    "ar": "الكوع",
+    "en": "Elbow"
+   },
+   "unit": "mm",
+   "kind": "other",
+   "method": {
+    "ar": "",
+    "en": "Meaning to be confirmed"
+   },
+   "order": 100,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    120,
+    350
+   ],
+   "status": "proposed"
+  },
+  "WRS": {
+   "name": {
+    "ar": "المعصم (سادة)",
+    "en": "Wrist (plain sleeve)"
+   },
+   "unit": "mm",
+   "kind": "other",
+   "method": {
+    "ar": "",
+    "en": "Meaning to be confirmed"
+   },
+   "order": 110,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    100,
+    300
+   ],
+   "status": "proposed"
+  },
+  "SWS": {
+   "name": {
+    "ar": "عرض الكم السادة",
+    "en": "Plain sleeve width"
+   },
+   "unit": "mm",
+   "kind": "length",
+   "method": {
+    "ar": "",
+    "en": "Plain sleeve width (owner); reference point to be documented"
+   },
+   "order": 120,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    0,
+    300
+   ],
+   "status": "confirmed"
+  },
+  "COS": {
+   "name": {
+    "ar": "رقبة (مربعة)",
+    "en": "Collar (square)"
+   },
+   "unit": "mm",
+   "kind": "girth",
+   "method": {
+    "ar": "",
+    "en": "Neck size used with 'Collar Square' (owner)"
+   },
+   "order": 130,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    300,
+    550
+   ],
+   "status": "confirmed"
+  },
+  "COG": {
+   "name": {
+    "ar": "رقبة (قلاب)",
+    "en": "Collar (gallab)"
+   },
+   "unit": "mm",
+   "kind": "girth",
+   "method": {
+    "ar": "",
+    "en": "Neck size used with 'gallab Classic' (owner)"
+   },
+   "order": 140,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    300,
+    550
+   ],
+   "status": "confirmed"
+  },
+  "JL": {
+   "name": {
+    "ar": "طول الجبزور",
+    "en": "Jabzour length"
+   },
+   "unit": "mm",
+   "kind": "length",
+   "method": {
+    "ar": "",
+    "en": "Placket length"
+   },
+   "order": 150,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    200,
+    700
+   ],
+   "status": "proposed"
+  },
+  "TKL": {
+   "name": {
+    "ar": "طول التخاليص",
+    "en": "Takhlees length"
+   },
+   "unit": "mm",
+   "kind": "length",
+   "method": {
+    "ar": "",
+    "en": "Gusset (takhlees) length"
+   },
+   "order": 160,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    50,
+    400
+   ],
+   "status": "proposed"
+  },
+  "TKWD": {
+   "name": {
+    "ar": "عرض التخاليص أسفل",
+    "en": "Takhlees width down"
+   },
+   "unit": "mm",
+   "kind": "length",
+   "method": {
+    "ar": "",
+    "en": "Gusset width at the bottom"
+   },
+   "order": 170,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    30,
+    250
+   ],
+   "status": "proposed"
+  },
+  "DSR": {
+   "name": {
+    "ar": "نزول الكتف يمين",
+    "en": "Shoulder drop right"
+   },
+   "unit": "mm",
+   "kind": "length",
+   "method": {
+    "ar": "",
+    "en": "Right shoulder drop; may differ from left (owner)"
+   },
+   "order": 180,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    20,
+    150
+   ],
+   "status": "confirmed"
+  },
+  "DSL": {
+   "name": {
+    "ar": "نزول الكتف يسار",
+    "en": "Shoulder drop left"
+   },
+   "unit": "mm",
+   "kind": "length",
+   "method": {
+    "ar": "",
+    "en": "Left shoulder drop; may differ from right (owner)"
+   },
+   "order": 190,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    20,
+    150
+   ],
+   "status": "confirmed"
+  },
+  "NH": {
+   "name": {
+    "ar": "ارتفاع الرقبة",
+    "en": "Neck height"
+   },
+   "unit": "mm",
+   "kind": "length",
+   "method": {
+    "ar": "لم يُعرَّف بعد",
+    "en": "not defined yet — not sent by the ERP samples"
+   },
+   "order": 300,
+   "visible": true,
+   "editable": true,
+   "range_mm": [
+    20,
+    80
+   ],
+   "status": "proposed",
+   "note": "Handled like every other measurement: one or more rules to an X variable (no separate engine)."
+  }
+ },
+ "products": {
+  "saudi-thobe": {
+   "name": {
+    "ar": "ثوب سعودي",
+    "en": "Saudi thobe"
+   },
+   "erp_items": [
+    "91001"
+   ],
+   "erp_measurement_tables": [
+    "Saudi Thobe_TableMeasurement"
+   ],
+   "default_style": "alshiaka-2027",
+   "styles": {
+    "alshiaka-2027": {
+     "name": {
+      "ar": "الشياكة 2027",
+      "en": "Alshiaka 2027"
+     },
+     "base_pattern": {
+      "model_id": "thobe-engine-test",
+      "version": "0.1.0",
+      "base_piece": "002",
+      "geometry_status": "engine_test",
+      "note": "The geometric relations of the GRAFIS pattern '1-S- alshiaka-2027.mdl' are NOT transferred yet. The base pattern is the engine-test construction."
+     },
+     "measurement_table": [
+      "FL",
+      "SH",
+      "SLS",
+      "CH",
+      "WA",
+      "HP",
+      "BO",
+      "WB",
+      "AH",
+      "EB",
+      "WRS",
+      "SWS",
+      "COS",
+      "COG",
+      "JL",
+      "TKL",
+      "TKWD",
+      "DSR",
+      "DSL"
+     ],
+     "option_groups": {
+      "body_shape": [
+       "slim2",
+       "athlete1"
+      ],
+      "collar": [
+       "square",
+       "classic"
+      ],
+      "sleeve": [
+       "saada",
+       "kabak"
+      ],
+      "jabzour": [
+       "splender"
+      ],
+      "pocket_chest": [
+       "cut",
+       "none"
+      ],
+      "pocket_side": [
+       "hidden",
+       "none"
+      ]
+     },
+     "base_pieces": [
+      "front",
+      "back"
+     ],
+     "pieces": {
+      "front": {
+       "name": {
+        "ar": "أمام",
+        "en": "Front"
+       },
+       "material": "O",
+       "copies": 1,
+       "mirrored": 0,
+       "rotations": [
+        0,
+        180
+       ],
+       "mirror_allowed": false,
+       "preview": true,
+       "production": true
+      },
+      "back": {
+       "name": {
+        "ar": "خلف",
+        "en": "Back"
+       },
+       "material": "O",
+       "copies": 1,
+       "mirrored": 0,
+       "rotations": [
+        0,
+        180
+       ],
+       "mirror_allowed": false,
+       "preview": true,
+       "production": true
+      },
+      "sleeve": {
+       "name": {
+        "ar": "كم سادة",
+        "en": "Plain sleeve"
+       },
+       "material": "O",
+       "copies": 1,
+       "mirrored": 1,
+       "rotations": [
+        0,
+        180
+       ],
+       "mirror_allowed": true,
+       "preview": true,
+       "production": true
+      },
+      "collar": {
+       "name": {
+        "ar": "رقبة",
+        "en": "Collar band"
+       },
+       "material": "O",
+       "copies": 2,
+       "mirrored": 0,
+       "rotations": [
+        0,
+        180
+       ],
+       "mirror_allowed": false,
+       "preview": true,
+       "production": true
+      },
+      "jabzour_splender": {
+       "name": {
+        "ar": "جبزور سبلندر",
+        "en": "Jabzour splender"
+       },
+       "material": "O",
+       "copies": 1,
+       "mirrored": 0,
+       "rotations": [
+        0,
+        180
+       ],
+       "mirror_allowed": false,
+       "preview": true,
+       "production": true
+      },
+      "pocket_side_hidden": {
+       "name": {
+        "ar": "جيب جانبي مخفي",
+        "en": "Hidden side pocket"
+       },
+       "material": "O",
+       "copies": 1,
+       "mirrored": 1,
+       "rotations": [
+        0,
+        180
+       ],
+       "mirror_allowed": true,
+       "preview": true,
+       "production": true
+      },
+      "pocket_chest_cut": {
+       "name": {
+        "ar": "جيب صدر مقصوص",
+        "en": "Chest pocket cut"
+       },
+       "material": "O",
+       "copies": 1,
+       "mirrored": 0,
+       "rotations": [
+        0,
+        180
+       ],
+       "mirror_allowed": false,
+       "preview": true,
+       "production": true
+      }
+     },
+     "rules": [
+      {
+       "id": "R001",
+       "source": {
+        "type": "measurement",
+        "code": "FL"
+       },
+       "target": {
+        "piece": "002",
+        "construction": "Basic-Construction 0",
+        "variable": "X1"
+       },
+       "value": "{M}",
+       "order": 10,
+       "factories": [
+        "*"
+       ],
+       "sizes": [
+        "*"
+       ],
+       "enabled": true,
+       "status": "confirmed",
+       "note": "Owner example: FL → 002 → Basic-Construction 0 → X1, value {M}"
+      },
+      {
+       "id": "R002",
+       "source": {
+        "type": "measurement",
+        "code": "SH"
+       },
+       "target": {
+        "piece": "002",
+        "construction": "Basic-Construction 0",
+        "variable": "X3"
+       },
+       "value": "{M}",
+       "order": 20,
+       "factories": [
+        "*"
+       ],
+       "sizes": [
+        "*"
+       ],
+       "enabled": true,
+       "status": "proposed",
+       "note": ""
+      },
+      {
+       "id": "R003",
+       "source": {
+        "type": "measurement",
+        "code": "DSR"
+       },
+       "target": {
+        "piece": "002",
+        "construction": "Basic-Construction 0",
+        "variable": "X4"
+       },
+       "value": "{M}",
+       "order": 30,
+       "factories": [
+        "*"
+       ],
+       "sizes": [
+        "*"
+       ],
+       "enabled": true,
+       "status": "proposed",
+       "note": ""
+      },
+      {
+       "id": "R004",
+       "source": {
+        "type": "measurement",
+        "code": "DSL"
+       },
+       "target": {
+        "piece": "002",
+        "construction": "Basic-Construction 0",
+        "variable": "X5"
+       },
+       "value": "{M}",
+       "order": 40,
+       "factories": [
+        "*"
+       ],
+       "sizes": [
+        "*"
+       ],
+       "enabled": true,
+       "status": "proposed",
+       "note": ""
+      },
+      {
+       "id": "R005",
+       "source": {
+        "type": "measurement",
+        "code": "AH"
+       },
+       "target": {
+        "piece": "002",
+        "construction": "Basic-Construction 0",
+        "variable": "X6"
+       },
+       "value": "{M}",
+       "order": 50,
+       "factories": [
+        "*"
+       ],
+       "sizes": [
+        "*"
+       ],
+       "enabled": true,
+       "status": "proposed",
+       "note": ""
+      },
+      {
+       "id": "R006",
+       "source": {
+        "type": "measurement",
+        "code": "COS"
+       },
+       "target": {
+        "piece": "002",
+        "construction": "Basic-Construction 0",
+        "variable": "X7"
+       },
+       "value": "{M}",
+       "order": 60,
+       "factories": [
+        "*"
+       ],
+       "sizes": [
+        "*"
+       ],
+       "enabled": true,
+       "status": "proposed",
+       "note": "Collar Square neck size"
+      },
+      {
+       "id": "R007",
+       "source": {
+        "type": "measurement",
+        "code": "COG"
+       },
+       "target": {
+        "piece": "002",
+        "construction": "Basic-Construction 0",
+        "variable": "X7"
+       },
+       "value": "{M}",
+       "order": 70,
+       "factories": [
+        "*"
+       ],
+       "sizes": [
+        "*"
+       ],
+       "enabled": true,
+       "status": "proposed",
+       "note": "Gallab neck size; second rule on the same target"
+      },
+      {
+       "id": "R008",
+       "source": {
+        "type": "measurement",
+        "code": "CH"
+       },
+       "target": {
+        "piece": "002",
+        "construction": "Basic-Construction 0",
+        "variable": "X9"
+       },
+       "value": "{M}",
+       "order": 80,
+       "factories": [
+        "*"
+       ],
+       "sizes": [
+        "*"
+       ],
+       "enabled": true,
+       "status": "proposed",
+       "note": ""
+      },
+      {
+       "id": "R009",
+       "source": {
+        "type": "measurement",
+        "code": "WA"
+       },
+       "target": {
+        "piece": "002",
+        "construction": "Basic-Construction 0",
+        "variable": "X12"
+       },
+       "value": "{M}",
+       "order": 90,
+       "factories": [
+        "*"
+       ],
+       "sizes": [
+        "*"
+       ],
+       "enabled": true,
+       "status": "proposed",
+       "note": ""
+      },
+      {
+       "id": "R010",
+       "source": {
+        "type": "measurement",
+        "code": "HP"
+       },
+       "target": {
+        "piece": "002",
+        "construction": "Basic-Construction 0",
+        "variable": "X13"
+       },
+       "value": "{M}",
+       "order": 100,
+       "factories": [
+        "*"
+       ],
+       "sizes": [
+        "*"
+       ],
+       "enabled": true,
+       "status": "proposed",
+       "note": ""
+      },
+      {
+       "id": "R011",
+       "source": {
+        "type": "measurement",
+        "code": "BO"
+       },
+       "target": {
+        "piece": "002",
+        "construction": "Basic-Construction 0",
+        "variable": "X14"
+       },
+       "value": "{M}",
+       "order": 110,
+       "factories": [
+        "*"
+       ],
+       "sizes": [
+        "*"
+       ],
+       "enabled": true,
+       "status": "proposed",
+       "note": ""
+      },
+      {
+       "id": "R012",
+       "source": {
+        "type": "measurement",
+        "code": "WB"
+       },
+       "target": {
+        "piece": "002",
+        "construction": "Basic-Construction 0",
+        "variable": "X15"
+       },
+       "value": "{M}",
+       "order": 120,
+       "factories": [
+        "*"
+       ],
+       "sizes": [
+        "*"
+       ],
+       "enabled": true,
+       "status": "proposed",
+       "note": ""
+      },
+      {
+       "id": "R013",
+       "source": {
+        "type": "measurement",
+        "code": "JL"
+       },
+       "target": {
+        "piece": "002",
+        "construction": "Basic-Construction 0",
+        "variable": "X23"
+       },
+       "value": "{M}",
+       "order": 130,
+       "factories": [
+        "*"
+       ],
+       "sizes": [
+        "*"
+       ],
+       "enabled": true,
+       "status": "proposed",
+       "note": ""
+      },
+      {
+       "id": "R014",
+       "source": {
+        "type": "measurement",
+        "code": "SLS"
+       },
+       "target": {
+        "piece": "002",
+        "construction": "Basic-Construction 0",
+        "variable": "X31"
+       },
+       "value": "{M}",
+       "order": 140,
+       "factories": [
+        "*"
+       ],
+       "sizes": [
+        "*"
+       ],
+       "enabled": true,
+       "status": "proposed",
+       "note": ""
+      },
+      {
+       "id": "R015",
+       "source": {
+        "type": "measurement",
+        "code": "WRS"
+       },
+       "target": {
+        "piece": "002",
+        "construction": "Basic-Construction 0",
+        "variable": "X37"
+       },
+       "value": "{M}",
+       "order": 150,
+       "factories": [
+        "*"
+       ],
+       "sizes": [
+        "*"
+       ],
+       "enabled": true,
+       "status": "proposed",
+       "note": ""
+      }
+     ],
+     "option_rules": [
+      {
+       "group": "sleeve",
+       "value": "saada",
+       "label": {
+        "ar": "كم سادة",
+        "en": "Plain sleeve"
+       },
+       "pieces": [
+        "sleeve"
+       ],
+       "variables": [],
+       "properties": {}
+      },
+      {
+       "group": "sleeve",
+       "value": "kabak",
+       "label": {
+        "ar": "كم كبك",
+        "en": "Cuff sleeve"
+       },
+       "pieces": [
+        "sleeve_kabak",
+        "cuff"
+       ],
+       "variables": [],
+       "properties": {}
+      },
+      {
+       "group": "collar",
+       "value": "square",
+       "label": {
+        "ar": "رقبة مربعة",
+        "en": "Collar square"
+       },
+       "pieces": [
+        "collar"
+       ],
+       "variables": [],
+       "properties": {}
+      },
+      {
+       "group": "collar",
+       "value": "classic",
+       "label": {
+        "ar": "قلاب كلاسيك",
+        "en": "Gallab classic"
+       },
+       "pieces": [
+        "collar"
+       ],
+       "variables": [],
+       "properties": {}
+      },
+      {
+       "group": "jabzour",
+       "value": "splender",
+       "label": {
+        "ar": "جبزور سبلندر",
+        "en": "Splender"
+       },
+       "pieces": [
+        "jabzour_splender"
+       ],
+       "variables": [],
+       "properties": {}
+      },
+      {
+       "group": "pocket_side",
+       "value": "hidden",
+       "label": {
+        "ar": "جيب جانبي مخفي",
+        "en": "Hidden"
+       },
+       "pieces": [
+        "pocket_side_hidden"
+       ],
+       "variables": [],
+       "properties": {}
+      },
+      {
+       "group": "pocket_side",
+       "value": "none",
+       "label": {
+        "ar": "بدون",
+        "en": "None"
+       },
+       "pieces": [],
+       "variables": [],
+       "properties": {}
+      },
+      {
+       "group": "pocket_chest",
+       "value": "cut",
+       "label": {
+        "ar": "جيب صدر مقصوص",
+        "en": "Cut"
+       },
+       "pieces": [
+        "pocket_chest_cut"
+       ],
+       "variables": [],
+       "properties": {}
+      },
+      {
+       "group": "pocket_chest",
+       "value": "none",
+       "label": {
+        "ar": "بدون",
+        "en": "None"
+       },
+       "pieces": [],
+       "variables": [],
+       "properties": {}
+      },
+      {
+       "group": "body_shape",
+       "value": "slim2",
+       "label": {
+        "ar": "Slim2",
+        "en": "Slim2"
+       },
+       "pieces": [],
+       "variables": [],
+       "properties": {}
+      },
+      {
+       "group": "body_shape",
+       "value": "athlete1",
+       "label": {
+        "ar": "Athlete1",
+        "en": "Athlete1"
+       },
+       "pieces": [],
+       "variables": [],
+       "properties": {}
+      }
+     ]
+    }
+   }
+  }
+ }
+}

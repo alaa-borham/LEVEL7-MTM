@@ -12,6 +12,9 @@ operator review and approve it, and hands approved pieces to **LEVEL7 Nesting**.
 
 | Document | Content |
 |---|---|
+| [docs/STATUS_REPORT.md](docs/STATUS_REPORT.md) | Status of the single-order path: what works, what is missing |
+| [docs/CATALOG_AND_RULES.md](docs/CATALOG_AND_RULES.md) | Products, styles, measurement definitions, unified mapping rules, piece plan |
+| [docs/reports/FL_EXPERIMENT.md](docs/reports/FL_EXPERIMENT.md) | Same real order twice, only FL changed: geometry, seams, quantities, nesting |
 | [docs/FACTS_AND_ASSUMPTIONS.md](docs/FACTS_AND_ASSUMPTIONS.md) | Phase-1 report: XML, GRAFIS files, nesting system, facts vs assumptions, open questions |
 | [docs/OWNER_RULES_REQUEST.md](docs/OWNER_RULES_REQUEST.md) | The exact rules / confirmations needed from the pattern owner |
 | [docs/دليل_التثبيت_والتشغيل.md](docs/دليل_التثبيت_والتشغيل.md) | Arabic installation and operation guide |
@@ -31,7 +34,8 @@ level7mtm/pattern      geometry, parametric model evaluation, seam allowance, sh
 level7mtm/nesting      LEVEL7 Nesting exchange (.l7n) + contract
 level7mtm/export       DXF (1:1, mm), PDF review sheet, SVG preview
 level7mtm/storage      SQLite, migrations, backup/restore
-level7mtm/services     workflow (import → revision → generation → approval → nesting), folder watcher
+level7mtm/services     catalog + unified rules, workflow (import → revision → generation → approval → nesting),
+                       folder watcher, controlled experiments
 level7mtm/ui           PySide6 GUI (Arabic/English, RTL)
 level7mtm/resources    mapping profile, X table, model files, finishing settings, icon
 packaging/             PyInstaller spec, Inno Setup script, build script
