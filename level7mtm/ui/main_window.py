@@ -854,8 +854,8 @@ class XValuesPage(Page):
         from ..services.xtable import x_parts
         mdl = self._mdl()
         _, cat = self.ws.active("catalog")
-        self.info.setText(tr("Type next to each X the XML code(s) that fill it, e.g. FL or COS,COG. Empty = GRAFIS "
-                             "keeps its own value. A new XML code is added automatically.") + "\n" +
+        self.info.setText(tr("Type next to each X the XML code(s) that fill it, e.g. FL or COS,COG. An X without "
+                             "an XML code is inactive. A new XML code is added automatically.") + "\n" +
                           f"{tr('GRAFIS model (MDL)')}: {mdl or '⚠ ' + tr('not set')} — "
                           f"{tr('Rules')}: {cat['catalog_id']} {cat['version']}")
         self.codes.setText(tr("XML codes") + ": " + ", ".join(sorted(cat["measurements"])))
@@ -893,8 +893,13 @@ class XValuesPage(Page):
                 self.t.setItem(i, j, it)
             ck = QTableWidgetItem()
             ck.setFlags((ck.flags() | Qt.ItemIsUserCheckable) & ~Qt.ItemIsEditable)
-            if r["codes"]:                    # an X without an XML code has nothing to confirm: no box
+            if r["codes"]:                    # an X without an XML code is inactive: nothing to confirm
                 ck.setCheckState(Qt.Checked if r["confirmed"] else Qt.Unchecked)
+            else:
+                ck.setText(tr("inactive"))
+                for j in range(5):
+                    self.t.item(i, j).setForeground(QColor("#888888"))
+                ck.setForeground(QColor("#888888"))
             self.t.setItem(i, 5, ck)
             if r["codes"]:
                 for j in range(6):

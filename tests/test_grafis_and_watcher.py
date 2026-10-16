@@ -125,6 +125,7 @@ def test_x_sheet_for_grafis(ws, tmp_path):
     rows = {r["x"]: r for r in d["rows"]}
     assert rows["X1"]["order_value_mm"] == 1570 and rows["X1"]["rule_status"] == "confirmed"
     assert rows["X3"]["x_name"] == "shoulder--B" and rows["X3"]["grafis_size_range_mm"] == "370–450"
-    assert any("X8 front width 1: not supplied" in w for w in d["warnings"])     # never silently defaulted
+    assert "X8 front width 1" in d["inactive"]                   # no XML code: inactive (owner decision #21)
+    assert not any("X8" in w for w in d["warnings"])
     assert not any("outside" in w for w in d["warnings"])       # base-file values are placeholders (owner)
     assert d["grafis_size_name"] == "9-53-1_2" and os.path.exists(d["files"][0])

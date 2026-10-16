@@ -70,7 +70,7 @@ def test_order_import_writes_grafis_models(ws, tmp_path):
     x = read_xvalues(g["path"], 2)
     xml = {"X1": 1570, "X3": 495, "X7": 420, "X9": 690, "X12": 640, "X13": 700, "X14": 830, "X23": 450, "X31": 675}
     assert {k: x[int(k[1:])].default for k in xml} == xml
-    assert x[8].default == 360 and any(k.startswith("002/X8 front width 1") for k in g["kept_default"])
+    assert x[8].default == 360 and "002/X8 front width 1" in g["inactive"]
     assert check_all(read(g["path"]))[0] == check_all(read(g["path"]))[1]
     assert order_mdl(ws, g["revision_id"])["status"] == "duplicate"
     row = ws.db.one("SELECT * FROM grafis_orders WHERE status='written' ORDER BY id LIMIT 1")

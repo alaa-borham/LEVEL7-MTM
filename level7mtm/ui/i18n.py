@@ -202,8 +202,9 @@ AR = {
     "Save": "حفظ",
     "Saved": "تم الحفظ",
     "New XML codes": "رموز XML جديدة",
-    "Type next to each X the XML code(s) that fill it, e.g. FL or COS,COG. Empty = GRAFIS keeps its own value. A new XML code is added automatically.":
-        "اكتب بجانب كل X رمز XML الذي يملؤه، مثل FL أو COS,COG. الخانة الفارغة = يبقى GRAFIS على قيمته. الرمز الجديد يُضاف تلقائيًا.",
+    "Type next to each X the XML code(s) that fill it, e.g. FL or COS,COG. An X without an XML code is inactive. A new XML code is added automatically.":
+        "اكتب بجانب كل X رمز XML الذي يملؤه، مثل FL أو COS,COG. أي X بدون رمز XML غير نشط. الرمز الجديد يُضاف تلقائيًا.",
+    "inactive": "غير نشط",
     "Updates": "التحديثات",
     "Check for updates…": "البحث عن تحديثات…",
     "Check for updates automatically": "البحث عن التحديثات تلقائيًا",

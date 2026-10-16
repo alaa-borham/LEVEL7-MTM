@@ -47,17 +47,18 @@ def x_sheet(ws, rid: int, mdl_path: str | None = None, part: int = 2, out_dir: s
         # no range warning: the values stored in the base GRAFIS file are placeholders (owner, decision #15);
         # the XML values are finished measurements and go into X as they are (rule value {M})
         rows.append(row)
+    inactive: list[str] = []
     supplied = {int(r["x"][1:]) for r in rows if r["piece"] == f"{part:03d}" and r["x"][1:].isdigit()
                 and not r["superseded"]}
     for num, g in sorted(table.items()):
         if num not in supplied:
-            warnings.append(f"X{num} {g.name or ''}: not supplied by the order — GRAFIS would use its default "
-                            f"{g.default:g} mm")
+            inactive.append(f"X{num} {g.name or ''}".strip())   # no XML code: inactive (owner decision #21)
     unconfirmed = [r["rule"] for r in rows if r["rule_status"] != "confirmed"]
     doc = {"order_line": rev["line_number"], "grafis_size_name": rev["line_number"], "product": res.product,
            "style": res.style, "part": f"{part:03d}", "mdl": os.path.basename(mdl_path) if mdl_path else None,
            "options": rev["normalized"]["options"], "quantity": rev["quantity"],
            "fabric_width_mm": rev["normalized"].get("fabric_width_mm"), "rows": rows, "warnings": warnings,
+           "inactive": inactive,
            "unconfirmed_rules": unconfirmed, "pieces_required": list(res.piece_plan),
            "issues": [i.message for i in res.issues if i.severity in ("blocking", "review")]}
     out_dir = out_dir or os.path.join(ws.folder, "grafis")

@@ -13,7 +13,7 @@ unclear — the line is held with the reason:
 * the X number is not in the model's X table, or its name in the MDL differs from the rule's ``x_name``
   (another model version than the rules were written for);
 * a configured GRAFIS part is not in the model or has another name there.
-X values the order does not supply keep the model's own value and are listed in the report.
+An X with no XML code is inactive (owner decision #21): it is not written, and listed as inactive in the report.
 """
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def mdl_name(ws, rev) -> str:
 
 
 def plan_values(ws, rid: int, template: str) -> dict:
-    """{values: {(part, X): mm}, rows, kept_default, problems} — nothing written."""
+    """{values: {(part, X): mm}, rows, inactive, problems} — nothing written."""
     rev = ws.revision(rid)
     _, cat, res = ws.resolve_order(rid)
     style = cat["products"][res.product]["styles"][res.style]
@@ -88,8 +88,8 @@ def plan_values(ws, rid: int, template: str) -> dict:
             problems.append(f"{t.rule_id} ({t.source} → {var}) is not confirmed")
         else:
             values[(part, num)] = t.value
-    kept = [f"{p:03d}/X{n} {g.name}".strip() + f" = {g.default:g}" for p, tab in sorted(tables.items())
-            for n, g in sorted(tab.items()) if (p, n) not in values]
+    inactive = [f"{p:03d}/X{n} {g.name}".strip() for p, tab in sorted(tables.items())       # no XML code: not used
+                for n, g in sorted(tab.items()) if (p, n) not in values]
     # production parts chosen by the design options
     parts, part_rows, parts_note = None, [], ""
     gp = grafis_parts_for(style, rev["normalized"]["options"])
@@ -114,7 +114,7 @@ def plan_values(ws, rid: int, template: str) -> dict:
                               "option": row.get("option") or "*"})
         if not parts:
             problems.append("no GRAFIS part selected for this order")
-    return {"values": values, "rows": rows, "kept_default": kept, "problems": problems, "parts": parts,
+    return {"values": values, "rows": rows, "inactive": inactive, "problems": problems, "parts": parts,
             "part_rows": part_rows, "parts_note": parts_note}
 
 
@@ -125,7 +125,7 @@ def order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = N
     out_dir = out_dir or st["out"]
     rev = ws.revision(rid)
     res = {"revision_id": rid, "line_number": rev["line_number"], "status": "blocked", "path": None,
-           "problems": [], "rows": [], "kept_default": [], "part_rows": [], "parts_note": ""}
+           "problems": [], "rows": [], "inactive": [], "part_rows": [], "parts_note": ""}
     if rev["status"] in ("superseded", "cancelled"):
         res.update(status="skipped", problems=[f"order line is {rev['status']}"])
         return res
@@ -146,7 +146,7 @@ def order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = N
     except Exception as e:                         # catalog / template unreadable: hold the line, say why
         res["problems"] = [f"{type(e).__name__}: {e}"]
         return _save(ws, res, tsha)
-    res.update(rows=plan["rows"], kept_default=plan["kept_default"], problems=plan["problems"],
+    res.update(rows=plan["rows"], inactive=plan["inactive"], problems=plan["problems"],
                part_rows=plan["part_rows"], parts_note=plan["parts_note"])
     if plan["problems"]:
         return _save(ws, res, tsha)
