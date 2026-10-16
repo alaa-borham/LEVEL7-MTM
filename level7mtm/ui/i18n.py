@@ -196,6 +196,18 @@ AR = {
     "Variables (JSON)": "المتغيرات (JSON)",
     "Properties (JSON)": "الخصائص (JSON)",
     "Name": "الاسم",
+    "GRAFIS model (MDL)…": "موديل GRAFIS (MDL)…",
+    "GRAFIS model (MDL)": "موديل GRAFIS (MDL)",
+    "GRAFIS input folder…": "مجلد مدخلات GRAFIS…",
+    "GRAFIS input folder": "مجلد مدخلات GRAFIS",
+    "Write GRAFIS model for order…": "كتابة موديل GRAFIS لطلب…",
+    "Automatic: write the order's X values into a GRAFIS model (MDL) on import":
+        "تلقائي: كتابة قيم X للطلب في موديل GRAFIS (MDL) عند الاستيراد",
+    "X values": "قيم X",
+    "not set": "غير محدد",
+    "written": "كُتب",
+    "blocked": "محجوز",
+    "skipped": "متجاوز",
     "Restart LEVEL7 MTM to use the restored database.": "أعد تشغيل البرنامج لاستخدام قاعدة البيانات المستعادة.",
 }
 

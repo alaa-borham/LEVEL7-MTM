@@ -94,3 +94,42 @@ def parse_container(data: bytes, path: str = "<memory>") -> Container:
 def read_container(path: str) -> Container:
     with open(path, "rb") as fh:
         return parse_container(fh.read(), path)
+
+
+CHECK_MOD = 1024000000
+
+
+def grafis_check(data: bytes) -> int:
+    """GRAFIS check value of a block (or of the 80-byte file header), computed with its own check field set to 0.
+
+    Algorithm established by LEVEL7 Nesting (docs/GRAFIS_FORMAT.md "Check values"): the bytes read as signed
+    16-bit little-endian words, word k (1-based) weighted by k, kept in a signed 32-bit integer from which
+    1,024,000,000 is subtracted whenever the running total reaches it. GRAFIS verifies it on opening — a stale value
+    makes GRAFIS report the file as corrupt.
+    """
+    if len(data) % 2:
+        data += b"\0"
+    words = struct.unpack(f"<{len(data) // 2}h", data)
+    acc = 0
+    for k, x in enumerate(words, 1):
+        acc = _s32(acc + _s32(k * x))
+        if acc >= CHECK_MOD:
+            acc -= CHECK_MOD
+    return acc & 0xFFFFFFFF
+
+
+def _s32(v: int) -> int:
+    return ((v + 0x80000000) & 0xFFFFFFFF) - 0x80000000
+
+
+def block_bytes(data: bytes, b: Block) -> bytes:
+    """The whole block (header + payload) as stored in the file."""
+    return data[b.offset:b.offset + 32 + len(b.payload)]
+
+
+def stored_check(data: bytes, b: Block) -> int:
+    return struct.unpack_from("<I", data, b.offset)[0]
+
+
+def computed_check(data: bytes, b: Block) -> int:
+    return grafis_check(b"\0\0\0\0" + block_bytes(data, b)[4:])

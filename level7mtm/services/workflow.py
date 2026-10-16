@@ -45,6 +45,7 @@ class FileOutcome:
     status: str                        # imported / duplicate / failed
     message: str = ""
     lines: list[dict] = field(default_factory=list)   # {line_number, revision_id, action, status}
+    grafis: list[dict] = field(default_factory=list)  # order MDLs written for GRAFIS (services.grafis_orders)
 
 
 def _doc_id_key(kind: str, body: dict) -> str:
@@ -75,8 +76,12 @@ class Workspace:
             if not self.db.one("SELECT id FROM documents WHERE kind=? AND doc_id=? AND version=?",
                                (kind, key, str(body["version"]))):
                 self.save_document(kind, body, note="built-in", actor="system")
-            if self.db.get_setting(f"active.{kind}") is None:
-                row = self.db.one("SELECT id FROM documents WHERE kind=? AND doc_id=? ORDER BY id DESC", (kind, key))
+            row = self.db.one("SELECT id FROM documents WHERE kind=? AND doc_id=? AND version=?",
+                              (kind, key, str(body["version"])))
+            act = self.db.get_setting(f"active.{kind}")
+            cur = self.db.one("SELECT doc_id, created_by FROM documents WHERE id=?", (act,)) if act else None
+            # a newer built-in replaces the active built-in of the same document; a user's own version stays active
+            if cur is None or (cur["created_by"] == "system" and cur["doc_id"] == key and act != row["id"]):
                 self.db.set_setting(f"active.{kind}", row["id"])
 
     def save_document(self, kind: str, body: dict, note: str = "", actor: str | None = None) -> int:

@@ -167,6 +167,18 @@ MIGRATIONS: list[str] = [
         log TEXT NOT NULL
     )
     """,
+    # 6 — order MDLs written for GRAFIS (X values of the order filled in automatically)
+    """
+    CREATE TABLE grafis_orders (
+        id INTEGER PRIMARY KEY,
+        revision_id INTEGER NOT NULL REFERENCES revisions(id),
+        created_at TEXT NOT NULL,
+        status TEXT NOT NULL,
+        path TEXT,
+        template_sha256 TEXT,
+        info TEXT NOT NULL
+    )
+    """,
 ]
 
 

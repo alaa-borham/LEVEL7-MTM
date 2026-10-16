@@ -602,6 +602,20 @@ class GrafisPage(Page):
         self.info.setWordWrap(True)
         lay.addWidget(self.info)
         bar = QHBoxLayout()
+        bar0 = QHBoxLayout()
+        for text, fn in (("GRAFIS model (MDL)…", self.choose_mdl), ("GRAFIS input folder…", self.choose_input),
+                         ("Write GRAFIS model for order…", self.write_mdl)):
+            b = QPushButton(tr(text))
+            b.clicked.connect(fn)
+            bar0.addWidget(b)
+        bar0.addStretch()
+        lay.addLayout(bar0)
+        self.auto_mdl = QCheckBox(tr("Automatic: write the order's X values into a GRAFIS model (MDL) on import"))
+        self.auto_mdl.setChecked(bool(self.ws.db.get_setting("grafis.auto_mdl", True)))
+        self.auto_mdl.toggled.connect(lambda on: (self.ws.db.set_setting("grafis.auto_mdl", on), self.refresh()))
+        lay.addWidget(self.auto_mdl)
+        self.models = table(["Time", "Order line", "Status", "File", "X values", "Findings"])
+        lay.addWidget(self.models, 1)
         for text, fn in (("Register GRAFIS marker (SCB)…", self.register), ("Watch GRAFIS output folder", self.toggle),
                          ("Accept review findings…", self.accept), ("Nesting folder…", self.choose_nesting),
                          ("LEVEL7 Nesting program…", self.choose_cli), ("Cutting files folder…", self.choose_out)):
@@ -629,12 +643,29 @@ class GrafisPage(Page):
 
     def refresh(self):
         from ..services.auto_cut import NestingNotConfigured, nesting_command, settings
+        from ..services.grafis_orders import settings as gsettings
+        gs = gsettings(self.ws)
+        mrows = self.ws.db.q("SELECT g.*, r.line_number FROM grafis_orders g JOIN revisions r ON r.id=g.revision_id "
+                             "ORDER BY g.id DESC LIMIT 500")
+        mo, mc = [], []
+        for r in mrows:
+            info = json.loads(r["info"])
+            mo.append([r["created_at"], r["line_number"], tr(r["status"]), os.path.basename(r["path"] or ""),
+                       ", ".join(f"{x['x']}={x['value_mm']:g}" for x in info.get("rows", [])),
+                       " | ".join(info.get("problems", []))])
+            mc.append({"written": STATUS_COLORS["approved"], "blocked": STATUS_COLORS["blocking"],
+                       "not_configured": STATUS_COLORS["blocking"]}.get(r["status"]))
+        fill(self.models, mo, mc, [r["revision_id"] for r in mrows])
         st = settings(self.ws)
         try:
             cli = " ".join(nesting_command(self.ws)[0][-1:])
         except NestingNotConfigured:
             cli = "⚠ " + tr("not found")
-        self.info.setText(f"{tr('GRAFIS output folder')}: {self.ws.db.get_setting('grafis.watch.folder') or '—'}"
+        mdl = gs["template"]
+        self.info.setText(f"{tr('GRAFIS model (MDL)')}: {mdl or '⚠ ' + tr('not set')}"
+                          f"{'' if not mdl or os.path.isfile(mdl) else ' ⚠ ' + tr('not found')} — "
+                          f"{tr('GRAFIS input folder')}: {gs['out']}\n"
+                          f"{tr('GRAFIS output folder')}: {self.ws.db.get_setting('grafis.watch.folder') or '—'}"
                           f" ({tr('watching') if self.watcher else tr('not watching')}) — "
                           f"{tr('Nesting folder')}: {self._nesting_dir()}\n"
                           f"LEVEL7 Nesting: {cli} — {tr('Cutting files folder')}: {st['out']} — "
@@ -667,6 +698,33 @@ class GrafisPage(Page):
                                                 "GRAFIS marker (*.scb *.SCB)")
         if paths:
             self.win.run(lambda: [self._register(p) for p in paths], lambda _r: self.refresh())
+
+    def choose_mdl(self):
+        p, _ = QFileDialog.getOpenFileName(self, tr("GRAFIS model (MDL)…"), self.ws.db.get_setting("grafis.mdl") or "",
+                                           "GRAFIS (*.mdl *.MDL)")
+        if p:
+            self.ws.db.set_setting("grafis.mdl", p)
+            self.refresh()
+
+    def choose_input(self):
+        from ..services.grafis_orders import settings as gsettings
+        d = QFileDialog.getExistingDirectory(self, tr("GRAFIS input folder…"), gsettings(self.ws)["out"])
+        if d:
+            self.ws.db.set_setting("grafis.input", d)
+            self.refresh()
+
+    def write_mdl(self):
+        """Write (again) the GRAFIS model of order lines — e.g. after their review problems were resolved."""
+        from ..services.grafis_orders import order_mdl
+        revs = [r for r in self.ws.list_revisions() if r["status"] not in ("superseded", "cancelled")]
+        if not revs:
+            return
+        line, ok = QInputDialog.getItem(self, tr("Write GRAFIS model for order…"), tr("Order line"),
+                                        [r["line_number"] for r in revs], 0, False)
+        if ok:
+            rid = next(r["id"] for r in revs if r["line_number"] == line)
+            self.win.run(lambda: order_mdl(self.ws, rid), lambda g: (self.refresh(), self.win.status(
+                f"{line}: {tr(g['status'])} {g['path'] or ''} {'; '.join(g['problems'])}"[:300])))
 
     def choose_cli(self):
         p, _ = QFileDialog.getOpenFileName(self, tr("LEVEL7 Nesting program…"), r"C:\Program Files\LEVEL7 Nesting",
@@ -1313,12 +1371,16 @@ class MainWindow(QMainWindow):
         page = self.pages["Orders"]
 
         def work():
-            return [self.ws.import_file(p) for p in paths]
+            from ..services.grafis_orders import import_and_prepare
+            return [import_and_prepare(self.ws, p) for p in paths]
 
         def done(outs):
             for o in outs:
                 page.add_log(f"{o.file_name}: {tr(o.status)} {o.message} " +
                              ", ".join(f"{x['line_number']}→{x['action']}" for x in o.lines))
+                for g in o.grafis:
+                    page.add_log(f"  GRAFIS {g['line_number']}: {tr(g['status'])} "
+                                 f"{os.path.basename(g['path'] or '')} {'; '.join(g['problems'])}")
             page.refresh()
         self.run(work, done)
 
@@ -1351,7 +1413,8 @@ class MainWindow(QMainWindow):
         self.pages["Orders"].refresh()
 
     def start_watch(self, folder):
-        self.watcher = FolderWatcher(self.ws, folder, settle_seconds=3)
+        from ..services.grafis_orders import import_and_prepare
+        self.watcher = FolderWatcher(self.ws, folder, settle_seconds=3, handler=lambda p: import_and_prepare(self.ws, p))
         self.ws.db.set_setting("watch.folder", folder)
         self.ws.db.set_setting("watch.enabled", True)
         self.timer.start(2000)
@@ -1365,6 +1428,9 @@ class MainWindow(QMainWindow):
             page = self.pages["Orders"]
             for o in outs:
                 page.add_log(f"[watch] {o.file_name}: {tr(o.status)} {o.message}")
+                for g in o.grafis:
+                    page.add_log(f"  GRAFIS {g['line_number']}: {tr(g['status'])} "
+                                 f"{os.path.basename(g['path'] or '')} {'; '.join(g['problems'])}")
             page.refresh()
 
     def retry_failed(self):

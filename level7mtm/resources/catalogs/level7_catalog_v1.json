@@ -2,7 +2,7 @@
  "format": "level7mtm-catalog",
  "format_version": 1,
  "catalog_id": "level7",
- "version": "1.1.0",
+ "version": "1.2.0",
  "status": "draft",
  "description": {
   "ar": "مكتبة المنتجات والستايلات وتعريفات القياسات وقواعد الربط. قواعد الربط تربط القياس أو خيار التصميم بمتغير البترون فقط؛ المعادلات الهندسية التي تحول المتغيرات إلى أشكال موجودة في ملف البترون الأساسي.",
@@ -668,7 +668,7 @@
         "piece": "002",
         "construction": "Basic-Construction 0",
         "variable": "X4",
-        "x_name": "down FRONT Rr Rr"
+        "x_name": "down FRONT R"
        },
        "value": "{M}",
        "order": 30,
@@ -680,7 +680,7 @@
        ],
        "enabled": true,
        "status": "confirmed",
-       "note": "GRAFIS X table part 002: X4 'down FRONT Rr Rr' (read from MDL, matches owner screenshot) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13)"
+       "note": "GRAFIS X table part 002: X4 'down FRONT R' (read from MDL; the earlier reader stopped after X12) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13, questions/xml-to-mdl-mapping-draft.png)"
       },
       {
        "id": "R004",
@@ -692,7 +692,7 @@
         "piece": "002",
         "construction": "Basic-Construction 0",
         "variable": "X5",
-        "x_name": "down FRONT Lr ba"
+        "x_name": "down FRONT L"
        },
        "value": "{M}",
        "order": 40,
@@ -704,7 +704,7 @@
        ],
        "enabled": true,
        "status": "confirmed",
-       "note": "GRAFIS X table part 002: X5 'down FRONT Lr ba' (read from MDL, matches owner screenshot) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13)"
+       "note": "GRAFIS X table part 002: X5 'down FRONT L' (read from MDL; the earlier reader stopped after X12) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13, questions/xml-to-mdl-mapping-draft.png)"
       },
       {
        "id": "R005",
@@ -835,7 +835,8 @@
        "target": {
         "piece": "002",
         "construction": "Basic-Construction 0",
-        "variable": "X13"
+        "variable": "X13",
+        "x_name": "hip"
        },
        "value": "{M}",
        "order": 100,
@@ -846,8 +847,8 @@
         "*"
        ],
        "enabled": true,
-       "status": "proposed",
-       "note": "X13 is not in the X table of part 002 (12 entries) — to confirm"
+       "status": "confirmed",
+       "note": "GRAFIS X table part 002: X13 'hip' (read from MDL; the earlier reader stopped after X12) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13, questions/xml-to-mdl-mapping-draft.png)"
       },
       {
        "id": "R011",
@@ -858,7 +859,8 @@
        "target": {
         "piece": "002",
         "construction": "Basic-Construction 0",
-        "variable": "X14"
+        "variable": "X14",
+        "x_name": "buttom girth--F1"
        },
        "value": "{M}",
        "order": 110,
@@ -869,8 +871,8 @@
         "*"
        ],
        "enabled": true,
-       "status": "proposed",
-       "note": "X14 is not in the X table of part 002 (12 entries) — to confirm"
+       "status": "confirmed",
+       "note": "GRAFIS X table part 002: X14 'buttom girth--F1' (read from MDL; the earlier reader stopped after X12) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13, questions/xml-to-mdl-mapping-draft.png)"
       },
       {
        "id": "R012",
@@ -881,7 +883,8 @@
        "target": {
         "piece": "002",
         "construction": "Basic-Construction 0",
-        "variable": "X15"
+        "variable": "X15",
+        "x_name": "bottom width--F2"
        },
        "value": "{M}",
        "order": 120,
@@ -892,8 +895,8 @@
         "*"
        ],
        "enabled": true,
-       "status": "proposed",
-       "note": "X15 is not in the X table of part 002 (12 entries) — to confirm"
+       "status": "confirmed",
+       "note": "GRAFIS X table part 002: X15 'bottom width--F2' (read from MDL; the earlier reader stopped after X12) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13, questions/xml-to-mdl-mapping-draft.png)"
       },
       {
        "id": "R013",
@@ -904,7 +907,8 @@
        "target": {
         "piece": "002",
         "construction": "Basic-Construction 0",
-        "variable": "X23"
+        "variable": "X23",
+        "x_name": "jabzour--G1"
        },
        "value": "{M}",
        "order": 130,
@@ -915,8 +919,8 @@
         "*"
        ],
        "enabled": true,
-       "status": "proposed",
-       "note": "X23 is not in the X table of part 002 (12 entries) — to confirm"
+       "status": "confirmed",
+       "note": "GRAFIS X table part 002: X23 'jabzour--G1' (read from MDL; the earlier reader stopped after X12) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13, questions/xml-to-mdl-mapping-draft.png)"
       },
       {
        "id": "R014",
@@ -927,7 +931,8 @@
        "target": {
         "piece": "002",
         "construction": "Basic-Construction 0",
-        "variable": "X31"
+        "variable": "X31",
+        "x_name": "sleeve length sadaa--CC1"
        },
        "value": "{M}",
        "order": 140,
@@ -938,8 +943,8 @@
         "*"
        ],
        "enabled": true,
-       "status": "proposed",
-       "note": "X31 is not in the X table of part 002 (12 entries) — to confirm"
+       "status": "confirmed",
+       "note": "GRAFIS X table part 002: X31 'sleeve length sadaa--CC1' (read from MDL; the earlier reader stopped after X12) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13, questions/xml-to-mdl-mapping-draft.png)"
       },
       {
        "id": "R015",
@@ -950,7 +955,8 @@
        "target": {
         "piece": "002",
         "construction": "Basic-Construction 0",
-        "variable": "X37"
+        "variable": "X37",
+        "x_name": "sadaa round--CC4"
        },
        "value": "{M}",
        "order": 150,
@@ -961,8 +967,80 @@
         "*"
        ],
        "enabled": true,
-       "status": "proposed",
-       "note": "X37 is not in the X table of part 002 (12 entries) — to confirm"
+       "status": "confirmed",
+       "note": "GRAFIS X table part 002: X37 'sadaa round--CC4' (read from MDL; the earlier reader stopped after X12) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13, questions/xml-to-mdl-mapping-draft.png)"
+      },
+      {
+       "id": "R016",
+       "source": {
+        "type": "measurement",
+        "code": "SWS"
+       },
+       "target": {
+        "piece": "002",
+        "construction": "Basic-Construction 0",
+        "variable": "X38",
+        "x_name": "sadaa width--CC5"
+       },
+       "value": "{M}",
+       "order": 150,
+       "factories": [
+        "*"
+       ],
+       "sizes": [
+        "*"
+       ],
+       "enabled": true,
+       "status": "confirmed",
+       "note": "GRAFIS X table part 002: X38 'sadaa width--CC5' (read from MDL; the earlier reader stopped after X12) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13, questions/xml-to-mdl-mapping-draft.png)"
+      },
+      {
+       "id": "R017",
+       "source": {
+        "type": "measurement",
+        "code": "TKL"
+       },
+       "target": {
+        "piece": "002",
+        "construction": "Basic-Construction 0",
+        "variable": "X28",
+        "x_name": "TK LENGTH--I"
+       },
+       "value": "{M}",
+       "order": 150,
+       "factories": [
+        "*"
+       ],
+       "sizes": [
+        "*"
+       ],
+       "enabled": true,
+       "status": "confirmed",
+       "note": "GRAFIS X table part 002: X28 'TK LENGTH--I' (read from MDL; the earlier reader stopped after X12) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13, questions/xml-to-mdl-mapping-draft.png)"
+      },
+      {
+       "id": "R018",
+       "source": {
+        "type": "measurement",
+        "code": "TKWD"
+       },
+       "target": {
+        "piece": "002",
+        "construction": "Basic-Construction 0",
+        "variable": "X30",
+        "x_name": "TK DOWN"
+       },
+       "value": "{M}",
+       "order": 150,
+       "factories": [
+        "*"
+       ],
+       "sizes": [
+        "*"
+       ],
+       "enabled": true,
+       "status": "confirmed",
+       "note": "GRAFIS X table part 002: X30 'TK DOWN' (read from MDL; the earlier reader stopped after X12) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13, questions/xml-to-mdl-mapping-draft.png)"
       }
      ],
      "option_rules": [

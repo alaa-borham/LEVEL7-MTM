@@ -6,8 +6,8 @@ the XML holds the finished measurements, the base file only default values). The
 after the order line (e.g. ``9-53-1_2``) so the GRAFIS result stays traceable.
 
 Output: ``<workspace>/grafis/<line>_X.csv`` (UTF-8 with BOM, opens in Excel) and ``<line>_X.json``.
-The exact file format of GRAFIS' X-value import is not known yet; until it is, the sheet is for entry in the
-GRAFIS X-value window. Nothing is written into the MDL.
+The sheet is for reading / checking only: the values themselves are written automatically into a copy of the
+GRAFIS model per order line (services.grafis_orders), so nobody types them into the X-value window.
 """
 from __future__ import annotations
 

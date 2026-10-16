@@ -108,8 +108,11 @@ def check_scb(ws, path: str, renest: bool | None = None) -> ScbCheck:
     by_file = ws.db.q("SELECT r.id FROM revisions r JOIN import_files f ON f.id=r.import_file "
                       "WHERE lower(f.file_name) IN (?, ?)", (f"{stem}.xml".lower(), f"{stem}.XML".lower()))
     rids = [r["id"] for r in by_file]
+    own = re.search(r"__(\d+-\d+-\d+_\d+)", stem)     # model written per line: "<XML>__<line>" (grafis_orders)
+    if own:
+        rids = []
     if not rids:
-        refs = set(LINE_RE.findall(stem)) | {s for s in sizes if LINE_RE.fullmatch(s)}
+        refs = {own.group(1)} if own else set(LINE_RE.findall(stem)) | {s for s in sizes if LINE_RE.fullmatch(s)}
         for ref in refs:
             r = ws.db.one("SELECT id FROM revisions WHERE line_number=?", (ref,))
             if r:

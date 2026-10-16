@@ -1,0 +1,151 @@
+"""Automatic X values for GRAFIS: for each imported order line LEVEL7 MTM writes a copy of the GRAFIS model
+(MDL) with the order's X values already filled in, named after the XML (``Order-9-53-1_2.mdl``), into the GRAFIS
+input folder. Nobody types in the X-value window.
+
+Values come from the confirmed catalog rules (XML value → X number of a part, owner decisions #13–#15). Nothing is
+written when anything is unclear — the line is held with the reason:
+* the order line needs review, or the catalog step reports a blocking problem;
+* a rule is not confirmed, or a measurement of a confirmed rule is missing (GRAFIS would silently keep its
+  placeholder);
+* the X number is not in the model's X table, or its name in the MDL differs from the rule's ``x_name``
+  (another model version than the rules were written for).
+X values the order does not supply keep the model's own value and are listed in the report.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+
+from ..grafis.container import read_container
+from ..grafis.xvalues import read_xvalues
+from ..grafis.xwriter import XWriteError, write_order_mdl
+from ..storage.db import now
+
+
+def settings(ws) -> dict:
+    return {"template": ws.db.get_setting("grafis.mdl"),
+            "out": ws.db.get_setting("grafis.input") or os.path.join(ws.folder, "grafis", "input"),
+            "enabled": bool(ws.db.get_setting("grafis.auto_mdl", True))}
+
+
+def mdl_name(ws, rev) -> str:
+    f = ws.db.one("SELECT file_name FROM import_files WHERE id=?", (rev["import_file"],))
+    stem = os.path.splitext(f["file_name"])[0] if f else f"Order-{rev['line_number']}"
+    n = ws.db.one("SELECT count(*) AS n FROM revisions WHERE import_file=?", (rev["import_file"],))["n"]
+    if n > 1 or not re.search(re.escape(rev["line_number"]) + r"$", stem):
+        stem = f"{stem}__{rev['line_number']}"        # several lines in one XML: one model per line
+    return re.sub(r'[<>:"/\\|?*]', "_", stem) + ".mdl"
+
+
+def plan_values(ws, rid: int, template: str) -> dict:
+    """{values: {(part, X): mm}, rows, kept_default, problems} — nothing written."""
+    rev = ws.revision(rid)
+    _, cat, res = ws.resolve_order(rid)
+    style = cat["products"][res.product]["styles"][res.style]
+    rules = {r["id"]: r for r in style["rules"]}
+    cont = read_container(template)
+    tables: dict[int, dict] = {}
+    problems, rows, values = [], [], {}
+    if rev["status"] == "needs_review":
+        problems.append("order line needs review (import problems) — resolve them first")
+    for i in res.issues:
+        if i.severity == "blocking" and not i.code.startswith("plan."):
+            problems.append(i.message)
+    applied_targets = {t.target for t in res.trace if t.status == "applied"}
+    for t in res.trace:
+        r = rules.get(t.rule_id, {})
+        if t.status == "skipped" and r and t.target not in applied_targets and r.get("status") == "confirmed":
+            problems.append(f"{t.rule_id}: {t.message} — {t.target.split('/')[-1]} would keep the GRAFIS placeholder")
+        if t.status != "applied":
+            continue
+        piece, _, var = t.target.split("/")
+        if not (piece.isdigit() and var.startswith("X") and var[1:].isdigit()):
+            problems.append(f"{t.rule_id}: target {t.target} is not a GRAFIS X value")
+            continue
+        part, num = int(piece), int(var[1:])
+        if part not in tables:
+            tables[part] = read_xvalues(cont, part)
+        g = tables[part].get(num)
+        want = (r.get("target") or {}).get("x_name", "")
+        row = {"part": f"{part:03d}", "x": var, "x_name": g.name if g else "", "value_mm": round(t.value, 3),
+               "source": t.source, "rule": t.rule_id, "rule_status": r.get("status", "proposed"),
+               "grafis_default_mm": g.default if g else None}
+        rows.append(row)
+        if g is None:
+            problems.append(f"{t.rule_id}: {var} is not in the X table of part {part:03d} of {os.path.basename(template)}")
+        elif want and want != g.name:
+            problems.append(f"{t.rule_id}: {var} of part {part:03d} is '{g.name}' in the MDL, the rule expects "
+                            f"'{want}' — other model version?")
+        elif row["rule_status"] != "confirmed":
+            problems.append(f"{t.rule_id} ({t.source} → {var}) is not confirmed")
+        else:
+            values[(part, num)] = t.value
+    kept = [f"{p:03d}/X{n} {g.name}".strip() + f" = {g.default:g}" for p, tab in sorted(tables.items())
+            for n, g in sorted(tab.items()) if (p, n) not in values]
+    return {"values": values, "rows": rows, "kept_default": kept, "problems": problems}
+
+
+def order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = None) -> dict:
+    """Write the order's MDL. Returns {status: written / duplicate / blocked / not_configured / skipped, ...}."""
+    st = settings(ws)
+    template = template or st["template"]
+    out_dir = out_dir or st["out"]
+    rev = ws.revision(rid)
+    res = {"revision_id": rid, "line_number": rev["line_number"], "status": "blocked", "path": None,
+           "problems": [], "rows": [], "kept_default": []}
+    if rev["status"] in ("superseded", "cancelled"):
+        res.update(status="skipped", problems=[f"order line is {rev['status']}"])
+        return res
+    if not template or not os.path.isfile(template):
+        res.update(status="not_configured", problems=["GRAFIS model (MDL) not set — choose it in the GRAFIS screen"])
+        return _save(ws, res, None)
+    with open(template, "rb") as fh:
+        tsha = hashlib.sha256(fh.read()).hexdigest()
+    path = os.path.join(out_dir, mdl_name(ws, rev))
+    dup = ws.db.one("SELECT * FROM grafis_orders WHERE revision_id=? AND status='written' AND template_sha256=? "
+                    "ORDER BY id DESC", (rid, tsha))
+    if dup and dup["path"] == path and os.path.exists(path):
+        res.update(json.loads(dup["info"]), status="duplicate", path=path)
+        return res
+    try:
+        plan = plan_values(ws, rid, template)
+    except Exception as e:                         # catalog / template unreadable: hold the line, say why
+        res["problems"] = [f"{type(e).__name__}: {e}"]
+        return _save(ws, res, tsha)
+    res.update(rows=plan["rows"], kept_default=plan["kept_default"], problems=plan["problems"])
+    if plan["problems"]:
+        return _save(ws, res, tsha)
+    if not plan["values"]:
+        res["problems"] = ["no X value to write"]
+        return _save(ws, res, tsha)
+    try:
+        write_order_mdl(template, plan["values"], path)
+    except (XWriteError, OSError) as e:
+        res["problems"] = [str(e)]
+        return _save(ws, res, tsha)
+    res.update(status="written", path=path)
+    return _save(ws, res, tsha)
+
+
+def _save(ws, res, tsha) -> dict:
+    info = {k: v for k, v in res.items() if k not in ("status", "path")}
+    with ws.db.tx() as c:
+        c.execute("INSERT INTO grafis_orders(revision_id, created_at, status, path, template_sha256, info) "
+                  "VALUES (?,?,?,?,?,?)", (res["revision_id"], now(), res["status"], res["path"], tsha,
+                                           json.dumps(info, ensure_ascii=False)))
+        ws.db.audit(c, ws.actor, f"grafis.mdl.{res['status']}", "revision", res["revision_id"],
+                    {"path": res["path"], "problems": res["problems"],
+                     "values": {f"{r['part']}/{r['x']}": r["value_mm"] for r in res["rows"]}})
+    return res
+
+
+def import_and_prepare(ws, path: str):
+    """Import an XML file and, when automatic mode is on, write the GRAFIS model of each new order line."""
+    out = ws.import_file(path)
+    if settings(ws)["enabled"] and out.status == "imported":
+        for ln in out.lines:
+            if ln["action"] in ("new", "new_revision"):
+                out.grafis.append(order_mdl(ws, ln["revision_id"]))
+    return out

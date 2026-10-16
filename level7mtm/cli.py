@@ -6,6 +6,7 @@
     level7mtm export LINE_NUMBER dxf|pdf     export the latest calculation
     level7mtm nest LINE_NUMBER ... -o F.l7n [--test]   write a LEVEL7 Nesting file
     level7mtm grafis-x LINE [--mdl F.mdl]    X values of an order line for GRAFIS (CSV + JSON)
+    level7mtm grafis-mdl LINE ... [--mdl F.mdl] [-o DIR]   write the order's GRAFIS model with its X values
     level7mtm grafis-scb FILE.scb [--accept REASON]   check a GRAFIS marker and hand it to nesting
     level7mtm mdl-report FILE.mdl -o DIR     GRAFIS formula report (Markdown + JSON)
     level7mtm backup                         back up the database
@@ -59,6 +60,10 @@ def main(argv=None) -> int:
     s.add_argument("line")
     s.add_argument("--mdl", help="GRAFIS model file (adds names, defaults and size ranges)")
     s.add_argument("-o", "--outdir")
+    s = sub.add_parser("grafis-mdl", help="write the GRAFIS model (MDL) of order lines with their X values filled in")
+    s.add_argument("lines", nargs="+")
+    s.add_argument("--mdl", help="GRAFIS model template (default: setting grafis.mdl)")
+    s.add_argument("-o", "--outdir", help="GRAFIS input folder (default: setting grafis.input)")
     s = sub.add_parser("grafis-scb", help="check a GRAFIS marker (SCB named after the XML) and hand it to nesting")
     s.add_argument("files", nargs="+")
     s.add_argument("--nesting-dir")
@@ -85,10 +90,15 @@ def _run(a) -> int:
     if a.cmd == "import":
         rc = 0
         for f in a.files:
-            o = ws.import_file(f)
+            from .services.grafis_orders import import_and_prepare
+            o = import_and_prepare(ws, f)
             print(f"{o.file_name}: {o.status} {o.message}")
             for ln in o.lines:
                 print(f"  {ln['line_number']}: {ln['action']} -> {ln['status']}")
+            for g in o.grafis:
+                print(f"  GRAFIS {g['line_number']}: {g['status']} {g['path'] or ''}")
+                for m in g["problems"]:
+                    print(f"    {m}")
             rc |= o.status == "failed"
         return rc
     if a.cmd == "list":
@@ -122,6 +132,18 @@ def _run(a) -> int:
             print("warning:", w)
         print(*d["files"], sep="\n")
         return 0
+    if a.cmd == "grafis-mdl":
+        from .services.grafis_orders import order_mdl
+        rc = 0
+        for line in a.lines:
+            g = order_mdl(ws, _rid(ws, line), a.mdl, a.outdir)
+            print(f"{line}: {g['status']} {g['path'] or ''}")
+            for r in g["rows"]:
+                print(f"  {r['part']} {r['x']:<4} {r['x_name']:<26} {r['value_mm']:>8} mm  ({r['source']}, {r['rule']})")
+            for m in g["problems"]:
+                print(f"  problem: {m}")
+            rc |= g["status"] not in ("written", "duplicate")
+        return 2 if rc else 0
     if a.cmd == "grafis-scb":
         from .services.grafis_intake import register_scb
         rc = 0
