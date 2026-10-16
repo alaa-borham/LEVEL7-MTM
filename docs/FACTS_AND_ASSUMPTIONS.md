@@ -21,7 +21,7 @@ confirmed) · **U** unknown (blocks the related feature).
 | Fabric width | `Fabric/@Width = 1450` — always taken from the order | F (owner) |
 | Measurement unit | not in the file; centimetres | F (owner, for girths); A for lengths |
 | Girths | CH, WA, HP, BO = **half circumference** | F (owner) |
-| Product vs body | half girths of the finished garment — ease is not added again | A (to confirm, see OWNER_RULES_REQUEST) |
+| Product vs body | finished-garment measurements; GRAFIS base-file X values are only defaults — ease is not added again | F (owner) |
 | `WB` / `SWS` | hem band width / plain sleeve width | F (owner) |
 | `DSR` / `DSL` | right / left shoulder drop, may differ | F (owner) |
 | `COS` / `COG` | neck size for `Collar Square` / `gallab Classic` | F (owner) |
@@ -69,7 +69,7 @@ owner (or the construction blocks decoded — research, uncertain).
 | Id | Assumption | Where |
 |---|---|---|
 | A-1 | Lengths in the XML are centimetres like the girths | mapping profile `unit` |
-| A-2 | XML values are finished-garment measurements (no extra ease) | profile `measurements.meaning` |
+| A-2 | ~~XML values are finished-garment measurements~~ — confirmed by the owner (decision #15) | — |
 | A-3 | `X01` = `X1` (leading zeros) in GRAFIS formulas | `grafis/formulas.canonical` |
 | A-4 | X table for part 002 (X1 ← FL, X3 ← SH, X4 ← DSR …) — every row "proposed" | `resources/xvars` |
 | A-5 | Engine-test construction and ease values | `thobe_engine_test_v0_1.json` (status `engine_test`, cannot be approved) |

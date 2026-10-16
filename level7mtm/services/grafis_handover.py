@@ -1,7 +1,8 @@
 """Hand-over to GRAFIS (phase 1: GRAFIS computes the pattern).
 
 For one order line LEVEL7 MTM produces the X values GRAFIS needs, from the catalog rules, next to what the GRAFIS
-model currently holds (default "_xxxxx_x" value and the range of its standard sizes). The size entry is named
+model currently holds (default "_xxxxx_x" value and its size entries — placeholders only, according to the owner:
+the XML holds the finished measurements, the base file only default values). The size entry is named
 after the order line (e.g. ``9-53-1_2``) so the GRAFIS result stays traceable.
 
 Output: ``<workspace>/grafis/<line>_X.csv`` (UTF-8 with BOM, opens in Excel) and ``<line>_X.json``.
@@ -43,9 +44,8 @@ def x_sheet(ws, rid: int, mdl_path: str | None = None, part: int = 2, out_dir: s
                "in_grafis_table": bool(g)}
         if g is None and table:
             warnings.append(f"{var} (rule {t.rule_id}) is not in the GRAFIS X table of part {part:03d}")
-        if rng and t.value is not None and not rng[0] <= t.value <= rng[1]:
-            warnings.append(f"{var} {row['x_name']}: order value {t.value:g} mm is outside the GRAFIS standard sizes "
-                            f"{rng[0]:g}–{rng[1]:g} mm (information, not an error)")
+        # no range warning: the values stored in the base GRAFIS file are placeholders (owner, decision #15);
+        # the XML values are finished measurements and go into X as they are (rule value {M})
         rows.append(row)
     supplied = {int(r["x"][1:]) for r in rows if r["piece"] == f"{part:03d}" and r["x"][1:].isdigit()
                 and not r["superseded"]}
