@@ -37,3 +37,23 @@ the orders.
 * left/right: mirrored copies only where the model defines them; never a mirror of a different right piece.
 
 Job status (written / sent / done / failed, nesting job number) is recorded in LEVEL7 MTM (`nesting_jobs`).
+
+---
+
+# Contract v2 — automatic chain through LEVEL7 Nesting's command line (phase 1, GRAFIS)
+
+The two programs are installed and updated independently. They work together through files and through
+LEVEL7 Nesting's command line only; neither imports the other's code.
+
+| Step | LEVEL7 MTM | LEVEL7 Nesting |
+|---|---|---|
+| find the program | setting `nesting.cli`, else `level7-cli.exe` in `Program Files\LEVEL7 Nesting` or `<drive>:\LEVEL7 Nesting` | installed by its own setup |
+| describe a model | (optional) `level7-cli info --json FILE` → `{"format": "level7-info", "format_version": 1, "level7_version", "size_names", "pieces": […]}` | since the integration branch; older versions print text only (MTM then derives the size key itself) |
+| nest | `level7-cli nest <order>.mdl --width <order fabric width> --sizes <size>=<garments> --time <s> -o <order>.l7n` | exit 0 = valid marker; prints JSON stats (`length_mm`, `efficiency_total_width_pct`, `placed`, `unplaced`) |
+| size key of an order model | `base:<first #GRDTAB entry>` (the model has only its base size) | lists that key in `size_names` since the integration branch, so the window can re-nest the saved `.l7n` |
+| cutting files | `level7-cli export <order>.l7n --format plt --plt-preset algotex_grafis` / `--format iso --iso-preset bullmer_grafis` / `--format dxf` | writes the file; `device_tested: false` until a 1:1 test cut |
+| look at the marker | starts `LEVEL7Nesting.exe <order>.l7n` | opens the file given on the command line |
+
+Rules: LEVEL7 MTM never changes a file LEVEL7 Nesting wrote (it only reads the JSON it prints); LEVEL7 Nesting
+never needs LEVEL7 MTM to run. A new field is added, never renamed; `format_version` changes only for a
+breaking change.

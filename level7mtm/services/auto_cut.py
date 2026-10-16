@@ -67,6 +67,21 @@ def _run(cmd, env, log) -> int:
     return p.returncode
 
 
+def _size_key(cmd, env, path, guess, log) -> str:
+    """The size key LEVEL7 Nesting uses for this file (``info --json``, newer LEVEL7 Nesting); else our guess."""
+    try:
+        p = subprocess.run(cmd + ["info", "--json", path], env=env, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=300,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        names = json.loads(p.stdout).get("size_names", []) if p.returncode == 0 else []
+    except (ValueError, OSError, subprocess.TimeoutExpired):
+        names = []                                  # older LEVEL7 Nesting: no --json
+    key = guess if not names or guess in names else (names[0] if len(names) == 1 else guess)
+    if names:
+        log.append(f"LEVEL7 Nesting sizes: {names} -> {key}")
+    return key
+
+
 def auto_cut(ws, chk, scb_path: str, force: bool = False) -> dict:
     """Nest the checked SCB and write the cutting files. Returns {status, outputs, log, ...}.
     ``force``: nest again (e.g. with a longer nesting time) although cutting files exist."""
@@ -92,7 +107,8 @@ def auto_cut(ws, chk, scb_path: str, force: bool = False) -> dict:
     stem = os.path.join(st["out"], os.path.splitext(os.path.basename(scb_path))[0])
     nest = cmd + ["nest", scb_path, "--width", f"{width:g}", "--time", f"{st['time']:g}", "-o", stem + ".l7n"]
     if len(sizes) == 1:
-        nest += ["--sizes", f"{sizes[0]}={qty}"]          # garments from the order, not from the GRAFIS marker
+        key = _size_key(cmd, env, scb_path, sizes[0], log)
+        nest += ["--sizes", f"{key}={qty}"]              # garments from the order, not from the GRAFIS marker
     rc = _run(nest, env, log)
     out_text = "\n".join(log)
     m = re.search(r'"length_mm":\s*([\d.]+)', out_text)
