@@ -194,3 +194,36 @@ def test_scb_check_compares_parts_of_its_material(ws, tmp_path):
 def read_container_path(p):
     from level7mtm.grafis.container import read_container
     return read_container(p)
+
+
+@needs_mdl
+def test_x_value_table_editor(ws, tmp_path):
+    """The owner links XML codes to X values in a table of the model's X list; a new code is added everywhere."""
+    from level7mtm.services.xtable import save_x_table, x_parts, x_table
+    assert x_parts(MDL) == {2: 50, 5: 44, 6: 5}
+    rows = {r["x"]: r for r in x_table(ws, MDL, 2)}
+    assert rows[1]["codes"] == ["FL"] and rows[7]["codes"] == ["COS", "COG"] and rows[8]["codes"] == []
+    assert rows[13]["name"] == "hip" and rows[13]["confirmed"]
+    rows[8]["codes"], rows[8]["confirmed"] = ["FW1"], True          # new XML code → front width 1
+    rows[12]["codes"] = []                                          # WA no longer fills X12
+    out = save_x_table(ws, MDL, 2, list(rows.values()))
+    assert out["new_codes"] == ["FW1"] and out["catalog_version"] == "1.2.1" and out["mapping_version"]
+    again = {r["x"]: r for r in x_table(ws, MDL, 2)}
+    assert again[8]["codes"] == ["FW1"] and again[12]["codes"] == [] and again[1]["codes"] == ["FL"]
+    _, cat = ws.active("catalog")
+    st = next(iter(next(iter(cat["products"].values()))["styles"].values()))
+    r8 = next(r for r in st["rules"] if r["target"]["variable"] == "X8")
+    assert r8["target"]["x_name"] == "front width 1" and r8["status"] == "confirmed"
+    _, prof = ws.active("mapping")
+    assert "FW1" in prof["measurements"]["fields"]
+    # an order with the new code: the value goes into X8 of the order's model
+    sh = 'Abbreviation="SH" Value="49.50"/>'
+    txt = read(XML_53).decode("utf-8").replace(sh, sh + '<Type Name="Front w1" Abbreviation="FW1" Value="38.50"/>')
+    ws.db.set_setting("grafis.mdl", MDL)
+    ws.db.set_setting("grafis.input", str(tmp_path / "in"))
+    o = ws.import_data(txt.encode(), "Order-9-53-1_2.xml")
+    g = order_mdl(ws, o.lines[0]["revision_id"])
+    assert g["status"] == "written", g["problems"]
+    assert read_xvalues(g["path"], 2)[8].default == 385
+    with pytest.raises(ValueError, match="valid XML code"):
+        save_x_table(ws, MDL, 2, [{"x": 8, "codes": ["9bad"], "formula": "{M}", "confirmed": True}])

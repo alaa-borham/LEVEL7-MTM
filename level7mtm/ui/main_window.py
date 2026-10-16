@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import traceback
 
@@ -808,6 +809,125 @@ class GrafisPage(Page):
         self.win.pool.start(w)
 
 
+class XValuesPage(Page):
+    """Every X value of a GRAFIS part next to the XML code(s) that fill it. Saved as a new rules version."""
+    title = "X values for GRAFIS"
+    COLS = ["X", "Name in GRAFIS", "GRAFIS default", "XML codes", "Value / formula", "Confirmed"]
+
+    def __init__(self, win):
+        super().__init__(win)
+        lay = QVBoxLayout(self)
+        self.info = QLabel()
+        self.info.setWordWrap(True)
+        lay.addWidget(self.info)
+        top = QHBoxLayout()
+        top.addWidget(QLabel(tr("Part")))
+        self.part = QComboBox()
+        self.part.currentIndexChanged.connect(self.load)
+        top.addWidget(self.part, 1)
+        for text, fn in (("GRAFIS model (MDL)…", self.choose_mdl), ("Save", self.save)):
+            b = QPushButton(tr(text))
+            b.clicked.connect(fn)
+            top.addWidget(b)
+        lay.addLayout(top)
+        self.t = QTableWidget(0, len(self.COLS))
+        self.t.setHorizontalHeaderLabels([tr(c) for c in self.COLS])
+        self.t.horizontalHeader().setStretchLastSection(True)
+        self.t.verticalHeader().setVisible(False)
+        lay.addWidget(self.t, 1)
+        self.codes = QLabel()
+        self.codes.setWordWrap(True)
+        lay.addWidget(self.codes)
+
+    def _mdl(self):
+        m = self.ws.db.get_setting("grafis.mdl")
+        return m if m and os.path.isfile(m) else None
+
+    def choose_mdl(self):
+        p, _ = QFileDialog.getOpenFileName(self, tr("GRAFIS model (MDL)…"), self.ws.db.get_setting("grafis.mdl") or "",
+                                           "GRAFIS (*.mdl *.MDL)")
+        if p:
+            self.ws.db.set_setting("grafis.mdl", p)
+            self.refresh()
+
+    def refresh(self):
+        from ..services.xtable import x_parts
+        mdl = self._mdl()
+        _, cat = self.ws.active("catalog")
+        self.info.setText(tr("Type next to each X the XML code(s) that fill it, e.g. FL or COS,COG. Empty = GRAFIS "
+                             "keeps its own value. A new XML code is added automatically.") + "\n" +
+                          f"{tr('GRAFIS model (MDL)')}: {mdl or '⚠ ' + tr('not set')} — "
+                          f"{tr('Rules')}: {cat['catalog_id']} {cat['version']}")
+        self.codes.setText(tr("XML codes") + ": " + ", ".join(sorted(cat["measurements"])))
+        cur = self.part.currentData()
+        self.part.blockSignals(True)
+        self.part.clear()
+        if mdl:
+            try:
+                from ..grafis.textsections import read_text
+                names = {p.number: p.name for p in read_text(mdl).parts}
+                for num, n in sorted(x_parts(mdl).items()):
+                    self.part.addItem(f"{num:03d} {names.get(num, '')} ({n} X)", num)
+            except Exception as e:  # noqa: BLE001
+                self.info.setText(f"{tr('Error')}: {e}")
+        i = self.part.findData(cur if cur is not None else 2)
+        self.part.setCurrentIndex(max(i, 0))
+        self.part.blockSignals(False)
+        self.load()
+
+    def load(self):
+        from ..services.xtable import x_table
+        num, mdl = self.part.currentData(), self._mdl()
+        self.t.setRowCount(0)
+        if num is None or not mdl:
+            return
+        rows = x_table(self.ws, mdl, num)
+        self.t.setRowCount(len(rows))
+        for i, r in enumerate(rows):
+            vals = [f"X{r['x']}", r["name"], f"{r['default']:g}" if r["default"] is not None else "",
+                    ",".join(r["codes"]), r["formula"]]
+            for j, v in enumerate(vals):
+                it = QTableWidgetItem(v)
+                if j < 3:
+                    it.setFlags(it.flags() & ~Qt.ItemIsEditable)
+                self.t.setItem(i, j, it)
+            ck = QTableWidgetItem()
+            ck.setFlags((ck.flags() | Qt.ItemIsUserCheckable) & ~Qt.ItemIsEditable)
+            ck.setCheckState(Qt.Checked if (r["confirmed"] or not r["codes"]) else Qt.Unchecked)
+            self.t.setItem(i, 5, ck)
+            if r["codes"]:
+                for j in range(6):
+                    self.t.item(i, j).setBackground(QColor(STATUS_COLORS["approved"]))
+                    self.t.item(i, j).setForeground(QColor("#111111"))           # readable in the dark theme too
+        self.t.resizeColumnsToContents()
+
+    def rows(self) -> list[dict]:
+        out = []
+        for i in range(self.t.rowCount()):
+            codes = [c.strip() for c in re.split(r"[,،;\s]+", self.t.item(i, 3).text()) if c.strip()]
+            out.append({"x": int(self.t.item(i, 0).text()[1:]), "codes": codes,
+                        "formula": self.t.item(i, 4).text().strip() or "{M}",
+                        "confirmed": self.t.item(i, 5).checkState() == Qt.Checked})
+        return out
+
+    def save(self):
+        from ..services.xtable import save_x_table
+        num, mdl = self.part.currentData(), self._mdl()
+        if num is None or not mdl:
+            return
+        try:
+            out = save_x_table(self.ws, mdl, num, self.rows())
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(self, tr("Error"), str(e))
+            return
+        msg = f"{tr('Saved')}: {tr('Rules')} {out['catalog_version']}"
+        if out["new_codes"]:
+            msg += f"\n{tr('New XML codes')}: {', '.join(out['new_codes'])} ({tr('ERP mapping profile')} " \
+                   f"{out['mapping_version']})"
+        QMessageBox.information(self, tr("X values for GRAFIS"), msg)
+        self.refresh()
+
+
 class LibraryPage(Page):
     title = "Model library"
     developer_only = True
@@ -1049,13 +1169,17 @@ class RulesPage(Page):
         pid, sid = self.style_cb.currentData()
         st = cat["products"][pid]["styles"][sid]
         rules = []
+        before = {r["id"]: r for r in st["rules"]}
         for row in _rows(self.rt):
             if not row[0]:
                 continue
+            prev_t = before.get(row[0], {}).get("target", {})
+            x_name = prev_t.get("x_name", "") if (prev_t.get("piece"), prev_t.get("variable")) == (row[3], row[5]) \
+                else ""
             src = ({"type": "measurement", "code": row[2]} if row[1] != "option" else
                    {"type": "option", "group": row[2].split("=")[0], "value": row[2].split("=")[-1]})
             rules.append({"id": row[0], "source": src, "target": {"piece": row[3], "construction": row[4],
-                          "variable": row[5]}, "value": row[6] or "{M}", "order": float(row[7] or 0),
+                          "variable": row[5], **({"x_name": x_name} if x_name else {})}, "value": row[6] or "{M}", "order": float(row[7] or 0),
                           "factories": [x for x in row[8].split(",") if x] or ["*"],
                           "sizes": [x for x in row[9].split(",") if x] or ["*"], "enabled": row[10] != "0",
                           "status": row[11] or "proposed", "note": row[12]})
@@ -1323,7 +1447,8 @@ class LogPage(Page):
         self.win.close()
 
 
-PAGES = [OrdersPage, ImportPage, OrderPage, ModelPage, PreviewPage, ValidationPage, SendPage, GrafisPage, LibraryPage,
+PAGES = [OrdersPage, ImportPage, OrderPage, ModelPage, PreviewPage, ValidationPage, SendPage, GrafisPage, XValuesPage,
+         LibraryPage,
          RulesPage,
          SettingsPage, LogPage]
 
