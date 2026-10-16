@@ -32,11 +32,24 @@ class _Signals(QObject):
     failed = Signal(str)
 
 
+_LIVE: set = set()          # workers whose result may still be queued for the GUI thread
+
+
 class Worker(QRunnable):
+    """Background job. Kept alive (with its signal object) until its result was delivered in the GUI thread:
+    a worker collected while its queued signal is pending crashes Qt (access violation seen on Windows CI)."""
+
     def __init__(self, fn, *args):
         super().__init__()
+        self.setAutoDelete(False)
         self.fn, self.args = fn, args
         self.signals = _Signals()
+        _LIVE.add(self)
+        self.signals.done.connect(self._release)
+        self.signals.failed.connect(self._release)
+
+    def _release(self, *_):
+        QTimer.singleShot(0, lambda: _LIVE.discard(self))
 
     def run(self):
         try:
