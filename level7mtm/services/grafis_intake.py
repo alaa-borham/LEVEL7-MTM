@@ -70,7 +70,11 @@ def _sizes(text_raw: str) -> list[str]:
     return out
 
 
-def check_scb(ws, path: str) -> ScbCheck:
+def check_scb(ws, path: str, renest: bool | None = None) -> ScbCheck:
+    """``renest``: LEVEL7 Nesting nests again at the order's width and quantity (automatic chain), so a different
+    width / bundle count of the GRAFIS marker is information, not a finding. Default: the cutting.auto setting."""
+    if renest is None:
+        renest = bool(ws.db.get_setting("cutting.auto", True))
     data = open(path, "rb").read()
     chk = ScbCheck(path, hashlib.sha256(data).hexdigest())
     try:
@@ -129,10 +133,14 @@ def check_scb(ws, path: str) -> ScbCheck:
     w = chk.info["width_mm"]
     for ow in widths:
         if ow is not None and w is not None and abs(ow - w) > 0.5:
-            chk.issues.append(("review", f"marker width {w:g} mm ≠ fabric width of the order {ow:g} mm"))
+            chk.issues.append(("info" if renest else "review",
+                               f"marker width {w:g} mm ≠ fabric width of the order {ow:g} mm"
+                               + (" — LEVEL7 Nesting nests at the order width" if renest else "")))
     if chk.info["bundles"] != total_qty:
-        chk.issues.append(("review", f"marker has {chk.info['bundles']} bundle(s), the order lines total "
-                                     f"{total_qty} garment(s)"))
+        single = len(sizes) == 1
+        chk.issues.append(("info" if renest and single else "review",
+                           f"marker has {chk.info['bundles']} bundle(s), the order lines total {total_qty} "
+                           f"garment(s)" + (" — LEVEL7 Nesting uses the order quantity" if renest and single else "")))
     if chk.info["unplaced"]:
         chk.issues.append(("blocking", f"{chk.info['unplaced']} piece(s) not placed in the GRAFIS marker"))
     expected_total = sum(p["copies"] + p["mirrored"] for p in chk.pieces) * max(chk.info["bundles"], 1)
@@ -180,11 +188,14 @@ def _expected_parts(ws, chk: ScbCheck) -> None:
 
 
 def register_scb(ws, path: str, handover: bool = True, nesting_dir: str | None = None,
-                 confirm_reason: str | None = None) -> dict:
+                 confirm_reason: str | None = None, cut: bool | None = None) -> dict:
     """Check an SCB from GRAFIS, record the result, and (when it passes) hand it to the nesting folder.
 
     ``confirm_reason``: an operator accepts the *review* findings (never blocking ones); the reason is recorded."""
-    chk = check_scb(ws, path)
+    from .auto_cut import auto_cut, settings
+    if cut is None:
+        cut = settings(ws)["enabled"]
+    chk = check_scb(ws, path, renest=cut)
     if confirm_reason and chk.lines and not any(s == "blocking" for s, _ in chk.issues):
         accepted = [m for s, m in chk.issues if s == "review"]
         chk.issues = [(s if s != "review" else "info", m if s != "review" else f"accepted by {ws.actor}: {m} "
@@ -227,7 +238,14 @@ def register_scb(ws, path: str, handover: bool = True, nesting_dir: str | None =
                           "('superseded','cancelled')", (ln["revision_id"],))
         ws.db.audit(c, ws.actor, f"grafis.scb.{status}", "file", os.path.basename(path),
                     {"lines": [ln["line_number"] for ln in chk.lines], "issues": chk.issues, "nesting": target})
-    return {"status": status, "check": chk, "nesting_path": target}
+    out = {"status": status, "check": chk, "nesting_path": target, "cutting": None}
+    if cut and status == "handed_over":
+        out["cutting"] = auto_cut(ws, chk, target)
+        if out["cutting"]["status"] != "done":
+            out["status"] = "cutting_" + out["cutting"]["status"]
+        else:
+            out["status"] = "cutting_done"
+    return out
 
 
 BATCH_COLUMNS = ["marker", "file", "size", "qty", "width", "material", "orders"]

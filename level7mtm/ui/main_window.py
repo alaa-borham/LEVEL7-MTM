@@ -603,14 +603,20 @@ class GrafisPage(Page):
         lay.addWidget(self.info)
         bar = QHBoxLayout()
         for text, fn in (("Register GRAFIS marker (SCB)…", self.register), ("Watch GRAFIS output folder", self.toggle),
-                         ("Nesting folder…", self.choose_nesting), ("Accept review findings…", self.accept)):
+                         ("Accept review findings…", self.accept), ("Nesting folder…", self.choose_nesting),
+                         ("LEVEL7 Nesting program…", self.choose_cli), ("Cutting files folder…", self.choose_out)):
             b = QPushButton(tr(text))
             b.clicked.connect(fn)
             bar.addWidget(b)
         bar.addStretch()
         lay.addLayout(bar)
-        self.t = table(["File", "Order line", "Status", "Width", "Bundles", "Pieces", "Findings"])
+        self.auto = QCheckBox(tr("Automatic: nest and write cutting files (PLT / ISO)"))
+        self.auto.setChecked(bool(self.ws.db.get_setting("cutting.auto", True)))
+        self.auto.toggled.connect(lambda on: (self.ws.db.set_setting("cutting.auto", on), self.refresh()))
+        lay.addWidget(self.auto)
+        self.t = table(["File", "Order line", "Status", "Width", "Bundles", "Pieces", "Cutting files", "Findings"])
         lay.addWidget(self.t, 1)
+        self.busy = False
         self.watcher = None
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll)
@@ -622,15 +628,30 @@ class GrafisPage(Page):
         return self.ws.db.get_setting("nesting.inbox") or os.path.join(self.ws.folder, "nesting")
 
     def refresh(self):
+        from ..services.auto_cut import NestingNotConfigured, nesting_command, settings
+        st = settings(self.ws)
+        try:
+            cli = " ".join(nesting_command(self.ws)[0][-1:])
+        except NestingNotConfigured:
+            cli = "⚠ " + tr("not found")
         self.info.setText(f"{tr('GRAFIS output folder')}: {self.ws.db.get_setting('grafis.watch.folder') or '—'}"
                           f" ({tr('watching') if self.watcher else tr('not watching')}) — "
-                          f"{tr('Nesting folder')}: {self._nesting_dir()}")
+                          f"{tr('Nesting folder')}: {self._nesting_dir()}\n"
+                          f"LEVEL7 Nesting: {cli} — {tr('Cutting files folder')}: {st['out']} — "
+                          f"{', '.join(st['formats']).upper()} ({st['plt_preset']}, {st['iso_preset']})")
         rows = self.ws.db.q("SELECT * FROM grafis_results ORDER BY checked_at DESC")
         out, colors, data = [], [], []
         for r in rows:
             info, issues, lines = json.loads(r["info"]), json.loads(r["issues"]), json.loads(r["lines"])
+            cj = self.ws.db.one("SELECT status, outputs, info FROM cutting_jobs WHERE sha256=? ORDER BY id DESC",
+                                (r["sha256"],))
+            cut = ""
+            if cj:
+                ci = json.loads(cj["info"])
+                cut = (", ".join(os.path.basename(x) for x in json.loads(cj["outputs"])) if cj["status"] == "done"
+                       else f"{tr(cj['status'])}: {ci.get('message', '')}")
             out.append([os.path.basename(r["path"]), ", ".join(ln["line_number"] for ln in lines), tr(r["status"]),
-                        info.get("width_mm"), info.get("bundles"), info.get("pieces_placed"),
+                        info.get("width_mm"), info.get("bundles"), info.get("pieces_placed"), cut,
                         " | ".join(f"[{tr(sv)}] {m}" for sv, m in issues)])
             colors.append({"handed_over": STATUS_COLORS["approved"], "needs_review": STATUS_COLORS["review"],
                            "unmatched": STATUS_COLORS["blocking"]}.get(r["status"]))
@@ -644,9 +665,22 @@ class GrafisPage(Page):
     def register(self):
         paths, _ = QFileDialog.getOpenFileNames(self, "GRAFIS", self.ws.db.get_setting("grafis.watch.folder", ""),
                                                 "GRAFIS marker (*.scb *.SCB)")
-        for p in paths:
-            self.win.guard(lambda p=p: self._register(p))
-        self.refresh()
+        if paths:
+            self.win.run(lambda: [self._register(p) for p in paths], lambda _r: self.refresh())
+
+    def choose_cli(self):
+        p, _ = QFileDialog.getOpenFileName(self, tr("LEVEL7 Nesting program…"), r"C:\Program Files\LEVEL7 Nesting",
+                                           "level7-cli (level7-cli.exe *.exe)")
+        if p:
+            self.ws.db.set_setting("nesting.cli", p)
+            self.refresh()
+
+    def choose_out(self):
+        d = QFileDialog.getExistingDirectory(self, tr("Cutting files folder…"),
+                                             self.ws.db.get_setting("cutting.output", ""))
+        if d:
+            self.ws.db.set_setting("cutting.output", d)
+            self.refresh()
 
     def accept(self):
         paths = selected_data(self.t)
@@ -685,8 +719,19 @@ class GrafisPage(Page):
         self.timer.start(2000)
 
     def poll(self):
-        if self.watcher and self.win.guard(self.watcher.poll):
-            self.refresh()
+        """Runs in a worker thread: nesting can take a minute and must not freeze the window."""
+        if not self.watcher or self.busy:
+            return
+        self.busy = True
+
+        def done(res):
+            self.busy = False
+            if res:
+                self.refresh()
+        w = Worker(self.watcher.poll)
+        w.signals.done.connect(done)
+        w.signals.failed.connect(lambda msg: (setattr(self, "busy", False), self.win.status(msg[:200])))
+        self.win.pool.start(w)
 
 
 class LibraryPage(Page):

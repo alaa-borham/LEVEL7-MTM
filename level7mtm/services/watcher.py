@@ -91,10 +91,12 @@ class FolderWatcher:
 
 def _failed(out) -> bool:
     st = out.get("status") if isinstance(out, dict) else out.status
-    return st in ("failed", "unmatched", "needs_review")
+    return st in ("failed", "unmatched", "needs_review") or (st.startswith("cutting_") and st != "cutting_done")
 
 
 def _message(out) -> str:
     if isinstance(out, dict):
-        return "; ".join(m for _, m in out["check"].issues) or out.get("status", "")
+        cut = out.get("cutting") or {}
+        return "; ".join([m for s, m in out["check"].issues if s != "info"] + [cut.get("message", "")]).strip("; ") \
+            or out.get("status", "")
     return out.message

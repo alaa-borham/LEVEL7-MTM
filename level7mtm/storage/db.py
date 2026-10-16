@@ -154,6 +154,19 @@ MIGRATIONS: list[str] = [
         nesting_path TEXT
     )
     """,
+    # 5 — automatic nesting + cutting files (PLT / ISO) for each SCB received from GRAFIS
+    """
+    CREATE TABLE cutting_jobs (
+        id INTEGER PRIMARY KEY,
+        sha256 TEXT NOT NULL,
+        scb_path TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        status TEXT NOT NULL,
+        outputs TEXT NOT NULL,
+        info TEXT NOT NULL,
+        log TEXT NOT NULL
+    )
+    """,
 ]
 
 
