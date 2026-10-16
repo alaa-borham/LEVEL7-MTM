@@ -761,57 +761,86 @@ class GrafisPage(Page):
     checked against the order and handed to LEVEL7 Nesting unchanged."""
     title = "GRAFIS markers"
 
+    @staticmethod
+    def _card(title_: str):
+        f = QFrame()
+        f.setObjectName("card")
+        v = QVBoxLayout(f)
+        v.setContentsMargins(14, 12, 14, 12)
+        t = QLabel(title_)
+        t.setObjectName("cardTitle")
+        v.addWidget(t)
+        return f, v
+
+    @staticmethod
+    def _buttons(layout, items, primary=()):
+        row = QHBoxLayout()
+        for text, fn in items:
+            b = QPushButton(tr(text))
+            if text in primary:
+                b.setObjectName("primary")
+            b.clicked.connect(fn)
+            row.addWidget(b)
+        row.addStretch()
+        layout.addLayout(row)
+
     def __init__(self, win):
         super().__init__(win)
         lay = QVBoxLayout(self)
-        self.info = QLabel()
-        self.info.setWordWrap(True)
-        lay.addWidget(self.info)
-        bar = QHBoxLayout()
-        bar0 = QHBoxLayout()
+        lay.setSpacing(12)
+        # status strip + settings switch
+        top = QHBoxLayout()
+        self.chips = QHBoxLayout()
+        top.addLayout(self.chips)
+        top.addStretch()
+        self.settings_btn = QPushButton("⚙  " + tr("Settings"))
+        self.settings_btn.setCheckable(True)
+        self.settings_btn.toggled.connect(self._show_settings)
+        top.addWidget(self.settings_btn)
+        lay.addLayout(top)
+        # settings card (setup, used once)
+        self.settings_card, sv = self._card(tr("Settings"))
+        cols = QHBoxLayout()
+        cols.setSpacing(18)
+        c1 = QVBoxLayout()
+        c1.addWidget(QLabel(f"<b>{tr('Folders and model')}</b>"))
+        from PySide6.QtWidgets import QGridLayout
+        grid, k = QGridLayout(), 0
         for text, fn in (("Folders MDL / SCB / ER / CUT…", self.choose_folders), ("GRAFIS model (MDL)…", self.choose_mdl),
                          ("GRAFIS input folder…", self.choose_input), ("Errors folder (ER)…", self.choose_errors),
-                         ("Write GRAFIS model for order…", self.write_mdl)):
+                         ("Cutting files folder…", self.choose_out), ("LEVEL7 Nesting program…", self.choose_cli),
+                         ("Nesting folder…", self.choose_nesting), ("Watch GRAFIS output folder", self.toggle),
+                         ("Register GRAFIS marker (SCB)…", self.register)):
             b = QPushButton(tr(text))
             b.clicked.connect(fn)
-            bar0.addWidget(b)
-        bar0.addStretch()
-        lay.addLayout(bar0)
-        brow = QHBoxLayout()
+            grid.addWidget(b, k // 2, k % 2)
+            k += 1
+        c1.addLayout(grid)
+        c1.addStretch()
+        c2 = QVBoxLayout()
+        c2.addWidget(QLabel(f"<b>{tr('GRAFIS robot')}</b>"))
         self.robot = QCheckBox(tr("GRAFIS robot on this PC: open the model, Test Run All Parts, save"))
         self.robot.setChecked(bool(self.ws.db.get_setting("robot.enabled", False)))
         self.robot.toggled.connect(lambda on: (self.ws.db.set_setting("robot.enabled", on), self.refresh()))
-        brow.addWidget(self.robot)
+        c2.addWidget(self.robot)
         for text, fn in (("Teach: Test Run All Parts button", lambda: self.teach("test_run")),
                          ("Teach: Save button", lambda: self.teach("save")),
-                         ("Teach: Close button", lambda: self.teach("close")),
-                         ("Robot: try again", self.robot_retry), ("Robot: run now", self.robot_now)):
+                         ("Teach: Close button", lambda: self.teach("close"))):
             b = QPushButton(tr(text))
             b.clicked.connect(fn)
-            brow.addWidget(b)
-        brow.addStretch()
-        lay.addLayout(brow)
+            c2.addWidget(b)
+        c2.addStretch()
+        c3 = QVBoxLayout()
+        c3.addWidget(QLabel(f"<b>{tr('Automatic')}</b>"))
         self.auto_mdl = QCheckBox(tr("Automatic: write the order's X values into a GRAFIS model (MDL) on import"))
         self.auto_mdl.setChecked(bool(self.ws.db.get_setting("grafis.auto_mdl", True)))
         self.auto_mdl.toggled.connect(lambda on: (self.ws.db.set_setting("grafis.auto_mdl", on), self.refresh()))
-        lay.addWidget(self.auto_mdl)
-        self.models = table(["Time", "Order line", "Status", "File", "X values", "GRAFIS parts", "Findings"])
-        lay.addWidget(self.models, 1)
-        for text, fn in (("Register GRAFIS marker (SCB)…", self.register), ("Watch GRAFIS output folder", self.toggle),
-                         ("Accept review findings…", self.accept), ("Nesting folder…", self.choose_nesting),
-                         ("LEVEL7 Nesting program…", self.choose_cli), ("Cutting files folder…", self.choose_out),
-                         ("Open cutting files folder", self.open_out), ("Show marker in LEVEL7 Nesting", self.show_marker),
-                         ("Nest again", self.renest), ("Clean the list…", self.clean_list)):
-            b = QPushButton(tr(text))
-            b.clicked.connect(fn)
-            bar.addWidget(b)
-        bar.addStretch()
-        lay.addLayout(bar)
+        c3.addWidget(self.auto_mdl)
         self.auto = QCheckBox(tr("Automatic: nest and write cutting files (PLT / ISO)"))
         self.auto.setChecked(bool(self.ws.db.get_setting("cutting.auto", True)))
         self.auto.toggled.connect(lambda on: (self.ws.db.set_setting("cutting.auto", on), self.refresh()))
+        c3.addWidget(self.auto)
         frow = QHBoxLayout()
-        frow.addWidget(self.auto)
         frow.addWidget(QLabel(tr("Formats") + ":"))
         fmts = self.ws.db.get_setting("cutting.formats", ["plt", "iso"])
         self.fmt_boxes = {}
@@ -821,17 +850,45 @@ class GrafisPage(Page):
             cb.toggled.connect(self._save_formats)
             self.fmt_boxes[code] = cb
             frow.addWidget(cb)
-        frow.addWidget(QLabel(tr("Nesting time (s)") + ":"))
+        frow.addStretch()
+        c3.addLayout(frow)
+        trow = QHBoxLayout()
+        trow.addWidget(QLabel(tr("Nesting time (s)") + ":"))
         self.nest_time = QSpinBox()
         self.nest_time.setRange(10, 1800)
         self.nest_time.setValue(int(float(self.ws.db.get_setting("cutting.time_s", 60))))
         self.nest_time.valueChanged.connect(lambda v: self.ws.db.set_setting("cutting.time_s", int(v)))
-        frow.addWidget(self.nest_time)
-        frow.addStretch()
-        lay.addLayout(frow)
+        trow.addWidget(self.nest_time)
+        trow.addStretch()
+        c3.addLayout(trow)
+        c3.addStretch()
+        for c, w in ((c1, 2), (c2, 1), (c3, 1)):
+            cols.addLayout(c, w)
+        sv.addLayout(cols)
+        self.info = QLabel()
+        self.info.setWordWrap(True)
+        self.info.setObjectName("cardLabel")
+        self.info.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        sv.addWidget(self.info)
+        lay.addWidget(self.settings_card)
+        # order models for GRAFIS
+        mcard, mv = self._card(tr("Order models for GRAFIS"))
+        self._buttons(mv, (("Robot: run now", self.robot_now), ("Write GRAFIS model for order…", self.write_mdl),
+                           ("Robot: try again", self.robot_retry)), primary=("Robot: run now",))
+        self.models = table(["Time", "Order line", "Status", "File", "X values", "GRAFIS parts", "Findings"])
+        mv.addWidget(self.models, 1)
+        lay.addWidget(mcard, 1)
+        # markers and cutting files
+        ccard, cv = self._card(tr("Markers and cutting files"))
+        self._buttons(cv, (("Show marker in LEVEL7 Nesting", self.show_marker), ("Nest again", self.renest),
+                           ("Open cutting files folder", self.open_out), ("Accept review findings…", self.accept),
+                           ("Clean the list…", self.clean_list)), primary=("Show marker in LEVEL7 Nesting",))
         self.t = table(["File", "Order line", "Status", "Width", "Bundles", "Pieces", "Cutting files", "Findings"])
         self.t.cellDoubleClicked.connect(lambda *_: self.show_marker())
-        lay.addWidget(self.t, 1)
+        cv.addWidget(self.t, 1)
+        lay.addWidget(ccard, 1)
+        self._settings_auto = True
+        self.settings_card.setVisible(False)
         self.busy = False
         self.watcher = None
         self.timer = QTimer(self)
@@ -842,6 +899,23 @@ class GrafisPage(Page):
 
     def _nesting_dir(self):
         return self.ws.db.get_setting("nesting.inbox") or os.path.join(self.ws.folder, "nesting")
+
+    def _show_settings(self, on):
+        self._settings_auto = False                     # the owner decided: keep it as chosen
+        self.settings_card.setVisible(on)
+
+    def _chips(self, items):
+        """Status strip: one chip per part of the chain (green = set up, red = needs attention)."""
+        while self.chips.count():
+            w = self.chips.takeAt(0).widget()
+            if w:
+                w.deleteLater()
+        for ok, text in items:
+            c = QLabel(f"<span style='color:{'#2ecc71' if ok else '#e74c3c'}'>●</span> {text}")
+            c.setObjectName("statChip")
+            c.setStyleSheet("QLabel { border: 1px solid rgba(128,128,128,0.35); border-radius: 12px; "
+                            "padding: 4px 12px; }")
+            self.chips.addWidget(c)
 
     def refresh(self):
         from ..services.auto_cut import NestingNotConfigured, nesting_command, settings
@@ -886,6 +960,20 @@ class GrafisPage(Page):
                           f"{tr('Nesting folder')}: {self._nesting_dir()}\n"
                           f"LEVEL7 Nesting: {cli} — {tr('Cutting files folder')}: {st['out']} — "
                           f"{', '.join(st['formats']).upper()} ({st['plt_preset']}, {st['iso_preset']})")
+        robot_on = self.robot.isChecked() and "test_run" in rb
+        cli_ok = not cli.startswith("⚠")
+        mdl_ok = bool(mdl and os.path.isfile(mdl))
+        self._chips([(mdl_ok, tr("GRAFIS model (MDL)")),
+                     (self.watcher is not None, tr("watching") if self.watcher else tr("not watching")),
+                     (robot_on, f"{tr('GRAFIS robot')}: {tr('on') if robot_on else tr('off')}"),
+                     (cli_ok, "LEVEL7 Nesting"),
+                     (bool(st["formats"]), f"{tr('Cutting files')}: {', '.join(st['formats']).upper()}")])
+        if self._settings_auto:                         # open the settings while the chain is not set up
+            need = not (mdl_ok and cli_ok and self.watcher is not None and "test_run" in rb)
+            self.settings_btn.blockSignals(True)
+            self.settings_btn.setChecked(need)
+            self.settings_btn.blockSignals(False)
+            self.settings_card.setVisible(need)
         rows = self.ws.db.q("SELECT * FROM grafis_results WHERE archived=0 ORDER BY checked_at DESC")
         out, colors, data, seen = [], [], [], set()
         for r in rows:
