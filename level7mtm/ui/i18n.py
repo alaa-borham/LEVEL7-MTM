@@ -196,6 +196,8 @@ AR = {
     "Variables (JSON)": "المتغيرات (JSON)",
     "Properties (JSON)": "الخصائص (JSON)",
     "Name": "الاسم",
+    "Nest again": "إعادة التعشيق",
+    "done": "تم",
     "Formats": "الصيغ",
     "Nesting time (s)": "وقت التعشيق (ث)",
     "cutting files are in the old folder": "ملفات قص موجودة في المجلد القديم",

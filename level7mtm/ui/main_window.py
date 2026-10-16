@@ -650,7 +650,8 @@ class GrafisPage(Page):
         for text, fn in (("Register GRAFIS marker (SCB)…", self.register), ("Watch GRAFIS output folder", self.toggle),
                          ("Accept review findings…", self.accept), ("Nesting folder…", self.choose_nesting),
                          ("LEVEL7 Nesting program…", self.choose_cli), ("Cutting files folder…", self.choose_out),
-                         ("Open cutting files folder", self.open_out), ("Show marker in LEVEL7 Nesting", self.show_marker)):
+                         ("Open cutting files folder", self.open_out), ("Show marker in LEVEL7 Nesting", self.show_marker),
+                         ("Nest again", self.renest)):
             b = QPushButton(tr(text))
             b.clicked.connect(fn)
             bar.addWidget(b)
@@ -896,6 +897,27 @@ class GrafisPage(Page):
             os.startfile(d)                            # Windows Explorer
         else:
             QMessageBox.information(self, tr("Cutting files folder"), d)
+
+    def renest(self):
+        """Nest the selected row again (e.g. after a longer nesting time was set) and rewrite its cutting files."""
+        from ..services.auto_cut import auto_cut
+        from ..services.grafis_intake import check_scb
+        from ..services.mdl_intake import check_mdl
+        paths = selected_data(self.t)
+        if not paths:
+            QMessageBox.information(self, "LEVEL7 Nesting", tr("Select a row first"))
+            return
+        p = paths[0]
+
+        def work():
+            chk = check_mdl(self.ws, p)[0] if p.lower().endswith(".mdl") else check_scb(self.ws, p, renest=True)
+            if not chk.ok or not chk.lines:
+                return {"status": "failed", "message": "; ".join(m for s_, m in chk.issues if s_ != "info")}
+            return auto_cut(self.ws, chk, p, force=True)
+        self.win.run(work, lambda r: (self.refresh(), QMessageBox.information(
+            self, "LEVEL7 Nesting", f"{tr(r['status'])}: "
+            + (f"L {r['length_mm'] / 1000:.2f} m, E {r['efficiency_pct']:.1f} %" if r.get("length_mm") and
+               r.get("efficiency_pct") else r.get("message", "")))))
 
     def show_marker(self):
         """Open the marker of the selected row (the .l7n LEVEL7 Nesting saved next to the PLT / ISO)."""

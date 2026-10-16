@@ -67,11 +67,12 @@ def _run(cmd, env, log) -> int:
     return p.returncode
 
 
-def auto_cut(ws, chk, scb_path: str) -> dict:
-    """Nest the checked SCB and write the cutting files. Returns {status, outputs, log, ...}."""
+def auto_cut(ws, chk, scb_path: str, force: bool = False) -> dict:
+    """Nest the checked SCB and write the cutting files. Returns {status, outputs, log, ...}.
+    ``force``: nest again (e.g. with a longer nesting time) although cutting files exist."""
     st = settings(ws)
     dup = ws.db.one("SELECT * FROM cutting_jobs WHERE sha256=? AND status='done'", (chk.sha256,))
-    if dup:
+    if dup and not force:
         return {"status": "duplicate", "outputs": json.loads(dup["outputs"]), "log": []}
     log: list[str] = []
     result = {"status": "failed", "outputs": [], "log": log}
