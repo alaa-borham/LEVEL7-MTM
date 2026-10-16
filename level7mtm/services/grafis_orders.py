@@ -176,9 +176,18 @@ def _save(ws, res, tsha) -> dict:
 
 def import_and_prepare(ws, path: str):
     """Import an XML file and, when automatic mode is on, write the GRAFIS model of each new order line."""
+    from . import errors_folder
     out = ws.import_file(path)
+    stem = os.path.splitext(os.path.basename(path))[0]
+    if out.status == "failed":
+        errors_folder.report(ws, stem, [out.message], "XML import failed", copy_file=path)
     if settings(ws)["enabled"] and out.status == "imported":
         for ln in out.lines:
             if ln["action"] in ("new", "new_revision"):
                 out.grafis.append(order_mdl(ws, ln["revision_id"]))
+        bad = [g for g in out.grafis if g["status"] in ("blocked", "not_configured")]
+        for k, g in enumerate(bad):
+            errors_folder.report(ws, f"{stem}__{g['line_number']}", g["problems"],
+                                 f"order line {g['line_number']}: no GRAFIS model written",
+                                 copy_file=path if k == 0 else None)
     return out

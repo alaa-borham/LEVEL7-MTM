@@ -619,7 +619,8 @@ class GrafisPage(Page):
         lay.addWidget(self.info)
         bar = QHBoxLayout()
         bar0 = QHBoxLayout()
-        for text, fn in (("GRAFIS model (MDL)…", self.choose_mdl), ("GRAFIS input folder…", self.choose_input),
+        for text, fn in (("Folders MDL / SCB / ER…", self.choose_folders), ("GRAFIS model (MDL)…", self.choose_mdl),
+                         ("GRAFIS input folder…", self.choose_input), ("Errors folder (ER)…", self.choose_errors),
                          ("Write GRAFIS model for order…", self.write_mdl)):
             b = QPushButton(tr(text))
             b.clicked.connect(fn)
@@ -683,7 +684,8 @@ class GrafisPage(Page):
         mdl = gs["template"]
         self.info.setText(f"{tr('GRAFIS model (MDL)')}: {mdl or '⚠ ' + tr('not set')}"
                           f"{'' if not mdl or os.path.isfile(mdl) else ' ⚠ ' + tr('not found')} — "
-                          f"{tr('GRAFIS input folder')}: {gs['out']}\n"
+                          f"{tr('GRAFIS input folder')}: {gs['out']} — "
+                          f"{tr('Errors folder (ER)')}: {self.ws.db.get_setting('errors.folder') or '⚠ ' + tr('not set')}\n"
                           f"{tr('GRAFIS output folder')}: {self.ws.db.get_setting('grafis.watch.folder') or '—'}"
                           f" ({tr('watching') if self.watcher else tr('not watching')}) — "
                           f"{tr('Nesting folder')}: {self._nesting_dir()}\n"
@@ -723,6 +725,35 @@ class GrafisPage(Page):
                                            "GRAFIS (*.mdl *.MDL)")
         if p:
             self.ws.db.set_setting("grafis.mdl", p)
+            self.refresh()
+
+    def choose_folders(self):
+        """One main folder with the subfolders MDL (order models for GRAFIS), SCB (GRAFIS output, watched) and ER
+        (files with an error); missing subfolders are created."""
+        d = QFileDialog.getExistingDirectory(self, tr("Folders MDL / SCB / ER…"),
+                                             os.path.dirname(self.ws.db.get_setting("errors.folder") or "") or "")
+        if not d:
+            return
+        sub = {}
+        for name in ("MDL", "SCB", "ER"):
+            have = next((e for e in os.listdir(d) if e.lower() == name.lower() and os.path.isdir(os.path.join(d, e))),
+                        None)
+            sub[name] = os.path.join(d, have or name)
+            os.makedirs(sub[name], exist_ok=True)
+        self.ws.db.set_setting("grafis.input", sub["MDL"])
+        self.ws.db.set_setting("errors.folder", sub["ER"])
+        if self.watcher:
+            self.timer.stop()
+            self.watcher = None
+        self.start(sub["SCB"])
+        self.refresh()
+        QMessageBox.information(self, "GRAFIS", f"MDL: {sub['MDL']}\nSCB: {sub['SCB']} ({tr('watching')})\n"
+                                                f"ER: {sub['ER']}")
+
+    def choose_errors(self):
+        d = QFileDialog.getExistingDirectory(self, tr("Errors folder (ER)…"), self.ws.db.get_setting("errors.folder") or "")
+        if d:
+            self.ws.db.set_setting("errors.folder", d)
             self.refresh()
 
     def choose_input(self):
