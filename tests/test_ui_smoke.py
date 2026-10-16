@@ -39,9 +39,9 @@ def test_all_screens(ws, lang):
     win.set_role(True)
     shots = os.environ.get("LEVEL7MTM_SHOTS")
     for i, cls in enumerate(PAGES):
-        win.nav.setCurrentRow(i)
+        win.goto(cls.title)
         app.processEvents()
-        assert win.stack.currentWidget() is win.pages[cls.title]
+        assert win.current_page() is win.pages[cls.title]
         if shots:
             os.makedirs(shots, exist_ok=True)
             win.grab().save(os.path.join(shots, f"{lang}_{i:02d}_{cls.__name__}.png"))

@@ -46,6 +46,8 @@ def main(argv=None) -> int:
     except Exception as e:  # noqa: BLE001
         QMessageBox.critical(None, "LEVEL7 MTM", f"Cannot open data folder {folder}:\n{e}")
         return 1
+    from . import themes
+    themes.apply(app, ws.db.get_setting("ui.theme", "dark"))
     lang = ws.db.get_setting("ui.language", "ar")
     set_language(lang)
     app.setLayoutDirection(Qt.RightToLeft if lang == "ar" else Qt.LeftToRight)

@@ -10,7 +10,8 @@ import traceback
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QColor
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFrame,
+                               QListWidgetItem, QToolButton,
                                QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
                                QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QSplitter,
                                QStackedWidget, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
@@ -73,14 +74,28 @@ def table(headers: list[str]) -> QTableWidget:
     return t
 
 
+_KIND = {"#bbf7d0": "ok", "#a7f3d0": "ok", "#d1fae5": "ok", "#fde68a": "review", "#fecaca": "blocking",
+         "#bfdbfe": "info", "#e0f2fe": "info", "#e5e7eb": "neutral", "#f3f4f6": "neutral"}
+
+
+def paint(it: QTableWidgetItem, color: str | None) -> None:
+    """Status colour of a cell in the current theme (tinted on dark, pastel on light; text always readable)."""
+    kind = _KIND.get((color or "").lower())
+    if kind is None:
+        return
+    from .themes import status_colours
+    bg, fg = status_colours(kind)
+    it.setBackground(bg)
+    it.setForeground(fg)
+
+
 def fill(t: QTableWidget, rows: list[list], colors: list[str | None] | None = None, data: list | None = None):
     t.setRowCount(len(rows))
     for i, row in enumerate(rows):
         for j, v in enumerate(row):
             it = QTableWidgetItem("" if v is None else str(v))
             if colors and colors[i]:
-                it.setBackground(QColor(colors[i]))
-                it.setForeground(QColor("#111111"))      # light status colours: dark text, also in the dark theme
+                paint(it, colors[i])
             if data is not None and j == 0:
                 it.setData(Qt.UserRole, data[i])
             t.setItem(i, j, it)
@@ -110,6 +125,141 @@ class Page(QWidget):
 
     def refresh(self):
         pass
+
+
+class HomePage(Page):
+    """Start screen: what is happening now (cards), what is wrong, quick actions, the latest events."""
+    title = "Home"
+
+    def __init__(self, win):
+        super().__init__(win)
+        lay = QVBoxLayout(self)
+        lay.setSpacing(14)
+        grid = QHBoxLayout()
+        grid.setSpacing(14)
+        self.cards = {}
+        for key, label_ in (("orders", "Orders today"), ("waiting", "Waiting for GRAFIS"),
+                            ("cut", "Cutting files today"), ("errors", "Need attention")):
+            card, val = self._card(tr(label_))
+            self.cards[key] = val
+            grid.addWidget(card)
+        lay.addLayout(grid)
+        row = QHBoxLayout()
+        row.setSpacing(14)
+        st = QFrame()
+        st.setObjectName("card")
+        sl = QVBoxLayout(st)
+        t = QLabel(tr("System status"))
+        t.setObjectName("cardTitle")
+        sl.addWidget(t)
+        self.status_rows = QVBoxLayout()
+        sl.addLayout(self.status_rows)
+        sl.addStretch()
+        row.addWidget(st, 1)
+        qa = QFrame()
+        qa.setObjectName("card")
+        ql = QVBoxLayout(qa)
+        t = QLabel(tr("Quick actions"))
+        t.setObjectName("cardTitle")
+        ql.addWidget(t)
+        for text, fn in (("⇪  " + tr("Import XML files…"), lambda: self.win.import_dialog()),
+                         ("▶  " + tr("Robot: run now"), lambda: self._grafis().robot_now()),
+                         ("✂  " + tr("Open cutting files folder"), lambda: self._grafis().open_out()),
+                         ("⚠  " + tr("Errors folder (ER)"), self._open_er)):
+            b = QPushButton(text)
+            b.setObjectName("quick")
+            b.clicked.connect(fn)
+            ql.addWidget(b)
+        ql.addStretch()
+        row.addWidget(qa, 1)
+        lay.addLayout(row, 1)
+        rc = QFrame()
+        rc.setObjectName("card")
+        rl = QVBoxLayout(rc)
+        t = QLabel(tr("Latest events"))
+        t.setObjectName("cardTitle")
+        rl.addWidget(t)
+        self.recent = table(["Time", "Action", "Details"])
+        rl.addWidget(self.recent)
+        lay.addWidget(rc, 2)
+
+    @staticmethod
+    def _card(label_):
+        f = QFrame()
+        f.setObjectName("card")
+        f.setMinimumHeight(110)
+        v = QVBoxLayout(f)
+        val = QLabel("—")
+        val.setObjectName("cardValue")
+        lab = QLabel(label_)
+        lab.setObjectName("cardLabel")
+        v.addWidget(val)
+        v.addWidget(lab)
+        v.addStretch()
+        return f, val
+
+    def _grafis(self):
+        return self.win.pages["GRAFIS markers"]
+
+    def _open_er(self):
+        d = self.ws.db.get_setting("errors.folder")
+        if d and os.path.isdir(d) and hasattr(os, "startfile"):
+            os.startfile(d)
+        else:
+            QMessageBox.information(self, "ER", d or tr("not set"))
+
+    def refresh(self):
+        from datetime import date
+        from ..services.auto_cut import NestingNotConfigured, nesting_command
+        from ..services.grafis_robot import pending
+        today = date.today().isoformat()
+        db = self.ws.db
+        n_orders = db.one("SELECT COUNT(*) AS n FROM revisions WHERE imported_at LIKE ?", (today + "%",))["n"]
+        n_cut = db.one("SELECT COUNT(*) AS n FROM cutting_jobs WHERE status='done' AND created_at LIKE ?",
+                       (today + "%",))["n"]
+        n_bad = db.one("SELECT COUNT(*) AS n FROM grafis_orders g WHERE archived=0 AND status IN "
+                       "('blocked','not_configured') AND id IN (SELECT MAX(id) FROM grafis_orders GROUP BY "
+                       "revision_id)")["n"] + db.one("SELECT COUNT(*) AS n FROM grafis_results WHERE archived=0 "
+                                                     "AND status IN ('needs_review','unmatched')")["n"]
+        try:
+            n_wait = len(pending(self.ws))
+        except Exception:  # noqa: BLE001
+            n_wait = 0
+        for k, v in (("orders", n_orders), ("waiting", n_wait), ("cut", n_cut), ("errors", n_bad)):
+            self.cards[k].setText(str(v))
+        while self.status_rows.count():
+            w = self.status_rows.takeAt(0).widget()
+            if w:
+                w.deleteLater()
+        try:
+            cli = nesting_command(self.ws)[0][-1]
+        except NestingNotConfigured:
+            cli = None
+        mdl = db.get_setting("grafis.mdl")
+        rb = db.get_setting("robot.buttons", {}) or {}
+        items = [(bool(mdl and os.path.isfile(mdl)), tr("GRAFIS model (MDL)"), os.path.basename(mdl or "") or
+                  tr("not set")),
+                 (bool(db.get_setting("grafis.watch.enabled", False)), tr("Watch GRAFIS output folder"),
+                  db.get_setting("grafis.input") or ""),
+                 (bool(db.get_setting("robot.enabled", False)) and "test_run" in rb, tr("GRAFIS robot"),
+                  tr("on") if db.get_setting("robot.enabled", False) else tr("off")),
+                 (cli is not None, "LEVEL7 Nesting", cli or tr("not found")),
+                 (bool(db.get_setting("watch.enabled", False)), tr("Watch folder") + " (ERP)",
+                  db.get_setting("watch.folder") or "")]
+        for ok, what, detail in items:
+            line = QWidget()
+            hl = QHBoxLayout(line)
+            hl.setContentsMargins(0, 2, 0, 2)
+            dot = QLabel("●")
+            dot.setObjectName("dotOk" if ok else "dotBad")
+            hl.addWidget(dot)
+            hl.addWidget(QLabel(f"<b>{what}</b>"))
+            d = QLabel(detail)
+            d.setObjectName("cardLabel")
+            hl.addWidget(d, 1)
+            self.status_rows.addWidget(line)
+        rows = db.q("SELECT at, action, details FROM audit ORDER BY id DESC LIMIT 12")
+        fill(self.recent, [[r["at"].replace("T", " "), r["action"], r["details"][:160]] for r in rows])
 
 
 class OrdersPage(Page):
@@ -1442,8 +1592,7 @@ class XValuesPage(Page):
                 ck.setCheckState(Qt.Checked if confirmed else Qt.Unchecked)
             ck.setText("")
             for j in range(6):
-                self.t.item(i, j).setBackground(QColor(STATUS_COLORS["approved"]))
-                self.t.item(i, j).setForeground(QColor("#111111"))           # readable in the dark theme too
+                paint(self.t.item(i, j), STATUS_COLORS["approved"])
         else:
             ck.setData(Qt.CheckStateRole, None)
             ck.setText(tr("inactive"))
@@ -2008,10 +2157,38 @@ class LogPage(Page):
         self.win.close()
 
 
-PAGES = [OrdersPage, ImportPage, OrderPage, ModelPage, PreviewPage, ValidationPage, SendPage, GrafisPage, XValuesPage, OptionsPage, GrafisPartsPage,
-         LibraryPage,
-         RulesPage,
-         SettingsPage, LogPage]
+# side menu: sections, their pages (by title) and an icon each; PAGES follows the same order
+SECTIONS = [
+    ("Daily work", [("Home", "⌂"), ("Orders", "☰"), ("Import & mapping", "⇪"), ("Order details", "✎")]),
+    ("GRAFIS & cutting", [("GRAFIS markers", "✂"), ("X values for GRAFIS", "Ⅹ"), ("Design options", "◈"),
+                          ("GRAFIS parts", "▦")]),
+    ("Pattern engine", [("Model & design", "◇"), ("Pattern preview", "◫"), ("Validation", "✓"),
+                        ("Approve & send", "➤")]),
+    ("Settings & system", [("Model library", "▤"), ("Rules editor", "⚙"), ("Materials & export", "◰"),
+                           ("Log & backups", "⟲")]),
+]
+SUBTITLES = {
+    "Home": "What is happening now, what needs attention, quick actions",
+    "Orders": "Order lines from the ERP, their revisions and status",
+    "Import & mapping": "XML files received and how their fields are read",
+    "Order details": "Measurements and design options of the selected order line",
+    "GRAFIS markers": "Order models for GRAFIS, the robot, nesting and cutting files",
+    "X values for GRAFIS": "Which XML code fills which X value of the GRAFIS model",
+    "Design options": "Option groups, their values and their names in the XML",
+    "GRAFIS parts": "Which GRAFIS parts each design option produces",
+    "Model & design": "Pattern engine: model and design of the order",
+    "Pattern preview": "Pattern engine: the calculated pieces",
+    "Validation": "Pattern engine: checks before approval",
+    "Approve & send": "Pattern engine: approval and nesting hand-over",
+    "Model library": "Versions of models, rules and mappings",
+    "Rules editor": "Measurement and option rules (pattern developer)",
+    "Materials & export": "Shrinkage, materials and export settings",
+    "Log & backups": "Everything that happened, backups and restore",
+}
+_BY_TITLE = {c.title: c for c in [HomePage, OrdersPage, ImportPage, OrderPage, ModelPage, PreviewPage, ValidationPage,
+                                  SendPage, GrafisPage, XValuesPage, OptionsPage, GrafisPartsPage, LibraryPage,
+                                  RulesPage, SettingsPage, LogPage]}
+PAGES = [_BY_TITLE[t] for _, items in SECTIONS for t, _ in items]
 
 
 # ---------------------------------------------------------------- window
@@ -2070,21 +2247,95 @@ class MainWindow(QMainWindow):
         h.addAction(a)
         root = QWidget()
         lay = QHBoxLayout(root)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        side = QFrame()
+        side.setObjectName("sidebar")
+        side.setFixedWidth(270)
+        sl = QVBoxLayout(side)
+        sl.setContentsMargins(10, 18, 10, 12)
+        brand = QLabel("LEVEL7")
+        brand.setObjectName("brand")
+        sub = QLabel("MADE TO MEASURE")
+        sub.setObjectName("brandSub")
+        ver = QLabel(f"MTM {__version__}")
+        ver.setObjectName("version")
+        for w in (brand, sub, ver):
+            w.setContentsMargins(10, 0, 10, 0)
+            sl.addWidget(w)
+        sl.addSpacing(14)
         self.nav = QListWidget()
-        self.nav.setFixedWidth(250)
+        self.nav.setObjectName("nav")
+        self.nav.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.nav.setTextElideMode(Qt.ElideRight)
+        self.nav_titles: list[str | None] = []
         self.stack = QStackedWidget()
-        self.pages = {}
-        for cls in PAGES:
-            p = cls(self)
-            self.pages[cls.title] = p
-            self.stack.addWidget(p)
-            self.nav.addItem(tr(cls.title))
+        self.pages, self.wrappers = {}, {}
+        for section, items in SECTIONS:
+            head = QListWidgetItem(tr(section).upper() if language() == "en" else tr(section))
+            head.setFlags(Qt.NoItemFlags)
+            f = head.font()
+            f.setPointSizeF(8.5)
+            f.setBold(True)
+            head.setFont(f)
+            head.setForeground(QColor(150, 154, 160))
+            self.nav.addItem(head)
+            self.nav_titles.append(None)
+            for title, icon in items:
+                cls = _BY_TITLE[title]
+                p = cls(self)
+                self.pages[title] = p
+                wrap = QWidget()
+                wl = QVBoxLayout(wrap)
+                wl.setContentsMargins(26, 20, 26, 14)
+                h = QLabel(tr(title))
+                h.setObjectName("pageTitle")
+                st = QLabel(tr(SUBTITLES.get(title, "")))
+                st.setObjectName("pageSub")
+                wl.addWidget(h)
+                wl.addWidget(st)
+                wl.addSpacing(8)
+                wl.addWidget(p, 1)
+                self.wrappers[title] = wrap
+                self.stack.addWidget(wrap)
+                self.nav.addItem(QListWidgetItem(f"{icon}   {tr(title)}"))
+                self.nav_titles.append(title)
         self.nav.currentRowChanged.connect(self.goto_row)
-        lay.addWidget(self.nav)
+        sl.addWidget(self.nav, 1)
+        bottom = QHBoxLayout()
+        from . import themes
+        tb = QToolButton()
+        tb.setObjectName("sideButton")
+        tb.setText(("☀  " + tr("Light")) if themes.name() == "dark" else ("☾  " + tr("Dark")))
+        tb.clicked.connect(self.toggle_theme)
+        lb = QToolButton()
+        lb.setObjectName("sideButton")
+        lb.setText("English" if language() == "ar" else "العربية")
+        lb.clicked.connect(lambda: self.set_lang("en" if language() == "ar" else "ar"))
+        bottom.addWidget(tb)
+        bottom.addWidget(lb)
+        bottom.addStretch()
+        sl.addLayout(bottom)
+        lay.addWidget(side)
         lay.addWidget(self.stack, 1)
         self.setCentralWidget(root)
         self.apply_role()
-        self.nav.setCurrentRow(0)
+        self.nav.setCurrentRow(1)
+
+    def current_page(self):
+        t = self.nav_titles[self.nav.currentRow()] if 0 <= self.nav.currentRow() < len(self.nav_titles) else None
+        return self.pages.get(t)
+
+    def toggle_theme(self):
+        from PySide6.QtWidgets import QApplication
+        from . import themes
+        new = "light" if themes.name() == "dark" else "dark"
+        self.ws.db.set_setting("ui.theme", new)
+        themes.apply(QApplication.instance(), new)
+        cur = self.nav_titles[self.nav.currentRow()] if self.nav.currentRow() >= 0 else None
+        self.build()
+        if cur:
+            self.goto(cur)
 
     def closeEvent(self, e):
         self.updates.release()
@@ -2105,15 +2356,24 @@ class MainWindow(QMainWindow):
         return True
 
     def apply_role(self):
-        for i, cls in enumerate(PAGES):
-            self.nav.item(i).setHidden(cls.developer_only and not self.developer)
+        section_row, visible = None, False
+        for i, title in enumerate(self.nav_titles + [None]):
+            if title is None:                          # a section header: hidden when all its pages are
+                if section_row is not None:
+                    self.nav.item(section_row).setHidden(not visible)
+                section_row, visible = i, False
+                continue
+            hide = _BY_TITLE[title].developer_only and not self.developer
+            self.nav.item(i).setHidden(hide)
+            visible = visible or not hide
         self.statusBar().showMessage(f"{tr('Role')}: {tr('Pattern developer') if self.developer else tr('Operator')}")
 
     def set_role(self, dev):
         self.developer = dev
         self.ws.db.set_setting("ui.developer", dev)
         self.apply_role()
-        self.stack.currentWidget().refresh()
+        if self.current_page():
+            self.current_page().refresh()
 
     def set_lang(self, code):
         from PySide6.QtWidgets import QApplication
@@ -2123,11 +2383,14 @@ class MainWindow(QMainWindow):
         self.build()
 
     def goto_row(self, row):
-        self.stack.setCurrentIndex(row)
-        self.guard(self.stack.currentWidget().refresh)
+        title = self.nav_titles[row] if 0 <= row < len(self.nav_titles) else None
+        if title is None:
+            return
+        self.stack.setCurrentWidget(self.wrappers[title])
+        self.guard(self.pages[title].refresh)
 
     def goto(self, title):
-        self.nav.setCurrentRow(list(self.pages).index(title))
+        self.nav.setCurrentRow(self.nav_titles.index(title))
 
     def open_revision(self, rid, page="Order details"):
         self.current_rid = rid
@@ -2253,4 +2516,5 @@ class MainWindow(QMainWindow):
         pk = self.guard(lambda: self.ws.save_document(kind, new, "edited"))
         if pk:
             self.ws.set_active(kind, pk)
-            self.stack.currentWidget().refresh()
+            if self.current_page():
+                self.current_page().refresh()
