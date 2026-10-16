@@ -11,7 +11,7 @@ import traceback
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFrame,
-                               QListWidgetItem, QToolButton,
+                               QListWidgetItem, QSizePolicy, QToolButton,
                                QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
                                QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QSplitter,
                                QStackedWidget, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
@@ -256,6 +256,8 @@ class HomePage(Page):
             hl.addWidget(QLabel(f"<b>{what}</b>"))
             d = QLabel(detail)
             d.setObjectName("cardLabel")
+            d.setToolTip(detail)
+            d.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)   # long paths never widen the window
             hl.addWidget(d, 1)
             self.status_rows.addWidget(line)
         rows = db.q("SELECT at, action, details FROM audit ORDER BY id DESC LIMIT 12")
@@ -798,48 +800,77 @@ class GrafisPage(Page):
         self.settings_btn.toggled.connect(self._show_settings)
         top.addWidget(self.settings_btn)
         lay.addLayout(top)
-        # settings card (setup, used once)
-        self.settings_card, sv = self._card(tr("Settings"))
-        cols = QHBoxLayout()
-        cols.setSpacing(18)
-        c1 = QVBoxLayout()
-        c1.addWidget(QLabel(f"<b>{tr('Folders and model')}</b>"))
-        from PySide6.QtWidgets import QGridLayout
-        grid, k = QGridLayout(), 0
-        for text, fn in (("Folders MDL / SCB / ER / CUT…", self.choose_folders), ("GRAFIS model (MDL)…", self.choose_mdl),
-                         ("GRAFIS input folder…", self.choose_input), ("Errors folder (ER)…", self.choose_errors),
-                         ("Cutting files folder…", self.choose_out), ("LEVEL7 Nesting program…", self.choose_cli),
-                         ("Nesting folder…", self.choose_nesting), ("Watch GRAFIS output folder", self.toggle),
-                         ("Register GRAFIS marker (SCB)…", self.register)):
-            b = QPushButton(tr(text))
-            b.clicked.connect(fn)
-            grid.addWidget(b, k // 2, k % 2)
-            k += 1
-        c1.addLayout(grid)
-        c1.addStretch()
-        c2 = QVBoxLayout()
-        c2.addWidget(QLabel(f"<b>{tr('GRAFIS robot')}</b>"))
-        self.robot = QCheckBox(tr("GRAFIS robot on this PC: open the model, Test Run All Parts, save"))
+        # settings: numbered steps in the order they are done (each shows ✓ when done)
+        self.settings_card, sv = self._card(tr("Setup steps"))
+        self.steps = {}
+
+        def step(key, n, title_, desc, buttons, extra=None):
+            f = QFrame()
+            f.setObjectName("step")
+            h = QHBoxLayout(f)
+            h.setContentsMargins(12, 10, 12, 10)
+            badge = QLabel(str(n))
+            badge.setObjectName("stepBadge")
+            badge.setAlignment(Qt.AlignCenter)
+            badge.setFixedSize(34, 34)
+            h.addWidget(badge, 0, Qt.AlignTop)
+            col = QVBoxLayout()
+            t = QLabel(f"<b>{tr(title_)}</b>")
+            d = QLabel(tr(desc))
+            d.setObjectName("cardLabel")
+            d.setWordWrap(True)
+            st_ = QLabel()
+            st_.setObjectName("cardLabel")
+            st_.setWordWrap(True)
+            st_.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+            col.addWidget(t)
+            col.addWidget(d)
+            if extra is not None:
+                col.addWidget(extra)
+            col.addWidget(st_)
+            h.addLayout(col, 1)
+            bc = QVBoxLayout()
+            for text, fn in buttons:
+                b = QPushButton(tr(text))
+                b.clicked.connect(fn)
+                bc.addWidget(b)
+            bc.addStretch()
+            h.addLayout(bc)
+            self.steps[key] = (badge, st_, n)
+            sv.addWidget(f)
+
+        step("model", 1, "GRAFIS base model", "The model whose X values and parts are written for each order.",
+             (("GRAFIS model (MDL)…", self.choose_mdl),))
+        step("folders", 2, "Folders", "One main folder with MDL (models for GRAFIS), SCB, ER (errors) and CUT "
+                                      "(cutting files); each can also be chosen alone.",
+             (("Folders MDL / SCB / ER / CUT…", self.choose_folders), ("GRAFIS input folder…", self.choose_input),
+              ("Errors folder (ER)…", self.choose_errors), ("Cutting files folder…", self.choose_out)))
+        step("nesting", 3, "LEVEL7 Nesting", "The nesting program that writes the marker and the cutting files.",
+             (("LEVEL7 Nesting program…", self.choose_cli),))
+        step("robot", 4, "Teach the GRAFIS robot", "Open a model in GRAFIS, press a button below and point the mouse "
+                                                   "at that GRAFIS button within 5 seconds.",
+             (("Teach: Test Run All Parts button", lambda: self.teach("test_run")),
+              ("Teach: Save button", lambda: self.teach("save")), ("Teach: Close button", lambda: self.teach("close"))))
+        auto_box = QWidget()
+        al = QVBoxLayout(auto_box)
+        al.setContentsMargins(0, 4, 0, 0)
+        self.robot = QCheckBox(tr("Robot on this PC"))
+        self.robot.setToolTip(tr("GRAFIS robot on this PC: open the model, Test Run All Parts, save"))
         self.robot.setChecked(bool(self.ws.db.get_setting("robot.enabled", False)))
         self.robot.toggled.connect(lambda on: (self.ws.db.set_setting("robot.enabled", on), self.refresh()))
-        c2.addWidget(self.robot)
-        for text, fn in (("Teach: Test Run All Parts button", lambda: self.teach("test_run")),
-                         ("Teach: Save button", lambda: self.teach("save")),
-                         ("Teach: Close button", lambda: self.teach("close"))):
-            b = QPushButton(tr(text))
-            b.clicked.connect(fn)
-            c2.addWidget(b)
-        c2.addStretch()
-        c3 = QVBoxLayout()
-        c3.addWidget(QLabel(f"<b>{tr('Automatic')}</b>"))
-        self.auto_mdl = QCheckBox(tr("Automatic: write the order's X values into a GRAFIS model (MDL) on import"))
+        self.auto_mdl = QCheckBox(tr("Write the order models"))
+        self.auto_mdl.setToolTip(tr("Automatic: write the order's X values into a GRAFIS model (MDL) on import"))
         self.auto_mdl.setChecked(bool(self.ws.db.get_setting("grafis.auto_mdl", True)))
         self.auto_mdl.toggled.connect(lambda on: (self.ws.db.set_setting("grafis.auto_mdl", on), self.refresh()))
-        c3.addWidget(self.auto_mdl)
-        self.auto = QCheckBox(tr("Automatic: nest and write cutting files (PLT / ISO)"))
+        self.auto = QCheckBox(tr("Nest and write cutting files"))
+        self.auto.setToolTip(tr("Automatic: nest and write cutting files (PLT / ISO)"))
         self.auto.setChecked(bool(self.ws.db.get_setting("cutting.auto", True)))
         self.auto.toggled.connect(lambda on: (self.ws.db.set_setting("cutting.auto", on), self.refresh()))
-        c3.addWidget(self.auto)
+        r1 = QHBoxLayout()
+        for w in (self.auto_mdl, self.robot, self.auto):
+            r1.addWidget(w)
+        r1.addStretch()
+        al.addLayout(r1)
         frow = QHBoxLayout()
         frow.addWidget(QLabel(tr("Formats") + ":"))
         fmts = self.ws.db.get_setting("cutting.formats", ["plt", "iso"])
@@ -850,25 +881,29 @@ class GrafisPage(Page):
             cb.toggled.connect(self._save_formats)
             self.fmt_boxes[code] = cb
             frow.addWidget(cb)
-        frow.addStretch()
-        c3.addLayout(frow)
-        trow = QHBoxLayout()
-        trow.addWidget(QLabel(tr("Nesting time (s)") + ":"))
+        frow.addSpacing(16)
+        frow.addWidget(QLabel(tr("Nesting time (s)") + ":"))
         self.nest_time = QSpinBox()
         self.nest_time.setRange(10, 1800)
         self.nest_time.setValue(int(float(self.ws.db.get_setting("cutting.time_s", 60))))
         self.nest_time.valueChanged.connect(lambda v: self.ws.db.set_setting("cutting.time_s", int(v)))
-        trow.addWidget(self.nest_time)
-        trow.addStretch()
-        c3.addLayout(trow)
-        c3.addStretch()
-        for c, w in ((c1, 2), (c2, 1), (c3, 1)):
-            cols.addLayout(c, w)
-        sv.addLayout(cols)
+        frow.addWidget(self.nest_time)
+        frow.addStretch()
+        al.addLayout(frow)
+        step("auto", 5, "Switch on", "What runs by itself for each new order, and the cutting files it writes.",
+             (("Watch GRAFIS output folder", self.toggle),), extra=auto_box)
+        adv = QHBoxLayout()
+        for text, fn in (("Nesting folder…", self.choose_nesting), ("Register GRAFIS marker (SCB)…", self.register)):
+            b = QPushButton(tr(text))
+            b.clicked.connect(fn)
+            adv.addWidget(b)
+        adv.addStretch()
+        sv.addLayout(adv)
         self.info = QLabel()
         self.info.setWordWrap(True)
         self.info.setObjectName("cardLabel")
         self.info.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.info.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         sv.addWidget(self.info)
         lay.addWidget(self.settings_card)
         # order models for GRAFIS
@@ -968,6 +1003,23 @@ class GrafisPage(Page):
                      (robot_on, f"{tr('GRAFIS robot')}: {tr('on') if robot_on else tr('off')}"),
                      (cli_ok, "LEVEL7 Nesting"),
                      (bool(st["formats"]), f"{tr('Cutting files')}: {', '.join(st['formats']).upper()}")])
+        er = self.ws.db.get_setting("errors.folder")
+        done = {"model": (mdl_ok, os.path.basename(mdl or "") or tr("not set")),
+                "folders": (bool(er) and os.path.isdir(gs["out"]), f"MDL: {gs['out']}   ER: {er or '—'}   "
+                                                                    f"CUT: {st['out']}"),
+                "nesting": (cli_ok, cli),
+                "robot": ("test_run" in rb, " · ".join(f"{k}: {'✓' if k in rb else '—'}"
+                                                       for k in ("test_run", "save", "close"))),
+                "auto": (robot_on and self.watcher is not None,
+                         f"{tr('watching') if self.watcher else tr('not watching')} — "
+                         f"{', '.join(st['formats']).upper()}, {st['time']:g} s")}
+        for key, (badge, label_, n) in self.steps.items():
+            ok, text = done[key]
+            badge.setText("✓" if ok else str(n))
+            badge.setProperty("done", ok)
+            badge.style().unpolish(badge)
+            badge.style().polish(badge)
+            label_.setText(("✓ " if ok else "⚠ ") + text)
         if self._settings_auto:                         # open the settings while the chain is not set up
             need = not (mdl_ok and cli_ok and self.watcher is not None and "test_run" in rb)
             self.settings_btn.blockSignals(True)
@@ -2248,8 +2300,8 @@ class LogPage(Page):
 # side menu: sections, their pages (by title) and an icon each; PAGES follows the same order
 SECTIONS = [
     ("Daily work", [("Home", "⌂"), ("Orders", "☰"), ("Import & mapping", "⇪"), ("Order details", "✎")]),
-    ("GRAFIS & cutting", [("GRAFIS markers", "✂"), ("X values for GRAFIS", "Ⅹ"), ("Design options", "◈"),
-                          ("GRAFIS parts", "▦")]),
+    ("GRAFIS & cutting", [("GRAFIS markers", "✂")]),
+    ("GRAFIS setup", [("X values for GRAFIS", "Ⅹ"), ("Design options", "◈"), ("GRAFIS parts", "▦")]),
     ("Pattern engine", [("Model & design", "◇"), ("Pattern preview", "◫"), ("Validation", "✓"),
                         ("Approve & send", "➤")]),
     ("Settings & system", [("Model library", "▤"), ("Rules editor", "⚙"), ("Materials & export", "◰"),
@@ -2359,9 +2411,14 @@ class MainWindow(QMainWindow):
         self.nav_titles: list[str | None] = []
         self.stack = QStackedWidget()
         self.pages, self.wrappers = {}, {}
+        from PySide6.QtWidgets import QScrollArea
+        self.collapsed = set(self.ws.db.get_setting("ui.collapsed", ["GRAFIS setup", "Pattern engine"]) or [])
+        self.nav_sections: dict[int, str] = {}
         for section, items in SECTIONS:
-            head = QListWidgetItem(tr(section).upper() if language() == "en" else tr(section))
-            head.setFlags(Qt.NoItemFlags)
+            arrow = "▸" if section in self.collapsed else "▾"
+            head = QListWidgetItem(f"{arrow}  " + (tr(section).upper() if language() == "en" else tr(section)))
+            head.setFlags(Qt.ItemIsEnabled)                 # clickable (opens / closes), never selected
+            self.nav_sections[self.nav.count()] = section
             f = head.font()
             f.setPointSizeF(8.5)
             f.setBold(True)
@@ -2384,11 +2441,16 @@ class MainWindow(QMainWindow):
                 wl.addWidget(st)
                 wl.addSpacing(8)
                 wl.addWidget(p, 1)
-                self.wrappers[title] = wrap
-                self.stack.addWidget(wrap)
+                scroll = QScrollArea()                     # a wide page never makes the window wider than the screen
+                scroll.setWidgetResizable(True)
+                scroll.setFrameShape(QFrame.NoFrame)
+                scroll.setWidget(wrap)
+                self.wrappers[title] = scroll
+                self.stack.addWidget(scroll)
                 self.nav.addItem(QListWidgetItem(f"{icon}   {tr(title)}"))
                 self.nav_titles.append(title)
         self.nav.currentRowChanged.connect(self.goto_row)
+        self.nav.itemClicked.connect(self._nav_clicked)
         sl.addWidget(self.nav, 1)
         bottom = QHBoxLayout()
         from . import themes
@@ -2409,6 +2471,17 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
         self.apply_role()
         self.nav.setCurrentRow(1)
+
+    def _nav_clicked(self, item):
+        row = self.nav.row(item)
+        section = self.nav_sections.get(row)
+        if section is None:
+            return
+        self.collapsed ^= {section}
+        self.ws.db.set_setting("ui.collapsed", sorted(self.collapsed))
+        text = item.text()[1:]
+        item.setText(("▸" if section in self.collapsed else "▾") + text)
+        self.apply_role()
 
     def current_page(self):
         t = self.nav_titles[self.nav.currentRow()] if 0 <= self.nav.currentRow() < len(self.nav_titles) else None
@@ -2444,16 +2517,19 @@ class MainWindow(QMainWindow):
         return True
 
     def apply_role(self):
-        section_row, visible = None, False
+        section_row, visible, closed = None, False, False
+        cur = self.nav_titles[self.nav.currentRow()] if 0 <= self.nav.currentRow() < len(self.nav_titles) else None
         for i, title in enumerate(self.nav_titles + [None]):
             if title is None:                          # a section header: hidden when all its pages are
                 if section_row is not None:
                     self.nav.item(section_row).setHidden(not visible)
-                section_row, visible = i, False
+                if i < len(self.nav_titles):
+                    section_row, visible = i, False
+                    closed = self.nav_sections.get(i) in self.collapsed
                 continue
-            hide = _BY_TITLE[title].developer_only and not self.developer
-            self.nav.item(i).setHidden(hide)
-            visible = visible or not hide
+            allowed = not (_BY_TITLE[title].developer_only and not self.developer)
+            self.nav.item(i).setHidden(not allowed or (closed and title != cur))   # the open page stays visible
+            visible = visible or allowed
         self.statusBar().showMessage(f"{tr('Role')}: {tr('Pattern developer') if self.developer else tr('Operator')}")
 
     def set_role(self, dev):
@@ -2478,7 +2554,10 @@ class MainWindow(QMainWindow):
         self.guard(self.pages[title].refresh)
 
     def goto(self, title):
-        self.nav.setCurrentRow(self.nav_titles.index(title))
+        row = self.nav_titles.index(title)
+        if self.nav.item(row).isHidden():                # in a closed section: show it
+            self.nav.item(row).setHidden(False)
+        self.nav.setCurrentRow(row)
 
     def open_revision(self, rid, page="Order details"):
         self.current_rid = rid

@@ -123,6 +123,11 @@ QFrame#card {{ background: {_rgb(c['card'])}; border: 1px solid {_rgb(c['border'
 QLabel#cardValue {{ font-size: 24pt; font-weight: 800; }}
 QLabel#cardLabel {{ color: {_rgb(mut)}; font-size: 9.5pt; }}
 QLabel#cardTitle {{ font-size: 11pt; font-weight: 700; }}
+QFrame#step {{ background: {_rgb(c['panel'])}; border: 1px solid {_rgb(c['border'])}; border-radius: 12px; }}
+QLabel#stepBadge {{ background: {_rgb(acc, 0.18)}; color: {_rgb(acc)}; border: 1px solid {_rgb(acc, 0.7)};
+    border-radius: 17px; font-weight: 800; font-size: 11pt; }}
+QLabel#stepBadge[done="true"] {{ background: rgba(46,204,113,0.20); color: rgb(46,204,113);
+    border-color: rgba(46,204,113,0.8); }}
 QLabel#dotOk {{ color: rgb(46,204,113); font-size: 13pt; }}
 QLabel#dotBad {{ color: rgb(231,76,60); font-size: 13pt; }}
 QLabel#dotWarn {{ color: {_rgb(acc)}; font-size: 13pt; }}
