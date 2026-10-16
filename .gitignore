@@ -14,3 +14,4 @@ reference/grafis/*.SCB
 # generated reports from customer files
 reports/
 *.l7n.part
+level7mtm/_build.py

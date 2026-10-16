@@ -44,3 +44,11 @@ Name: "{autodesktop}\LEVEL7 MTM"; Filename: "{app}\LEVEL7MTM.exe"; Tasks: deskto
 
 [Run]
 Filename: "{app}\LEVEL7MTM.exe"; Description: "{cm:LaunchProgram,LEVEL7 MTM}"; Flags: nowait postinstall skipifsilent
+; online update (started by the app with /SILENT /LAUNCH=1): start LEVEL7 MTM again as the normal user
+Filename: "{app}\LEVEL7MTM.exe"; Flags: nowait runasoriginaluser; Check: LaunchAfterUpdate
+
+[Code]
+function LaunchAfterUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:LAUNCH|0}') = '1';
+end;

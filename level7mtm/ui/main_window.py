@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import traceback
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
@@ -1371,6 +1372,16 @@ class MainWindow(QMainWindow):
         a.triggered.connect(lambda: QMessageBox.about(self, "LEVEL7 MTM", f"LEVEL7 MTM {__version__}\nengine "
                                                       f"{ENGINE_VERSION}\nData: {self.ws.folder}"))
         h.addAction(a)
+        from .updates import UpdateManager
+        auto = getattr(sys, "frozen", False) and not os.environ.get("LEVEL7MTM_NO_UPDATE_CHECK")
+        self.updates = UpdateManager(self, self.ws.db, self._before_update, auto_start=auto)
+        a = QAction(tr("Check for updates…"), self)
+        a.triggered.connect(lambda: self.updates.check(True))
+        h.addAction(a)
+        a = QAction(tr("Check for updates automatically"), self, checkable=True)
+        a.setChecked(self.updates.auto_enabled())
+        a.toggled.connect(self.updates.set_auto)
+        h.addAction(a)
         root = QWidget()
         lay = QHBoxLayout(root)
         self.nav = QListWidget()
@@ -1388,6 +1399,24 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
         self.apply_role()
         self.nav.setCurrentRow(0)
+
+    def closeEvent(self, e):
+        self.updates.release()
+        super().closeEvent(e)
+
+    def _before_update(self) -> bool:
+        """Before the installer replaces the program: background work (nesting, import) must have finished."""
+        if self.pool.activeThreadCount():
+            if QMessageBox.question(self, tr("Updates"), tr("Work is still running. Wait for it to finish and "
+                                                            "then install?")) != QMessageBox.Yes:
+                return False
+            self.pool.waitForDone(600000)
+        for p in self.pages.values():
+            if getattr(p, "timer", None) is not None:
+                p.timer.stop()
+        if getattr(self, "timer", None) is not None:
+            self.timer.stop()
+        return True
 
     def apply_role(self):
         for i, cls in enumerate(PAGES):
