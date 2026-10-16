@@ -196,6 +196,11 @@ AR = {
     "Variables (JSON)": "المتغيرات (JSON)",
     "Properties (JSON)": "الخصائص (JSON)",
     "Name": "الاسم",
+    "Folders MDL / SCB / ER / CUT…": "المجلدات MDL / SCB / ER / CUT…",
+    "Open cutting files folder": "فتح مجلد ملفات القص",
+    "Show marker in LEVEL7 Nesting": "عرض الماركر في LEVEL7 Nesting",
+    "Select a row first": "اختر صفًا أولًا",
+    "This row has no marker yet": "لا يوجد ماركر لهذا الصف بعد",
     "GRAFIS part": "القطعة في GRAFIS",
     "— choose the part —": "— اختر القطعة —",
     "Choose for each design option the GRAFIS parts it needs (* = every order). Exactly these parts are switched to production in the order's model.":

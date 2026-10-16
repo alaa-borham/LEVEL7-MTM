@@ -619,7 +619,7 @@ class GrafisPage(Page):
         lay.addWidget(self.info)
         bar = QHBoxLayout()
         bar0 = QHBoxLayout()
-        for text, fn in (("Folders MDL / SCB / ER…", self.choose_folders), ("GRAFIS model (MDL)…", self.choose_mdl),
+        for text, fn in (("Folders MDL / SCB / ER / CUT…", self.choose_folders), ("GRAFIS model (MDL)…", self.choose_mdl),
                          ("GRAFIS input folder…", self.choose_input), ("Errors folder (ER)…", self.choose_errors),
                          ("Write GRAFIS model for order…", self.write_mdl)):
             b = QPushButton(tr(text))
@@ -649,7 +649,8 @@ class GrafisPage(Page):
         lay.addWidget(self.models, 1)
         for text, fn in (("Register GRAFIS marker (SCB)…", self.register), ("Watch GRAFIS output folder", self.toggle),
                          ("Accept review findings…", self.accept), ("Nesting folder…", self.choose_nesting),
-                         ("LEVEL7 Nesting program…", self.choose_cli), ("Cutting files folder…", self.choose_out)):
+                         ("LEVEL7 Nesting program…", self.choose_cli), ("Cutting files folder…", self.choose_out),
+                         ("Open cutting files folder", self.open_out), ("Show marker in LEVEL7 Nesting", self.show_marker)):
             b = QPushButton(tr(text))
             b.clicked.connect(fn)
             bar.addWidget(b)
@@ -660,6 +661,7 @@ class GrafisPage(Page):
         self.auto.toggled.connect(lambda on: (self.ws.db.set_setting("cutting.auto", on), self.refresh()))
         lay.addWidget(self.auto)
         self.t = table(["File", "Order line", "Status", "Width", "Bundles", "Pieces", "Cutting files", "Findings"])
+        self.t.cellDoubleClicked.connect(lambda *_: self.show_marker())
         lay.addWidget(self.t, 1)
         self.busy = False
         self.watcher = None
@@ -802,20 +804,21 @@ class GrafisPage(Page):
         if not d:
             return
         sub = {}
-        for name in ("MDL", "SCB", "ER"):
+        for name in ("MDL", "SCB", "ER", "CUT"):
             have = next((e for e in os.listdir(d) if e.lower() == name.lower() and os.path.isdir(os.path.join(d, e))),
                         None)
             sub[name] = os.path.join(d, have or name)
             os.makedirs(sub[name], exist_ok=True)
         self.ws.db.set_setting("grafis.input", sub["MDL"])
         self.ws.db.set_setting("errors.folder", sub["ER"])
+        self.ws.db.set_setting("cutting.output", sub["CUT"])
         if self.watcher:
             self.timer.stop()
             self.watcher = None
         self.start(sub["SCB"])
         self.refresh()
         QMessageBox.information(self, "GRAFIS", f"MDL: {sub['MDL']}\nSCB: {sub['SCB']} ({tr('watching')})\n"
-                                                f"ER: {sub['ER']}")
+                                                f"ER: {sub['ER']}\nCUT ({tr('Cutting files')}): {sub['CUT']}")
 
     def choose_errors(self):
         d = QFileDialog.getExistingDirectory(self, tr("Errors folder (ER)…"), self.ws.db.get_setting("errors.folder") or "")
@@ -851,6 +854,41 @@ class GrafisPage(Page):
         if p:
             self.ws.db.set_setting("nesting.cli", p)
             self.refresh()
+
+    def open_out(self):
+        from ..services.auto_cut import settings
+        d = settings(self.ws)["out"]
+        os.makedirs(d, exist_ok=True)
+        if hasattr(os, "startfile"):
+            os.startfile(d)                            # Windows Explorer
+        else:
+            QMessageBox.information(self, tr("Cutting files folder"), d)
+
+    def show_marker(self):
+        """Open the marker of the selected row (the .l7n LEVEL7 Nesting saved next to the PLT / ISO)."""
+        import subprocess
+        from ..services.auto_cut import NestingNotConfigured, nesting_command
+        paths = selected_data(self.t)
+        if not paths:
+            QMessageBox.information(self, "LEVEL7 Nesting", tr("Select a row first"))
+            return
+        r = self.ws.db.one("SELECT sha256 FROM grafis_results WHERE path=? ORDER BY id DESC", (paths[0],))
+        cj = self.ws.db.one("SELECT info FROM cutting_jobs WHERE sha256=? ORDER BY id DESC", (r["sha256"],)) if r else None
+        l7n = json.loads(cj["info"]).get("l7n") if cj else None
+        if not l7n or not os.path.isfile(l7n):
+            QMessageBox.information(self, "LEVEL7 Nesting", tr("This row has no marker yet"))
+            return
+        try:
+            cli = nesting_command(self.ws)[0][0]
+        except NestingNotConfigured:
+            cli = ""
+        gui = os.path.join(os.path.dirname(cli), "LEVEL7Nesting.exe") if cli else ""
+        if gui and os.path.isfile(gui):
+            subprocess.Popen([gui, l7n])
+        elif hasattr(os, "startfile"):
+            os.startfile(l7n)
+        else:
+            QMessageBox.information(self, "LEVEL7 Nesting", l7n)
 
     def choose_out(self):
         d = QFileDialog.getExistingDirectory(self, tr("Cutting files folder…"),
