@@ -80,6 +80,7 @@ def fill(t: QTableWidget, rows: list[list], colors: list[str | None] | None = No
             it = QTableWidgetItem("" if v is None else str(v))
             if colors and colors[i]:
                 it.setBackground(QColor(colors[i]))
+                it.setForeground(QColor("#111111"))      # light status colours: dark text, also in the dark theme
             if data is not None and j == 0:
                 it.setData(Qt.UserRole, data[i])
             t.setItem(i, j, it)
@@ -661,6 +662,7 @@ class GrafisPage(Page):
         from ..services.grafis_orders import settings as gsettings
         gs = gsettings(self.ws)
         mrows = self.ws.db.q("SELECT g.*, r.line_number FROM grafis_orders g JOIN revisions r ON r.id=g.revision_id "
+                             "WHERE g.id IN (SELECT MAX(id) FROM grafis_orders GROUP BY revision_id) "   # latest only
                              "ORDER BY g.id DESC LIMIT 500")
         mo, mc = [], []
         for r in mrows:
