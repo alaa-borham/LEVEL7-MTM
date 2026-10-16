@@ -86,3 +86,26 @@ def test_grafis_parts_tab_round_trip(ws):
     load_catalog(cat)                                      # the catalog check accepts the rows
     win.close()
     app.processEvents()
+
+
+def test_x_value_row_turns_active_when_a_code_is_typed(ws):
+    from conftest import MDL
+    if not os.path.exists(MDL):
+        pytest.skip("customer MDL not in the checkout")
+    from PySide6.QtCore import Qt
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ws.db.set_setting("grafis.mdl", MDL)
+    win = MainWindow(ws)
+    page = win.pages["X values for GRAFIS"]
+    page.refresh()
+    row = next(i for i in range(page.t.rowCount()) if page.t.item(i, 0).text() == "X10")
+    assert page.t.item(row, 5).data(Qt.CheckStateRole) is None              # inactive
+    page.t.item(row, 3).setText("FW")
+    assert page.t.item(row, 5).checkState() == Qt.Checked                   # active, confirmed
+    assert next(r for r in page.rows() if r["x"] == 10) == {"x": 10, "codes": ["FW"], "formula": "{M}",
+                                                           "confirmed": True}
+    page.t.item(row, 3).setText("")
+    assert page.t.item(row, 5).data(Qt.CheckStateRole) is None              # inactive again
+    win.close()
+    app.processEvents()

@@ -992,6 +992,8 @@ class XValuesPage(Page):
         self.t.setHorizontalHeaderLabels([tr(c) for c in self.COLS])
         self.t.horizontalHeader().setStretchLastSection(True)
         self.t.verticalHeader().setVisible(False)
+        self.t.itemChanged.connect(self._changed)
+        self._loading = False
         lay.addWidget(self.t, 1)
         self.codes = QLabel()
         self.codes.setWordWrap(True)
@@ -1040,6 +1042,7 @@ class XValuesPage(Page):
         if num is None or not mdl:
             return
         rows = x_table(self.ws, mdl, num)
+        self._loading = True
         self.t.setRowCount(len(rows))
         for i, r in enumerate(rows):
             vals = [f"X{r['x']}", r["name"], f"{r['default']:g}" if r["default"] is not None else "",
@@ -1051,19 +1054,37 @@ class XValuesPage(Page):
                 self.t.setItem(i, j, it)
             ck = QTableWidgetItem()
             ck.setFlags((ck.flags() | Qt.ItemIsUserCheckable) & ~Qt.ItemIsEditable)
-            if r["codes"]:                    # an X without an XML code is inactive: nothing to confirm
-                ck.setCheckState(Qt.Checked if r["confirmed"] else Qt.Unchecked)
-            else:
-                ck.setText(tr("inactive"))
-                for j in range(5):
-                    self.t.item(i, j).setForeground(QColor("#888888"))
-                ck.setForeground(QColor("#888888"))
             self.t.setItem(i, 5, ck)
-            if r["codes"]:
-                for j in range(6):
-                    self.t.item(i, j).setBackground(QColor(STATUS_COLORS["approved"]))
-                    self.t.item(i, j).setForeground(QColor("#111111"))           # readable in the dark theme too
+            self._style_row(i, bool(r["codes"]), r["confirmed"])
+        self._loading = False
         self.t.resizeColumnsToContents()
+
+    def _style_row(self, i, active: bool, confirmed: bool = True):
+        """Green with a confirm box when the X has an XML code; grey "inactive" without (owner decision #21)."""
+        ck = self.t.item(i, 5)
+        if active:
+            if ck.data(Qt.CheckStateRole) is None:
+                ck.setCheckState(Qt.Checked if confirmed else Qt.Unchecked)
+            ck.setText("")
+            for j in range(6):
+                self.t.item(i, j).setBackground(QColor(STATUS_COLORS["approved"]))
+                self.t.item(i, j).setForeground(QColor("#111111"))           # readable in the dark theme too
+        else:
+            ck.setData(Qt.CheckStateRole, None)
+            ck.setText(tr("inactive"))
+            for j in range(6):
+                self.t.item(i, j).setData(Qt.BackgroundRole, None)
+                self.t.item(i, j).setForeground(QColor("#888888"))
+
+    def _changed(self, item):
+        """Typing an XML code makes the X active at once (and clearing it makes it inactive)."""
+        if self._loading or item.column() != 3:
+            return
+        self._loading = True
+        try:
+            self._style_row(item.row(), bool(item.text().strip()))
+        finally:
+            self._loading = False
 
     def rows(self) -> list[dict]:
         out = []
