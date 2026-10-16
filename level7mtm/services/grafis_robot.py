@@ -120,6 +120,19 @@ def _sha(path):
         return hashlib.sha256(fh.read()).hexdigest()
 
 
+def shows_file(title: str, path: str) -> bool:
+    """GRAFIS shortens the path in its title: "Grafis - [A: ..9-52-1_0__9-52-1_0.mdl] - 50-Werte-OPTIMASS"."""
+    name = os.path.basename(path).lower()
+    t = title.lower()
+    if name in t or os.path.splitext(name)[0] in t:
+        return True
+    if "[" in t and "]" in t:
+        inner = t[t.index("[") + 1:t.index("]")]
+        tail = inner.split("..")[-1].replace("\\", "/").split("/")[-1].strip()
+        return len(tail) >= 8 and name.endswith(tail)
+    return False
+
+
 def _find(drv, spec: dict, prefer: str = "") -> int | None:
     """The window a taught button belongs to: same class; same title, or the one showing the current file."""
     ws_ = [w for w in drv.windows() if w["cls"] == spec["cls"]]
@@ -127,7 +140,7 @@ def _find(drv, spec: dict, prefer: str = "") -> int | None:
         if w["title"] == spec["title"]:
             return w["hwnd"]
     for w in ws_:
-        if prefer and prefer.lower() in w["title"].lower():
+        if prefer and shows_file(w["title"], prefer):
             return w["hwnd"]
     return ws_[0]["hwnd"] if len(ws_) == 1 else None
 
@@ -161,14 +174,14 @@ def run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) -> 
         drv.open(job["path"])
         t0, main = clock(), None
         while clock() - t0 < st["open_timeout"]:
-            main = next((w["hwnd"] for w in drv.windows() if stem.lower() in w["title"].lower()), None)
+            main = next((w["hwnd"] for w in drv.windows() if shows_file(w["title"], job["path"])), None)
             if main and drv.responsive(main):
                 break
             sleep(1)
         else:
             raise RobotError(f"GRAFIS did not show {stem} within {st['open_timeout']:g} s")
         sleep(2)
-        h = _find(drv, btn["test_run"], stem)
+        h = _find(drv, btn["test_run"], job["path"])
         if h is None:
             raise RobotError("the window of the 'Test Run All Parts' button was not found (teach it again)")
         drv.click(h, btn["test_run"]["dx"], btn["test_run"]["dy"])
@@ -177,7 +190,7 @@ def run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) -> 
         while not drv.responsive(main) and clock() - t0 < 300:
             sleep(1)
         if "save" in btn:
-            hs = _find(drv, btn["save"], stem)
+            hs = _find(drv, btn["save"], job["path"])
             if hs is None:
                 raise RobotError("the window of the Save button was not found (teach it again)")
             drv.click(hs, btn["save"]["dx"], btn["save"]["dy"])
@@ -191,7 +204,7 @@ def run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) -> 
         else:
             raise RobotError(f"GRAFIS did not save {stem} within {st['save_timeout']:g} s")
         if "close" in btn:
-            hc = _find(drv, btn["close"], stem)
+            hc = _find(drv, btn["close"], job["path"])
             if hc is not None:
                 drv.click(hc, btn["close"]["dx"], btn["close"]["dy"])
         res.update(status="done", message="opened, Test Run All Parts, saved")

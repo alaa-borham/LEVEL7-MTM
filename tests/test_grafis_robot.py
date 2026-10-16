@@ -93,3 +93,11 @@ def test_robot_failures_go_to_er_and_are_not_retried(ws, tmp_path):
 
 def test_robot_off_does_nothing(ws):
     assert robot.step(ws, FakeGrafis()) is None
+
+
+def test_shortened_grafis_title_is_recognised():
+    p = r"A:\LEVEL7GRAFIS-IN\MDL\Order-9-52-1_0__9-52-1_0.mdl"
+    assert robot.shows_file("Grafis - [A: ..9-52-1_0__9-52-1_0.mdl] - 50-Werte-OPTIMASS", p)
+    assert robot.shows_file("Grafis - [A:\\LEVEL7GRAFIS-IN\\MDL\\Order-9-52-1_0__9-52-1_0.mdl]", p)
+    assert not robot.shows_file("Grafis - [A: ..9-52-2_0__9-52-2_0.mdl] - 50-Werte-OPTIMASS", p)
+    assert not robot.shows_file("GRAFIS", p)

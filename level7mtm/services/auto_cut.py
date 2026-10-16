@@ -8,6 +8,7 @@ LEVEL7 Nesting is driven through its own command line (``level7-cli``), which is
     level7 export FILE.l7n --format iso --iso-preset bullmer_grafis -o FILE.iso
 
 Location of the command line (first found): setting ``nesting.cli`` · ``C:\\Program Files\\LEVEL7 Nesting\\level7-cli.exe``
+· ``<any drive>:\\LEVEL7 Nesting\\level7-cli.exe``
 · source checkout in ``LEVEL7_NESTING_SRC`` (development / tests).
 Note from LEVEL7 Nesting: PLT and ISO profiles are compatible with GRAFIS' files but are not yet verified by a
 1:1 test cut on the Algotex / Bullmer ("device_tested: false").
@@ -33,7 +34,10 @@ class NestingNotConfigured(RuntimeError):
 def nesting_command(ws) -> tuple[list[str], dict]:
     env = dict(os.environ)
     cli = ws.db.get_setting("nesting.cli")
-    for c in ([cli] if cli else []) + DEFAULT_CLI:
+    drives = [f"{d}:\\" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"] if os.name == "nt" else []
+    found = [os.path.join(d, sub, "level7-cli.exe") for d in drives
+             for sub in ("LEVEL7 Nesting", r"Program Files\LEVEL7 Nesting")]   # installed on another drive
+    for c in ([cli] if cli else []) + DEFAULT_CLI + found:
         if c and os.path.isfile(c):
             return [c], env
     src = os.environ.get("LEVEL7_NESTING_SRC") or ws.db.get_setting("nesting.src")

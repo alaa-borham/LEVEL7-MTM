@@ -635,7 +635,7 @@ class GrafisPage(Page):
         for text, fn in (("Teach: Test Run All Parts button", lambda: self.teach("test_run")),
                          ("Teach: Save button", lambda: self.teach("save")),
                          ("Teach: Close button", lambda: self.teach("close")),
-                         ("Robot: try again", self.robot_retry)):
+                         ("Robot: try again", self.robot_retry), ("Robot: run now", self.robot_now)):
             b = QPushButton(tr(text))
             b.clicked.connect(fn)
             brow.addWidget(b)
@@ -703,6 +703,9 @@ class GrafisPage(Page):
                       f"Test Run: {'✓' if 'test_run' in rb else '⚠ ' + tr('not taught')}, "
                       f"Save: {'✓' if 'save' in rb else 'Ctrl+S'}, Close: {'✓' if 'close' in rb else '—'}"
                       + (f" — {os.path.basename(last['path'])}: {last['status']} {last['message']}" if last else ""))
+        err = self.ws.db.get_setting("grafis.last_poll_error")
+        if err:
+            robot_line += f"\n⚠ {err.splitlines()[0][:200]}"
         self.info.setText(robot_line + "\n" + f"{tr('GRAFIS model (MDL)')}: {mdl or '⚠ ' + tr('not set')}"
                           f"{'' if not mdl or os.path.isfile(mdl) else ' ⚠ ' + tr('not found')} — "
                           f"{tr('GRAFIS input folder')}: {gs['out']} — "
@@ -763,6 +766,19 @@ class GrafisPage(Page):
                                                               f"({spec['dx']}, {spec['dy']})")
             self.refresh()
         QTimer.singleShot(5000, record)
+
+    def robot_now(self):
+        """Run the robot on the next waiting model now and show what happened (also when nothing is waiting)."""
+        from ..services.grafis_robot import pending, run_one
+        jobs = pending(self.ws)
+        if not jobs:
+            from ..services.grafis_orders import settings as gsettings
+            QMessageBox.information(self, tr("GRAFIS robot"), tr("No order model is waiting for GRAFIS in") +
+                                    f"\n{gsettings(self.ws)['out']}\n\n" +
+                                    tr("Write the models again with 'Write GRAFIS model for order…'."))
+            return
+        self.win.run(lambda: run_one(self.ws, jobs[0]), lambda r: (self.refresh(), QMessageBox.information(
+            self, tr("GRAFIS robot"), f"{os.path.basename(r['path'])}: {r['status']}\n{r['message']}")))
 
     def robot_retry(self):
         with self.ws.db.tx() as c:
@@ -885,6 +901,7 @@ class GrafisPage(Page):
 
         def done(res):
             self.busy = False
+            self.ws.db.set_setting("grafis.last_poll_error", "")
             if res:
                 self.refresh()
         mw = getattr(self, "mdl_watcher", None)
@@ -896,7 +913,8 @@ class GrafisPage(Page):
             return out + ([r] if r else [])
         w = Worker(work)
         w.signals.done.connect(done)
-        w.signals.failed.connect(lambda msg: (setattr(self, "busy", False), self.win.status(msg[:200])))
+        w.signals.failed.connect(lambda msg: (setattr(self, "busy", False), self.win.status(msg[:200]),
+                                              self.ws.db.set_setting("grafis.last_poll_error", msg[:500])))
         self.win.pool.start(w)
 
 
