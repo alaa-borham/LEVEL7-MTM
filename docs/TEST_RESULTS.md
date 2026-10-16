@@ -17,10 +17,19 @@ In the public CI the customer GRAFIS files are absent, so the 3 MDL/SCB tests ar
 | test_grafis_and_watcher | 335 formulas / descriptions / history / AB-GL from the MDL; sizes / parts / SBINFO; non-GRAFIS and truncated files; watcher waits for stable size, never deletes, no double processing, retry |
 | test_ui_smoke | all 11 screens in Arabic and English open with real data; preview drawn; approval button disabled for the engine-test model |
 
-## Windows
-Built and tested by `.github/workflows/windows-build.yml` on `windows-2022` (tests, PyInstaller, frozen CLI
-end-to-end, GUI start, Inno Setup, silent install with Python removed from PATH, desktop shortcut). Results are
-claimed only for runs that passed on GitHub Actions — see the Actions tab / artifact `test-evidence`.
+## Windows (GitHub Actions `windows-2022`, Python 3.12 x64) — run 38898295748, commit e3858fe: **success**
+https://github.com/alaa-borham/LEVEL7-MTM/actions/runs/38898295748
+
+| Step | Result |
+|---|---|
+| Unit + integration tests incl. LEVEL7 Nesting run and GUI smoke test (offscreen) | passed (MDL/SCB tests skipped: customer files not in the repository) |
+| PyInstaller build (GUI + CLI) | passed |
+| Frozen end-to-end: import 2 real XML → calculate → DXF → PDF → TEST nesting file; production send of a non-approved order refused; GUI starts and stays up | passed |
+| Inno Setup installer | built (artifact `LEVEL7MTM-Setup`) |
+| Silent install on the clean runner: program files, **desktop shortcut**, installed CLI import + calculation **with Python removed from PATH**, installed GUI starts | passed |
+
+The first run (38817779447) failed only because the script ended with the (intended) non-zero exit code of the
+refused production send; fixed in e3858fe.
 Not yet done: installation on the owner's own Windows PC.
 
 ## Not tested (cannot be, yet)
