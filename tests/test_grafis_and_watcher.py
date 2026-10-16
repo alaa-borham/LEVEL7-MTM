@@ -80,3 +80,22 @@ def test_watcher_waits_for_stable_file(ws, tmp_path):
     w.poll()
     assert str(inbox / "bad.xml") in w.state.failed
     assert w.retry(str(inbox / "bad.xml")).status == "failed"
+
+
+@needs_mdl
+def test_construction_protocol_counts():
+    import re
+    from level7mtm.grafis.construction import program_steps, protocol
+    from level7mtm.grafis.container import read_container
+    c = read_container(MDL)
+    t = read_text(c)
+    checked = 0
+    for pe in t.parts:
+        m = re.search(r"\s(\d+)\s+(\d+)\s*(?:x|ID)", pe.raw)
+        recs = protocol(c, pe.number)
+        if m and recs:
+            assert int(m.group(1)) == len(recs), pe.name
+            checked += 1
+    assert checked == 72
+    steps = program_steps(c, 7)
+    assert [s.program for s in steps] == ["GraPrg_GK_FL_x001_00"]
