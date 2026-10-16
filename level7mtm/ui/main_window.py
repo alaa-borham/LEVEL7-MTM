@@ -659,7 +659,25 @@ class GrafisPage(Page):
         self.auto = QCheckBox(tr("Automatic: nest and write cutting files (PLT / ISO)"))
         self.auto.setChecked(bool(self.ws.db.get_setting("cutting.auto", True)))
         self.auto.toggled.connect(lambda on: (self.ws.db.set_setting("cutting.auto", on), self.refresh()))
-        lay.addWidget(self.auto)
+        frow = QHBoxLayout()
+        frow.addWidget(self.auto)
+        frow.addWidget(QLabel(tr("Formats") + ":"))
+        fmts = self.ws.db.get_setting("cutting.formats", ["plt", "iso"])
+        self.fmt_boxes = {}
+        for code, label_ in (("plt", "PLT (Algotex)"), ("iso", "ISO (Bullmer)"), ("dxf", "DXF")):
+            cb = QCheckBox(label_)
+            cb.setChecked(code in fmts)
+            cb.toggled.connect(self._save_formats)
+            self.fmt_boxes[code] = cb
+            frow.addWidget(cb)
+        frow.addWidget(QLabel(tr("Nesting time (s)") + ":"))
+        self.nest_time = QSpinBox()
+        self.nest_time.setRange(10, 1800)
+        self.nest_time.setValue(int(float(self.ws.db.get_setting("cutting.time_s", 60))))
+        self.nest_time.valueChanged.connect(lambda v: self.ws.db.set_setting("cutting.time_s", int(v)))
+        frow.addWidget(self.nest_time)
+        frow.addStretch()
+        lay.addLayout(frow)
         self.t = table(["File", "Order line", "Status", "Width", "Bundles", "Pieces", "Cutting files", "Findings"])
         self.t.cellDoubleClicked.connect(lambda *_: self.show_marker())
         lay.addWidget(self.t, 1)
@@ -861,6 +879,14 @@ class GrafisPage(Page):
         if p:
             self.ws.db.set_setting("nesting.cli", p)
             self.refresh()
+
+    def _save_formats(self):
+        chosen = [c for c, cb in self.fmt_boxes.items() if cb.isChecked()]
+        if not chosen:                                 # at least one cutting file
+            self.fmt_boxes["plt"].setChecked(True)
+            return
+        self.ws.db.set_setting("cutting.formats", chosen)
+        self.refresh()
 
     def open_out(self):
         from ..services.auto_cut import settings
