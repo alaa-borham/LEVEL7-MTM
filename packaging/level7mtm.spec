@@ -11,7 +11,7 @@ hidden = ["ezdxf", "defusedxml", "reportlab", "arabic_reshaper", "bidi", "bidi.a
 excl = ["PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.Qt3DCore", "PySide6.QtQuick",
         "PySide6.QtQml", "PySide6.QtMultimedia", "PySide6.QtPdf", "tkinter", "matplotlib"]
 
-gui = Analysis([os.path.join(ROOT, "packaging", "run_gui.py")], pathex=[ROOT], datas=datas, hiddenimports=hidden,
+gui = Analysis([os.path.join(ROOT, "packaging", "run_gui.py")], pathex=[ROOT], datas=datas, hiddenimports=hidden + ["PySide6.QtSvg"],
                excludes=excl, noarchive=False)
 cli = Analysis([os.path.join(ROOT, "packaging", "run_cli.py")], pathex=[ROOT], datas=[], hiddenimports=hidden,
                excludes=excl + ["PySide6"], noarchive=False)

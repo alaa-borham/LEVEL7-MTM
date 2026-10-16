@@ -1,0 +1,832 @@
+"""CAD workspace of LEVEL7 MTM: ribbon, order browser, marker canvas (with rulers and grid), properties
+inspector. The marker shown is the real one LEVEL7 Nesting saved (``.l7n``, read only)."""
+from __future__ import annotations
+
+import json
+import math
+import os
+import zipfile
+
+from PySide6.QtCore import QByteArray, QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import (QBrush, QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF,
+                           QTransform)
+from PySide6.QtWidgets import (QFrame, QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsView, QGridLayout,
+                               QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy, QToolButton,
+                               QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+
+from . import themes
+from .i18n import tr
+
+# ---------------------------------------------------------------- icons (24 x 24, stroked)
+
+ICONS = {
+    "import": "M12 3v11m0 0l-4-4m4 4l4-4M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4",
+    "orders": "M4 5h16M4 10h16M4 15h10M4 20h7",
+    "ruler": "M3 17L17 3l4 4L7 21zM7 13l2 2M10 10l2 2M13 7l2 2",
+    "model": "M12 3a2 2 0 012 2c0 1-1 1.5-2 2v1l9 6v2H3v-2l9-6",
+    "robot": "M6 8h12v10H6zM12 4v4M9 12h.01M15 12h.01M9 15h6M3 12v3M21 12v3",
+    "xvalues": "M4 4l6 8-6 8M14 20h6",
+    "options": "M12 3l9 5-9 5-9-5zM3 13l9 5 9-5",
+    "parts": "M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z",
+    "nest": "M3 3h8v8H3zM13 3h8v5h-8zM13 10h8v11h-8zM3 13h8v8H3z",
+    "renest": "M4 12a8 8 0 0114-5l2-2v6h-6l2-2a5 5 0 10 1 6",
+    "marker": "M3 6h18v12H3zM7 6v12M12 6v12M17 6v12",
+    "folder": "M3 6a1 1 0 011-1h5l2 2h9a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1z",
+    "error": "M12 3l10 18H2zM12 10v5M12 18h.01",
+    "setup": "M12 8a4 4 0 110 8 4 4 0 010-8zM12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2",
+    "log": "M5 3h11l3 3v15H5zM8 9h8M8 13h8M8 17h5",
+    "home": "M3 11l9-8 9 8M5 10v10h14V10",
+    "select": "M5 3l14 8-6 2-2 6z",
+    "pan": "M12 3v18M3 12h18M12 3l-3 3m3-3l3 3M12 21l-3-3m3 3l3-3M3 12l3-3m-3 3l3 3M21 12l-3-3m3 3l-3 3",
+    "zoomin": "M11 4a7 7 0 110 14 7 7 0 010-14zM21 21l-5-5M8 11h6M11 8v6",
+    "zoomout": "M11 4a7 7 0 110 14 7 7 0 010-14zM21 21l-5-5M8 11h6",
+    "fit": "M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5",
+    "theme": "M12 3a9 9 0 100 18 7 7 0 010-18z",
+}
+
+
+def icon(name: str, colour: QColor | None = None, size: int = 24) -> QIcon:
+    from PySide6.QtSvg import QSvgRenderer
+    c = colour or themes.colour("text")
+    svg = (f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='{c.name()}' "
+           f"stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'><path d='{ICONS[name]}'/></svg>")
+    r = QSvgRenderer(QByteArray(svg.encode()))
+    pm = QPixmap(size * 2, size * 2)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    r.render(p)
+    p.end()
+    return QIcon(pm)
+
+
+# ---------------------------------------------------------------- data
+
+def ltr(text) -> str:
+    """Keep order numbers, sizes and coordinates left-to-right inside Arabic text (9-53-1_2 stays 9-53-1_2)."""
+    return f"\u2066{text}\u2069"
+
+
+STAGES = ("new", "grafis", "nest", "cut")
+STAGE_TEXT = {"new": "New", "grafis": "In GRAFIS", "nest": "Nesting", "cut": "Ready to cut", "err": "Needs attention"}
+STAGE_COLOUR = {"new": "muted", "grafis": "warn", "nest": "accent", "cut": "ok", "err": "bad"}
+
+
+def load_marker(path: str) -> dict | None:
+    """The marker LEVEL7 Nesting saved (``.l7n``: ZIP with project.json): fabric width, length and every placed
+    piece as a polygon in marker millimetres. None when the file is missing or not readable."""
+    try:
+        with zipfile.ZipFile(path) as z:
+            doc = json.loads(z.read("project.json").decode("utf-8"))
+        proj = doc["project"]
+        if not proj.get("markers"):
+            return None
+        m = proj["markers"][-1]
+        pieces = {p["uid"]: p for p in proj.get("pieces", [])}
+    except (OSError, KeyError, ValueError, zipfile.BadZipFile):
+        return None
+    out = []
+    for pl in m.get("placements", []):
+        if not pl.get("placed", True):
+            continue
+        pc = pieces.get(pl.get("piece_uid"))
+        g = (pc or {}).get("sizes", {}).get(pl.get("size"))
+        if not g or not g.get("cut"):
+            continue
+        tf = lambda pts, pl=pl: transform(pts, pl.get("rotation", 0.0), pl.get("mirrored", False), pl.get("x", 0.0),
+                                          pl.get("y", 0.0), pl.get("sx", 1.0), pl.get("sy", 1.0))
+        grain = (g.get("grain") or {}).get("points") or []
+        out.append({"name": pc.get("name", ""), "cut": tf(g["cut"]), "grain": tf(grain) if len(grain) >= 2 else [],
+                    "holes": [tf(h) for h in g.get("holes", [])], "mirrored": bool(pl.get("mirrored"))})
+    fab = m.get("fabric", {})
+    length = float(m.get("length") or 0.0) or max((x for p in out for x, _ in p["cut"]), default=0.0)
+    return {"width": float(fab.get("width") or 0.0), "length": length, "pieces": out, "stats": m.get("stats", {}),
+            "time": m.get("compute_time")}
+
+
+def transform(pts, rotation: float, mirrored: bool, dx: float, dy: float, sx: float = 1.0, sy: float = 1.0):
+    """Same as LEVEL7 Nesting: mirror (x -> -x), rotate CCW, shrinkage scale, translate."""
+    a = math.radians(rotation)
+    c, s = math.cos(a), math.sin(a)
+    if abs(rotation % 90.0) < 1e-12:
+        c, s = round(c), round(s)
+    out = []
+    for x, y in pts:
+        if mirrored:
+            x = -x
+        out.append((sx * (c * x - s * y) + dx, sy * (s * x + c * y) + dy))
+    return out
+
+
+def order_rows(ws, limit: int = 300) -> list[dict]:
+    """Every open order line with where it is in the chain (XML → GRAFIS model → GRAFIS → nesting → cutting files)."""
+    db = ws.db
+    results: dict[int, dict] = {}
+    for r in db.q("SELECT * FROM grafis_results WHERE archived=0 ORDER BY id"):
+        for ln in json.loads(r["lines"]):
+            if ln.get("revision_id") is not None:
+                results[ln["revision_id"]] = dict(r)          # the newest result of the line wins
+    out = []
+    for rev in ws.list_revisions()[:limit]:
+        if rev["status"] == "cancelled":
+            continue
+        rid = rev["id"]
+        gos = db.q("SELECT * FROM grafis_orders WHERE revision_id=? ORDER BY id DESC", (rid,))
+        if gos and all(g["archived"] for g in gos):
+            continue                                          # cleaned from the list
+        go = next((dict(g) for g in gos if not g["archived"]), None)
+        full = ws.revision(rid)
+        norm, raw = full["normalized"], full["raw_line"]
+        row = {"rid": rid, "line": rev["line_number"], "stage": "new", "problems": [], "imported": rev["imported_at"],
+               "fabric": raw.get("fabric_number") or "", "width": norm.get("fabric_width_mm"),
+               "quantity": rev["quantity"], "times": {"new": rev["imported_at"]}, "x_rows": [], "mdl": None,
+               "result": None, "l7n": None, "outputs": [], "length_mm": None, "efficiency_pct": None,
+               "placed": None, "status": rev["status"]}
+        if go:
+            info = json.loads(go["info"])
+            row["x_rows"] = info.get("rows", [])
+            row["mdl"] = go["path"]
+            row["times"]["grafis"] = go["created_at"]
+            if go["status"] in ("blocked", "not_configured"):
+                row["problems"] += info.get("problems", []) or [tr(go["status"])]
+            elif go["status"] in ("written", "duplicate"):
+                row["stage"] = "grafis"
+        res = results.get(rid)
+        if res:
+            row["result"] = res["path"]
+            row["times"]["nest"] = res["checked_at"]
+            row["stage"] = "nest"
+            if res["status"] in ("needs_review", "unmatched"):
+                row["problems"] += [m for sv, m in json.loads(res["issues"]) if sv != "info"]
+            cj = db.one("SELECT * FROM cutting_jobs WHERE sha256=? ORDER BY id DESC", (res["sha256"],))
+            if cj:
+                ci = json.loads(cj["info"])
+                row.update(l7n=ci.get("l7n"), length_mm=ci.get("length_mm"), efficiency_pct=ci.get("efficiency_pct"),
+                           placed=ci.get("placed"))
+                if cj["status"] == "done":
+                    row["stage"] = "cut"
+                    row["outputs"] = json.loads(cj["outputs"])
+                    row["times"]["cut"] = cj["created_at"]
+                elif cj["status"] in ("failed", "not_configured"):
+                    row["problems"].append(ci.get("message") or tr(cj["status"]))
+        if row["problems"] and row["stage"] != "cut":
+            row["stage_reached"], row["stage"] = row["stage"], "err"
+        out.append(row)
+    return out
+
+
+# ---------------------------------------------------------------- marker canvas
+
+class MarkerView(QGraphicsView):
+    """The marker in millimetres: grid, fabric with selvedges, pieces with grain lines and names, the length
+    dimension; rulers along the top and the side; wheel = zoom at the cursor, pan tool / middle button = move."""
+    cursor_moved = Signal(float, float)
+    zoom_changed = Signal(float)
+    RULER = 22
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setLayoutDirection(Qt.LeftToRight)
+        self.setScene(QGraphicsScene(self))
+        self.setRenderHints(QPainter.Antialiasing | QPainter.TextAntialiasing)
+        self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+        self.setMouseTracking(True)
+        self.setFrameShape(QFrame.NoFrame)
+        self.marker: dict | None = None
+        self.message = ""
+        self._cursor: QPointF | None = None
+        self._pan = None
+
+    # -- content
+    def show_marker(self, marker: dict | None, message: str = ""):
+        sc = self.scene()
+        sc.clear()
+        self.marker, self.message = marker, message
+        if not marker:
+            sc.setSceneRect(QRectF(-100, -100, 3000, 1700))
+            self.resetTransform()
+            self.fit()
+            return
+        c = themes.colours()
+        w, length = marker["width"], marker["length"]
+        sc.addRect(QRectF(0, 0, length, w), QPen(c["selvedge"], 0), QBrush(c["fabric"]))
+        dash = QPen(c["selvedge"], 0, Qt.DashLine)
+        for y in (-12, w + 12):
+            sc.addLine(0, y, length, y, dash)
+        acc = c["piece"]
+        fill = QColor(acc)
+        fill.setAlpha(70)
+        pen = QPen(acc, 0)
+        pen.setCosmetic(True)
+        pen.setWidthF(1.3)
+        gpen = QPen(c["muted"], 0)
+        gpen.setCosmetic(True)
+        f = QFont(themes.FAMILY["name"], 8)
+        f.setBold(True)
+        for p in marker["pieces"]:
+            path = QPainterPath()
+            path.addPolygon(QPolygonF([QPointF(x, y) for x, y in p["cut"]]))
+            path.closeSubpath()
+            for h in p["holes"]:
+                path.addPolygon(QPolygonF([QPointF(x, y) for x, y in h]))
+                path.closeSubpath()
+            item = sc.addPath(path, pen, QBrush(fill))
+            item.setToolTip(p["name"] + (" (M)" if p["mirrored"] else ""))
+            if len(p["grain"]) >= 2:
+                (x1, y1), (x2, y2) = p["grain"][0], p["grain"][-1]
+                sc.addLine(x1, y1, x2, y2, gpen)
+                ang = math.atan2(y2 - y1, x2 - x1)
+                for (ex, ey), d in (((x2, y2), 1), ((x1, y1), -1)):
+                    for s_ in (0.45, -0.45):
+                        sc.addLine(ex, ey, ex - d * 22 * math.cos(ang + s_), ey - d * 22 * math.sin(ang + s_), gpen)
+            br = path.boundingRect()
+            t = QGraphicsSimpleTextItem(p["name"])
+            t.setFont(f)
+            t.setBrush(c["label"])
+            t.setFlag(QGraphicsSimpleTextItem.ItemIgnoresTransformations)
+            tb = t.boundingRect()
+            t.setTransform(QTransform.fromTranslate(-tb.width() / 2, -tb.height() / 2))   # centred in pixels
+            t.setPos(br.center())
+            sc.addItem(t)
+        dpen = QPen(c["accent"], 0)
+        dpen.setCosmetic(True)
+        y = w + 70
+        sc.addLine(0, y, length, y, dpen)
+        for x in (0, length):
+            sc.addLine(x, y - 25, x, y + 25, dpen)
+        lab = QGraphicsSimpleTextItem(f"{length:,.1f} mm".replace(",", " "))
+        lab.setFont(f)
+        lab.setBrush(c["accent"])
+        lab.setFlag(QGraphicsSimpleTextItem.ItemIgnoresTransformations)
+        lab.setPos(length / 2, y + 8)
+        sc.addItem(lab)
+        sc.setSceneRect(QRectF(-150, -150, length + 300, w + 400))
+        self.fit()
+
+    def fit(self):
+        r = self.scene().sceneRect()
+        if r.width() > 0:
+            self.fitInView(r, Qt.KeepAspectRatio)
+            self.zoom_changed.emit(self.transform().m11())
+
+    def zoom(self, k: float):
+        self.scale(k, k)
+        self.zoom_changed.emit(self.transform().m11())
+
+    def set_pan(self, on: bool):
+        self.setDragMode(QGraphicsView.ScrollHandDrag if on else QGraphicsView.NoDrag)
+
+    # -- input
+    def wheelEvent(self, e):
+        self.zoom(1.18 if e.angleDelta().y() > 0 else 1 / 1.18)
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MiddleButton:
+            self._pan = e.position()
+            return
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if self._pan is not None:
+            d = e.position() - self._pan
+            self._pan = e.position()
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - int(d.x()))
+            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - int(d.y()))
+        p = self.mapToScene(e.position().toPoint())
+        self._cursor = p
+        self.cursor_moved.emit(p.x(), p.y())
+        self.viewport().update()
+        super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.MiddleButton:
+            self._pan = None
+            return
+        super().mouseReleaseEvent(e)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        if self.marker is not None or self.message:
+            self.fit()
+
+    # -- painting: grid behind, rulers / centre labels / empty message in front
+    def _step(self, min_px: float) -> float:
+        k = self.transform().m11() or 1.0
+        for s in (5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000):
+            if s * k >= min_px:
+                return s
+        return 10000
+
+    def drawBackground(self, p: QPainter, rect: QRectF):
+        c = themes.colours()
+        p.fillRect(rect, c["canvas"])
+        step = self._step(14)
+        big = step * 5
+        for colour, s in ((c["grid"], step), (c["grid2"], big)):
+            pen = QPen(colour, 0)
+            pen.setCosmetic(True)
+            p.setPen(pen)
+            x = math.floor(rect.left() / s) * s
+            while x <= rect.right():
+                p.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
+                x += s
+            y = math.floor(rect.top() / s) * s
+            while y <= rect.bottom():
+                p.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
+                y += s
+
+    def drawForeground(self, p: QPainter, rect: QRectF):
+        """In viewport pixels: the empty-state text, the cursor cross and the rulers (top and left edge)."""
+        c = themes.colours()
+        p.save()
+        p.resetTransform()
+        vp = self.viewport().rect()
+        if not self.marker:
+            p.setPen(c["muted"])
+            p.setFont(QFont(themes.FAMILY["name"], 11))
+            p.drawText(vp, Qt.AlignCenter, self.message or tr("Choose an order line in the browser"))
+        cur = self.mapFromScene(self._cursor) if self._cursor is not None and self.marker else None
+        if cur is not None:
+            p.setPen(QPen(c["accent"], 1))
+            p.drawLine(cur.x() - 10, cur.y(), cur.x() + 10, cur.y())
+            p.drawLine(cur.x(), cur.y() - 10, cur.x(), cur.y() + 10)
+        R = self.RULER
+        p.fillRect(0, 0, vp.width(), R, c["ribbon"])
+        p.fillRect(0, 0, R, vp.height(), c["ribbon"])
+        p.setPen(c["border"])
+        p.drawLine(QPointF(R, R - 1), QPointF(vp.width(), R - 1))
+        p.drawLine(R - 1, R, R - 1, vp.height())
+        p.setFont(QFont(themes.FAMILY["name"], 7))
+        step, lab = self._step(8), self._step(60)
+        tl, br = self.mapToScene(0, 0), self.mapToScene(vp.width(), vp.height())
+        p.setPen(c["muted"])
+        x = math.floor(tl.x() / step) * step
+        while x <= br.x():
+            vx = self.mapFromScene(QPointF(x, 0)).x()
+            big = abs(x / lab - round(x / lab)) < 1e-9
+            if vx > R:
+                p.drawLine(QPointF(vx, R - (9 if big else 4)), QPointF(vx, R - 1))
+                if big:
+                    p.drawText(QPointF(vx + 3, 11), ltr(f"{x / 1000:g} m" if lab >= 500 else f"{x:g}"))
+            x += step
+        y = math.floor(tl.y() / step) * step
+        while y <= br.y():
+            vy = self.mapFromScene(QPointF(0, y)).y()
+            big = abs(y / lab - round(y / lab)) < 1e-9
+            if vy > R:
+                p.drawLine(QPointF(R - (9 if big else 4), vy), QPointF(R - 1, vy))
+                if big:
+                    p.save()
+                    p.translate(11, vy - 3)
+                    p.rotate(-90)
+                    p.drawText(QPointF(0, 0), f"{y:g}")
+                    p.restore()
+            y += step
+        p.fillRect(0, 0, R, R, c["sidebar"])
+        if cur is not None:
+            p.setPen(QPen(c["accent"], 1))
+            p.drawLine(QPointF(cur.x(), 0), QPointF(cur.x(), R))
+            p.drawLine(0, cur.y(), R, cur.y())
+        p.restore()
+
+
+# ---------------------------------------------------------------- small widgets
+
+def hline() -> QFrame:
+    f = QFrame()
+    f.setObjectName("hline")
+    return f
+
+
+class Ring(QWidget):
+    """Efficiency gauge."""
+
+    def __init__(self):
+        super().__init__()
+        self.value: float | None = None
+        self.setFixedSize(70, 70)
+
+    def set_value(self, v):
+        self.value = v
+        self.update()
+
+    def paintEvent(self, e):
+        c = themes.colours()
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        r = QRectF(6, 6, 58, 58)
+        p.setPen(QPen(c["border"], 7))
+        p.drawArc(r, 0, 360 * 16)
+        if self.value is not None:
+            p.setPen(QPen(c["accent"], 7, Qt.SolidLine, Qt.FlatCap))
+            p.drawArc(r, 90 * 16, -int(self.value / 100 * 360 * 16))
+        p.setPen(c["text"])
+        f = QFont(themes.FAMILY["name"], 10)
+        f.setBold(True)
+        p.setFont(f)
+        p.drawText(self.rect(), Qt.AlignCenter, "—" if self.value is None else f"{self.value:.0f}%")
+        p.end()
+
+
+def panel_head(title: str) -> tuple[QFrame, QLabel]:
+    h = QFrame()
+    h.setObjectName("panelHead")
+    h.setFixedHeight(30)
+    lay = QHBoxLayout(h)
+    lay.setContentsMargins(10, 0, 10, 0)
+    t = QLabel(title)
+    t.setObjectName("panelTitle")
+    lay.addWidget(t)
+    lay.addStretch()
+    n = QLabel("")
+    n.setObjectName("panelCount")
+    lay.addWidget(n)
+    return h, n
+
+
+class Ribbon(QFrame):
+    """Tool groups in the order of the work: order → model → nesting → output → system."""
+
+    def __init__(self, groups):
+        super().__init__()
+        self.setObjectName("ribbon")
+        self.setFixedHeight(84)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(6, 4, 6, 2)
+        lay.setSpacing(0)
+        self.buttons: dict[str, QToolButton] = {}
+        acc = themes.colour("accent")
+        brand = QWidget()
+        bl = QHBoxLayout(brand)
+        bl.setContentsMargins(8, 0, 16, 0)
+        bl.setSpacing(9)
+        mark = QLabel("L7")
+        mark.setObjectName("brandMark")
+        mark.setFixedSize(38, 38)
+        mark.setAlignment(Qt.AlignCenter)
+        bl.addWidget(mark)
+        col = QVBoxLayout()
+        col.setSpacing(0)
+        name = QLabel("LEVEL7")
+        name.setObjectName("brand")
+        sub = QLabel("MTM CAD")
+        sub.setObjectName("brandSub")
+        col.addStretch()
+        col.addWidget(name)
+        col.addWidget(sub)
+        col.addStretch()
+        bl.addLayout(col)
+        lay.addWidget(brand)
+        for title, items in groups:
+            g = QFrame()
+            g.setObjectName("ribbonGroup")
+            gl = QVBoxLayout(g)
+            gl.setContentsMargins(8, 0, 8, 0)
+            gl.setSpacing(1)
+            row = QHBoxLayout()
+            row.setSpacing(2)
+            for i, (key, ic, text, fn) in enumerate(items):
+                b = QToolButton()
+                b.setObjectName("ribbonButton")
+                b.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+                b.setIcon(icon(ic, acc if i == 0 else None))
+                b.setIconSize(QSize(24, 24))
+                b.setText(text)
+                b.setMinimumWidth(62)
+                b.clicked.connect(fn)
+                self.buttons[key] = b
+                row.addWidget(b)
+            gl.addLayout(row, 1)
+            t = QLabel(title)
+            t.setObjectName("ribbonTitle")
+            t.setAlignment(Qt.AlignCenter)
+            gl.addWidget(t)
+            lay.addWidget(g)
+        lay.addStretch()
+
+
+class OrderBrowser(QWidget):
+    """Order lines as a tree: line → the pieces of its marker; coloured by where the line is in the chain."""
+    selected = Signal(object)
+
+    def __init__(self):
+        super().__init__()
+        self.setObjectName("browser")
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        head, self.count = panel_head(tr("Order browser"))
+        lay.addWidget(head)
+        from PySide6.QtWidgets import QLineEdit
+        self.find = QLineEdit()
+        self.find.setPlaceholderText("⌕  " + tr("Search order…"))
+        self.find.textChanged.connect(self._filter)
+        box = QWidget()
+        bl = QVBoxLayout(box)
+        bl.setContentsMargins(8, 8, 8, 6)
+        bl.addWidget(self.find)
+        lay.addWidget(box)
+        self.tree = QTreeWidget()
+        self.tree.setObjectName("orders")
+        self.tree.setHeaderHidden(True)
+        self.tree.setColumnCount(2)
+        self.tree.setIndentation(14)
+        self.tree.header().setStretchLastSection(False)
+        from PySide6.QtWidgets import QHeaderView
+        self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.tree.currentItemChanged.connect(self._changed)
+        lay.addWidget(self.tree, 1)
+        self.rows: list[dict] = []
+
+    def set_rows(self, rows: list[dict], keep: int | None = None):
+        self.rows = rows
+        self.tree.blockSignals(True)
+        self.tree.clear()
+        c = themes.colours()
+        current = None
+        for r in rows:
+            col = c[STAGE_COLOUR[r["stage"]]]
+            it = QTreeWidgetItem([ltr(r["line"]), tr(STAGE_TEXT[r["stage"]])])
+            it.setData(0, Qt.UserRole, r["rid"])
+            pm = QPixmap(10, 10)
+            pm.fill(col)
+            it.setIcon(0, QIcon(pm))
+            it.setForeground(1, col)
+            f = it.font(1)
+            f.setBold(True)
+            it.setFont(1, f)
+            it.setToolTip(0, "\n".join([r["line"]] + r["problems"][:5]))
+            self.tree.addTopLevelItem(it)
+            if r["rid"] == keep:
+                current = it
+        self.tree.blockSignals(False)
+        self.count.setText(str(len(rows)))
+        self._filter(self.find.text())
+        if current is not None:
+            self.tree.setCurrentItem(current)
+        elif self.tree.topLevelItemCount() and keep is None:
+            self.tree.setCurrentItem(self.tree.topLevelItem(0))
+
+    def add_pieces(self, rid, marker):
+        """Show the pieces of the line's marker under it."""
+        for i in range(self.tree.topLevelItemCount()):
+            it = self.tree.topLevelItem(i)
+            if it.data(0, Qt.UserRole) != rid:
+                continue
+            it.takeChildren()
+            if marker:
+                counts: dict[str, int] = {}
+                for p in marker["pieces"]:
+                    counts[p["name"]] = counts.get(p["name"], 0) + 1
+                pm = QPixmap(12, 9)
+                pm.fill(themes.colour("piece"))
+                for name, n in counts.items():
+                    ch = QTreeWidgetItem([name, f"{n}×"])
+                    ch.setIcon(0, QIcon(pm))
+                    ch.setForeground(1, themes.colour("muted"))
+                    it.addChild(ch)
+                it.setExpanded(True)
+
+    def _filter(self, text):
+        t = text.strip().lower()
+        for i in range(self.tree.topLevelItemCount()):
+            it = self.tree.topLevelItem(i)
+            it.setHidden(bool(t) and t not in it.text(0).strip("\u2066\u2069").lower())
+
+    def _changed(self, cur, _prev):
+        while cur is not None and cur.parent() is not None:
+            cur = cur.parent()
+        rid = cur.data(0, Qt.UserRole) if cur is not None else None
+        self.selected.emit(next((r for r in self.rows if r["rid"] == rid), None))
+
+
+class Inspector(QScrollArea):
+    """Properties of the selected order line: order, nesting, X values written, stages, actions."""
+
+    def __init__(self, actions):
+        super().__init__()
+        self.setObjectName("inspector")
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        w = QWidget()
+        w.setObjectName("inspector")
+        self.setWidget(w)
+        self.lay = QVBoxLayout(w)
+        self.lay.setContentsMargins(12, 8, 12, 12)
+        self.lay.setSpacing(4)
+        self.title = QLabel("—")
+        self.title.setObjectName("bigTitle")
+        self.pill = QLabel()
+        self.pill.setObjectName("pill")
+        hr = QHBoxLayout()
+        hr.addWidget(self.title)
+        hr.addStretch()
+        hr.addWidget(self.pill)
+        self.lay.addLayout(hr)
+        self.kv: dict[str, QLabel] = {}
+        self._section(tr("The order"), [("fabric", "Fabric"), ("width", "Width"), ("quantity", "Quantity"),
+                                    ("imported", "Imported")])
+        self.lay.addWidget(self._sec_title(tr("Nesting")))
+        nr = QHBoxLayout()
+        self.ring = Ring()
+        nr.addWidget(self.ring)
+        g = QGridLayout()
+        for i, (k, t) in enumerate((("length", "Length"), ("placed", "Pieces"))):
+            a = QLabel(tr(t))
+            a.setObjectName("kvKey")
+            b = QLabel("—")
+            b.setObjectName("kvVal")
+            g.addWidget(a, i, 0)
+            g.addWidget(b, i, 1)
+            self.kv[k] = b
+        nr.addLayout(g, 1)
+        self.lay.addLayout(nr)
+        self.lay.addWidget(self._sec_title(tr("X values in the model")))
+        self.xgrid = QGridLayout()
+        self.xgrid.setHorizontalSpacing(8)
+        self.xgrid.setVerticalSpacing(1)
+        self.lay.addLayout(self.xgrid)
+        self.lay.addWidget(self._sec_title(tr("Stages")))
+        self.stages = QGridLayout()
+        self.stages.setVerticalSpacing(2)
+        self.lay.addLayout(self.stages)
+        self.problems = QLabel()
+        self.problems.setWordWrap(True)
+        self.problems.setStyleSheet(f"color: {themes.colour('bad').name()};")
+        self.lay.addWidget(self.problems)
+        self.lay.addSpacing(6)
+        self.buttons = {}
+        for key, text, primary in actions:
+            b = QPushButton(text)
+            if primary:
+                b.setObjectName("primary")
+            self.buttons[key] = b
+            self.lay.addWidget(b)
+        self.lay.addStretch()
+        self.show_row(None)
+
+    def _sec_title(self, text):
+        t = QLabel(text.upper() if text.isascii() else text)
+        t.setObjectName("secTitle")
+        return t
+
+    def _section(self, title, items):
+        self.lay.addWidget(self._sec_title(title))
+        g = QGridLayout()
+        g.setVerticalSpacing(2)
+        for i, (k, t) in enumerate(items):
+            a = QLabel(tr(t))
+            a.setObjectName("kvKey")
+            b = QLabel("—")
+            b.setObjectName("kvVal")
+            b.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            g.addWidget(a, i, 0)
+            g.addWidget(b, i, 1)
+            self.kv[k] = b
+        self.lay.addLayout(g)
+
+    @staticmethod
+    def _clear(grid):
+        while grid.count():
+            w = grid.takeAt(0).widget()
+            if w:
+                w.deleteLater()
+
+    def show_row(self, r: dict | None):
+        c = themes.colours()
+        self._clear(self.xgrid)
+        self._clear(self.stages)
+        for b in self.buttons.values():
+            b.setEnabled(r is not None)
+        if r is None:
+            self.title.setText("—")
+            self.pill.setText("")
+            for v in self.kv.values():
+                v.setText("—")
+            self.ring.set_value(None)
+            self.problems.setText("")
+            return
+        self.title.setText(ltr(r["line"]))
+        col = c[STAGE_COLOUR[r["stage"]]]
+        self.pill.setText(tr(STAGE_TEXT[r["stage"]]))
+        self.pill.setStyleSheet(f"color: {col.name()}; border-color: {col.name()};")
+        self.kv["fabric"].setText(str(r["fabric"] or "—"))
+        self.kv["width"].setText(f"{r['width']:g} mm" if r["width"] else "—")
+        self.kv["quantity"].setText(str(r["quantity"] or "—"))
+        self.kv["imported"].setText((r["imported"] or "").replace("T", " ")[:16])
+        self.kv["length"].setText(f"{r['length_mm'] / 1000:.3f} m" if r["length_mm"] else "—")
+        self.kv["placed"].setText(str(r["placed"]) if r["placed"] is not None else "—")
+        self.ring.set_value(r["efficiency_pct"])
+        for i, x in enumerate(r["x_rows"][:40]):
+            a = QLabel(x["x"])
+            a.setStyleSheet(f"color: {c['accent'].name()}; font-weight: 700;")
+            b = QLabel(x.get("x_name") or "")
+            b.setObjectName("kvKey")
+            b.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+            v = QLabel(f"{x['value_mm']:g}")
+            v.setObjectName("kvVal")
+            v.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.xgrid.addWidget(a, i, 0)
+            self.xgrid.addWidget(b, i, 1)
+            self.xgrid.addWidget(v, i, 2)
+        if not r["x_rows"]:
+            n = QLabel("—")
+            n.setObjectName("kvKey")
+            self.xgrid.addWidget(n, 0, 0)
+        reached = r.get("stage_reached", r["stage"])
+        order = list(STAGES)
+        last = order.index(reached) if reached in order else 0
+        for i, (st, label_) in enumerate((("new", "XML received"), ("grafis", "GRAFIS model"),
+                                           ("nest", "GRAFIS → nesting"), ("cut", "Cutting files"))):
+            done = st in r["times"] and i <= last
+            bad = r["stage"] == "err" and i == last + (0 if st in r["times"] else 0) and not done
+            colour = c["ok"] if done else (c["bad"] if bad else c["border"])
+            d = QLabel("●")
+            d.setStyleSheet(f"color: {colour.name()};")
+            t = QLabel(tr(label_))
+            tm = QLabel((r["times"].get(st) or "").replace("T", " ")[11:16])
+            tm.setObjectName("kvKey")
+            self.stages.addWidget(d, i, 0)
+            self.stages.addWidget(t, i, 1)
+            self.stages.addWidget(tm, i, 2)
+        self.problems.setText("\n".join("⚠ " + p for p in r["problems"][:6]))
+        self.buttons.get("open_cut") and self.buttons["open_cut"].setEnabled(bool(r["outputs"]))
+        self.buttons.get("renest") and self.buttons["renest"].setEnabled(bool(r["result"]))
+        self.buttons.get("nesting") and self.buttons["nesting"].setEnabled(bool(r["l7n"]))
+
+
+class MarkerPanel(QWidget):
+    """Canvas + floating tool palette + HUD (length, efficiency, pieces)."""
+
+    def __init__(self):
+        super().__init__()
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self.view = MarkerView()
+        lay.addWidget(self.view)
+        self.tools = QFrame(self)
+        self.tools.setObjectName("tools")
+        tl = QVBoxLayout(self.tools)
+        tl.setContentsMargins(3, 3, 3, 3)
+        tl.setSpacing(2)
+        self.tool_buttons = {}
+        for key, ic, tip in (("select", "select", "Select"), ("pan", "pan", "Move the view"),
+                             ("zoomin", "zoomin", "Zoom in"), ("zoomout", "zoomout", "Zoom out"),
+                             ("fit", "fit", "Whole marker")):
+            b = QToolButton()
+            b.setObjectName("tool")
+            b.setIcon(icon(ic))
+            b.setIconSize(QSize(18, 18))
+            b.setToolTip(tr(tip))
+            b.setCheckable(key in ("select", "pan"))
+            self.tool_buttons[key] = b
+            tl.addWidget(b)
+        tb = self.tool_buttons
+        tb["select"].setChecked(True)
+        tb["select"].clicked.connect(lambda: (tb["pan"].setChecked(False), tb["select"].setChecked(True),
+                                              self.view.set_pan(False)))
+        tb["pan"].clicked.connect(lambda: (tb["select"].setChecked(False), tb["pan"].setChecked(True),
+                                           self.view.set_pan(True)))
+        tb["zoomin"].clicked.connect(lambda: self.view.zoom(1.25))
+        tb["zoomout"].clicked.connect(lambda: self.view.zoom(0.8))
+        tb["fit"].clicked.connect(self.view.fit)
+        self.hud = QFrame(self)
+        self.hud.setObjectName("hud")
+        hl = QHBoxLayout(self.hud)
+        hl.setContentsMargins(12, 6, 12, 6)
+        hl.setSpacing(16)
+        self.hud_values = {}
+        for key, t in (("length", "Length"), ("eff", "Efficiency"), ("pieces", "Pieces")):
+            col = QVBoxLayout()
+            col.setSpacing(0)
+            v = QLabel("—")
+            v.setObjectName("hudValueAcc" if key == "length" else "hudValue")
+            lab = QLabel(tr(t))
+            lab.setObjectName("hudLabel")
+            col.addWidget(v)
+            col.addWidget(lab)
+            hl.addLayout(col)
+            self.hud_values[key] = v
+
+    def set_marker(self, marker, row=None, message=""):
+        self.view.show_marker(marker, message)
+        length = (marker or {}).get("length") or (row or {}).get("length_mm")
+        eff = (row or {}).get("efficiency_pct")
+        self.hud_values["length"].setText(f"{length / 1000:.3f} m" if length else "—")
+        self.hud_values["eff"].setText(f"{eff:.1f}%" if eff else "—")
+        self.hud_values["pieces"].setText(str(len(marker["pieces"])) if marker else "—")
+        self.hud.adjustSize()
+        self._place()
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._place()
+
+    def _place(self):
+        r = MarkerView.RULER
+        self.tools.adjustSize()
+        self.tools.move(r + 10, r + 10)
+        self.hud.adjustSize()
+        self.hud.move(self.width() - self.hud.width() - 14, self.height() - self.hud.height() - 14)

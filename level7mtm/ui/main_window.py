@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
                                QListWidgetItem, QSizePolicy, QToolButton,
                                QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
                                QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QSplitter,
-                               QStackedWidget, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
+                               QStackedWidget, QTabBar, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
 from .. import ENGINE_VERSION, __version__
 from ..services.watcher import FolderWatcher
@@ -1207,12 +1207,13 @@ class GrafisPage(Page):
             msg += "\n\n" + tr("Not deleted (open in another program?)") + ":\n" + "\n".join(out["failed"][:10])
         QMessageBox.information(self, tr("Clean the list…"), msg)
 
-    def renest(self):
-        """Nest the selected row again (e.g. after a longer nesting time was set) and rewrite its cutting files."""
+    def renest(self, path=None):
+        """Nest the selected row (or ``path``) again (e.g. after a longer nesting time was set) and rewrite its
+        cutting files."""
         from ..services.auto_cut import auto_cut
         from ..services.grafis_intake import check_scb
         from ..services.mdl_intake import check_mdl
-        paths = selected_data(self.t)
+        paths = [path] if isinstance(path, str) else selected_data(self.t)
         if not paths:
             QMessageBox.information(self, "LEVEL7 Nesting", tr("Select a row first"))
             return
@@ -1223,16 +1224,17 @@ class GrafisPage(Page):
             if not chk.ok or not chk.lines:
                 return {"status": "failed", "message": "; ".join(m for s_, m in chk.issues if s_ != "info")}
             return auto_cut(self.ws, chk, p, force=True)
-        self.win.run(work, lambda r: (self.refresh(), QMessageBox.information(
+        self.win.run(work, lambda r: (self.refresh(), self.win.refresh_cad(), QMessageBox.information(
             self, "LEVEL7 Nesting", f"{tr(r['status'])}: "
             + (f"L {r['length_mm'] / 1000:.2f} m, E {r['efficiency_pct']:.1f} %" if r.get("length_mm") and
                r.get("efficiency_pct") else r.get("message", "")))))
 
-    def show_marker(self):
-        """Open the marker of the selected row (the .l7n LEVEL7 Nesting saved next to the PLT / ISO)."""
+    def show_marker(self, path=None):
+        """Open the marker of the selected row (or ``path``) in LEVEL7 Nesting (the .l7n saved next to the PLT /
+        ISO)."""
         import subprocess
         from ..services.auto_cut import NestingNotConfigured, nesting_command
-        paths = selected_data(self.t)
+        paths = [path] if isinstance(path, str) else selected_data(self.t)
         if not paths:
             QMessageBox.information(self, "LEVEL7 Nesting", tr("Select a row first"))
             return
@@ -2334,35 +2336,159 @@ PAGES = [_BY_TITLE[t] for _, items in SECTIONS for t, _ in items]
 # ---------------------------------------------------------------- window
 
 class MainWindow(QMainWindow):
+    """CAD workstation: menu, ribbon (tools in the order of the work), order browser, the marker canvas and the
+    work screens as tabs, properties inspector, status bar with the state of the chain."""
+
     def __init__(self, ws: Workspace):
         super().__init__()
         self.ws = ws
         self.pool = QThreadPool.globalInstance()
         self.current_rid = None
+        self.sel_row = None
+        self._cad_sig = None
         self.watcher: FolderWatcher | None = None
         self.developer = bool(ws.db.get_setting("ui.developer", False))
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll_watch)
+        self.cad_timer = QTimer(self)
+        self.cad_timer.timeout.connect(self.refresh_cad)
         self.setAcceptDrops(True)
-        self.resize(1400, 900)
+        self.resize(1440, 900)
+        self.setMinimumSize(900, 560)
         self.build()
         folder = ws.db.get_setting("watch.folder")
         if folder and ws.db.get_setting("watch.enabled", False) and os.path.isdir(folder):
             self.start_watch(folder)
+        self.cad_timer.start(5000)
 
+    # ---- building
     def build(self):
-        self.setWindowTitle(f"LEVEL7 MTM {__version__} (engine {ENGINE_VERSION}) — {self.ws.folder}")
-        self.menuBar().clear()
-        m = self.menuBar().addMenu(tr("File"))
+        from PySide6.QtWidgets import QScrollArea
+        from . import cad, themes
+        self.setWindowTitle(f"LEVEL7 MTM {__version__} — {self.ws.folder}")
+        old = self.centralWidget()
+        self.pages, self.wrappers, self.page_actions = {}, {}, {}
+        for title, cls in _BY_TITLE.items():
+            p = cls(self)
+            self.pages[title] = p
+            wrap = QWidget()
+            wl = QVBoxLayout(wrap)
+            wl.setContentsMargins(22, 16, 22, 12)
+            h = QLabel(tr(title))
+            h.setObjectName("pageTitle")
+            st = QLabel(tr(SUBTITLES.get(title, "")))
+            st.setObjectName("pageSub")
+            wl.addWidget(h)
+            wl.addWidget(st)
+            wl.addSpacing(6)
+            wl.addWidget(p, 1)
+            scroll = QScrollArea()                     # a wide page never makes the window wider than the screen
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.NoFrame)
+            scroll.setWidget(wrap)
+            self.wrappers[title] = scroll
+        self._menus()
+        self._statusbar()
+        root = QWidget()
+        lay = QVBoxLayout(root)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        grafis = lambda: self.pages["GRAFIS markers"]
+        self.ribbon = cad.Ribbon([
+            (tr("The order"), [("import", "import", tr("Import XML"), self.import_dialog),
+                           ("orders", "orders", tr("Orders"), lambda: self.goto("Orders")),
+                           ("details", "ruler", tr("Measurements"), self.open_details)]),
+            ("GRAFIS", [("write", "model", tr("Write model"), self.write_model),
+                        ("robot", "robot", tr("Robot"), lambda: grafis().robot_now()),
+                        ("xvalues", "xvalues", tr("X values"), lambda: self.goto("X values for GRAFIS")),
+                        ("options", "options", tr("Options"), lambda: self.goto("Design options")),
+                        ("parts", "parts", tr("Parts"), lambda: self.goto("GRAFIS parts"))]),
+            (tr("Nesting"), [("renest", "renest", tr("Nest again"), self.renest_selected),
+                             ("nesting", "marker", "LEVEL7 Nesting", self.nesting_selected),
+                             ("markers", "nest", tr("Markers"), lambda: self.goto("GRAFIS markers"))]),
+            (tr("Output"), [("cut", "folder", tr("Cutting files"), self.open_cutting),
+                            ("er", "error", tr("Errors (ER)"), lambda: self.pages["Home"]._open_er())]),
+            (tr("System"), [("setup", "setup", tr("Setup"), self.open_setup),
+                            ("home", "home", tr("Today"), lambda: self.goto("Home")),
+                            ("log", "log", tr("Log"), lambda: self.goto("Log & backups"))]),
+        ])
+        lay.addWidget(self.ribbon)
+        split = QSplitter(Qt.Horizontal)
+        split.setHandleWidth(1)
+        split.setChildrenCollapsible(False)
+        self.browser = cad.OrderBrowser()
+        self.browser.setMinimumWidth(210)
+        self.browser.selected.connect(self.select_row)
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        self.tabs.setTabsClosable(True)
+        self.tabs.setMovable(True)
+        self.tabs.tabCloseRequested.connect(self._close_tab)
+        self.marker = cad.MarkerPanel()
+        self.marker.view.cursor_moved.connect(lambda x, y: self.sb_xy.setText(cad.ltr(f"X {x:7.1f}   Y {y:7.1f} mm")))
+        self.marker.view.zoom_changed.connect(lambda k: self.sb_zoom.setText(cad.ltr(f"1:{3.78 / k:.0f}" if k else "—")))
+        self.tabs.addTab(self.marker, cad.icon("marker", themes.colour("accent"), 16), tr("Marker"))
+        self.tabs.tabBar().setTabButton(0, QTabBar.ButtonPosition.RightSide, None)
+        self.tabs.tabBar().setTabButton(0, QTabBar.ButtonPosition.LeftSide, None)
+        side = QWidget()
+        sl = QVBoxLayout(side)
+        sl.setContentsMargins(0, 0, 0, 0)
+        sl.setSpacing(0)
+        head, _ = cad.panel_head(tr("Properties"))
+        sl.addWidget(head)
+        self.inspector = cad.Inspector([("open_cut", tr("Open cutting file") + "  PLT / ISO", True),
+                                        ("nesting", tr("Show marker in LEVEL7 Nesting"), False),
+                                        ("renest", tr("Nest again"), False),
+                                        ("details", tr("Measurements and options"), False)])
+        b = self.inspector.buttons
+        b["open_cut"].clicked.connect(self.open_cutting)
+        b["nesting"].clicked.connect(self.nesting_selected)
+        b["renest"].clicked.connect(self.renest_selected)
+        b["details"].clicked.connect(self.open_details)
+        sl.addWidget(self.inspector, 1)
+        side.setMinimumWidth(240)
+        for w in (self.browser, self.tabs, side):
+            split.addWidget(w)
+        split.setStretchFactor(1, 1)
+        split.setSizes([260, 900, 280])
+        lay.addWidget(split, 1)
+        self.setCentralWidget(root)
+        if old is not None:
+            old.deleteLater()
+        self.apply_role()
+        self.refresh_cad(force=True)
+        self.tabs.currentChanged.connect(self._tab_changed)
+
+    def _menus(self):
+        from . import themes
+        mb = self.menuBar()
+        mb.clear()
+        m = mb.addMenu(tr("File"))
         a = QAction(tr("Import XML files…"), self)
+        a.setShortcut("Ctrl+O")
         a.triggered.connect(self.import_dialog)
         m.addAction(a)
+        m.addSeparator()
         a = QAction(tr("Exit"), self)
         a.triggered.connect(self.close)
         m.addAction(a)
-        v = self.menuBar().addMenu(tr("View"))
-        for code, name in (("ar", "العربية"), ("en", "English")):
-            a = QAction(name, self)
+        for section, items in SECTIONS:
+            sm = mb.addMenu(tr(section))
+            for title, ic in items:
+                a = QAction(f"{ic}  {tr(title)}", self)
+                a.triggered.connect(lambda _=False, t=title: self.goto(t))
+                sm.addAction(a)
+                self.page_actions[title] = a
+        v = mb.addMenu(tr("View"))
+        a = QAction(tr("Marker"), self)
+        a.triggered.connect(lambda: self.tabs.setCurrentIndex(0))
+        v.addAction(a)
+        a = QAction(tr("Light") if themes.name() == "dark" else tr("Dark"), self)
+        a.triggered.connect(self.toggle_theme)
+        v.addAction(a)
+        v.addSeparator()
+        for code, nm in (("ar", "العربية"), ("en", "English")):
+            a = QAction(nm, self)
             a.triggered.connect(lambda _=False, c=code: self.set_lang(c))
             v.addAction(a)
         v.addSeparator()
@@ -2370,14 +2496,15 @@ class MainWindow(QMainWindow):
         a.setChecked(self.developer)
         a.toggled.connect(self.set_role)
         v.addAction(a)
-        h = self.menuBar().addMenu(tr("Help"))
+        h = mb.addMenu(tr("Help"))
         a = QAction(tr("About"), self)
         a.triggered.connect(lambda: QMessageBox.about(self, "LEVEL7 MTM", f"LEVEL7 MTM {__version__}\nengine "
                                                       f"{ENGINE_VERSION}\nData: {self.ws.folder}"))
         h.addAction(a)
         from .updates import UpdateManager
-        auto = getattr(sys, "frozen", False) and not os.environ.get("LEVEL7MTM_NO_UPDATE_CHECK")
-        self.updates = UpdateManager(self, self.ws.db, self._before_update, auto_start=auto)
+        if getattr(self, "updates", None) is None:
+            auto = getattr(sys, "frozen", False) and not os.environ.get("LEVEL7MTM_NO_UPDATE_CHECK")
+            self.updates = UpdateManager(self, self.ws.db, self._before_update, auto_start=auto)
         a = QAction(tr("Check for updates…"), self)
         a.triggered.connect(lambda: self.updates.check(True))
         h.addAction(a)
@@ -2385,107 +2512,154 @@ class MainWindow(QMainWindow):
         a.setChecked(self.updates.auto_enabled())
         a.toggled.connect(self.updates.set_auto)
         h.addAction(a)
-        root = QWidget()
-        lay = QHBoxLayout(root)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(0)
-        side = QFrame()
-        side.setObjectName("sidebar")
-        side.setFixedWidth(270)
-        sl = QVBoxLayout(side)
-        sl.setContentsMargins(10, 18, 10, 12)
-        brand = QLabel("LEVEL7")
-        brand.setObjectName("brand")
-        sub = QLabel("MADE TO MEASURE")
-        sub.setObjectName("brandSub")
-        ver = QLabel(f"MTM {__version__}")
-        ver.setObjectName("version")
-        for w in (brand, sub, ver):
-            w.setContentsMargins(10, 0, 10, 0)
-            sl.addWidget(w)
-        sl.addSpacing(14)
-        self.nav = QListWidget()
-        self.nav.setObjectName("nav")
-        self.nav.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.nav.setTextElideMode(Qt.ElideRight)
-        self.nav_titles: list[str | None] = []
-        self.stack = QStackedWidget()
-        self.pages, self.wrappers = {}, {}
-        from PySide6.QtWidgets import QScrollArea
-        self.collapsed = set(self.ws.db.get_setting("ui.collapsed", ["GRAFIS setup", "Pattern engine"]) or [])
-        self.nav_sections: dict[int, str] = {}
-        for section, items in SECTIONS:
-            arrow = "▸" if section in self.collapsed else "▾"
-            head = QListWidgetItem(f"{arrow}  " + (tr(section).upper() if language() == "en" else tr(section)))
-            head.setFlags(Qt.ItemIsEnabled)                 # clickable (opens / closes), never selected
-            self.nav_sections[self.nav.count()] = section
-            f = head.font()
-            f.setPointSizeF(8.5)
-            f.setBold(True)
-            head.setFont(f)
-            head.setForeground(QColor(150, 154, 160))
-            self.nav.addItem(head)
-            self.nav_titles.append(None)
-            for title, icon in items:
-                cls = _BY_TITLE[title]
-                p = cls(self)
-                self.pages[title] = p
-                wrap = QWidget()
-                wl = QVBoxLayout(wrap)
-                wl.setContentsMargins(26, 20, 26, 14)
-                h = QLabel(tr(title))
-                h.setObjectName("pageTitle")
-                st = QLabel(tr(SUBTITLES.get(title, "")))
-                st.setObjectName("pageSub")
-                wl.addWidget(h)
-                wl.addWidget(st)
-                wl.addSpacing(8)
-                wl.addWidget(p, 1)
-                scroll = QScrollArea()                     # a wide page never makes the window wider than the screen
-                scroll.setWidgetResizable(True)
-                scroll.setFrameShape(QFrame.NoFrame)
-                scroll.setWidget(wrap)
-                self.wrappers[title] = scroll
-                self.stack.addWidget(scroll)
-                self.nav.addItem(QListWidgetItem(f"{icon}   {tr(title)}"))
-                self.nav_titles.append(title)
-        self.nav.currentRowChanged.connect(self.goto_row)
-        self.nav.itemClicked.connect(self._nav_clicked)
-        sl.addWidget(self.nav, 1)
-        bottom = QHBoxLayout()
-        from . import themes
-        tb = QToolButton()
-        tb.setObjectName("sideButton")
-        tb.setText(("☀  " + tr("Light")) if themes.name() == "dark" else ("☾  " + tr("Dark")))
-        tb.clicked.connect(self.toggle_theme)
-        lb = QToolButton()
-        lb.setObjectName("sideButton")
-        lb.setText("English" if language() == "ar" else "العربية")
-        lb.clicked.connect(lambda: self.set_lang("en" if language() == "ar" else "ar"))
-        bottom.addWidget(tb)
-        bottom.addWidget(lb)
-        bottom.addStretch()
-        sl.addLayout(bottom)
-        lay.addWidget(side)
-        lay.addWidget(self.stack, 1)
-        self.setCentralWidget(root)
-        self.apply_role()
-        self.nav.setCurrentRow(1)
 
-    def _nav_clicked(self, item):
-        row = self.nav.row(item)
-        section = self.nav_sections.get(row)
-        if section is None:
+    def _statusbar(self):
+        sb = self.statusBar()
+        for w in getattr(self, "_sb_widgets", []):
+            sb.removeWidget(w)
+            w.deleteLater()
+        self.sb_items = {}
+        self._sb_widgets = []
+        for key, text in (("grafis", "GRAFIS"), ("nesting", "LEVEL7 Nesting"), ("robot", tr("GRAFIS robot")),
+                          ("watch", tr("Folder watch"))):
+            w = QLabel()
+            w.setProperty("label", text)
+            self.sb_items[key] = w
+            sb.addPermanentWidget(w)
+            self._sb_widgets.append(w)
+        from .cad import ltr
+        self.sb_xy = QLabel(ltr("X —   Y — mm"))
+        self.sb_zoom = QLabel("—")
+        for w in (self.sb_xy, self.sb_zoom):
+            w.setStyleSheet("font-family: Consolas, 'DejaVu Sans Mono', monospace;")
+            sb.addPermanentWidget(w)
+            self._sb_widgets.append(w)
+
+    def _status_lights(self):
+        from ..services.auto_cut import NestingNotConfigured, nesting_command
+        from . import themes
+        db = self.ws.db
+        try:
+            cli = nesting_command(self.ws)[0][-1]
+        except NestingNotConfigured:
+            cli = None
+        mdl = db.get_setting("grafis.mdl")
+        rb = db.get_setting("robot.buttons", {}) or {}
+        gp = self.pages.get("GRAFIS markers")
+        states = {"grafis": bool(mdl and os.path.isfile(mdl)), "nesting": cli is not None,
+                  "robot": bool(db.get_setting("robot.enabled", False)) and "test_run" in rb,
+                  "watch": bool(gp is not None and gp.watcher is not None)}
+        for k, w in self.sb_items.items():
+            col = themes.colour("ok" if states[k] else "bad").name()
+            w.setText(f"<span style='color:{col}'>●</span> {w.property('label')}")
+        return states
+
+    # ---- the CAD workspace
+    def refresh_cad(self, force: bool = False):
+        from . import cad
+        try:
+            rows = cad.order_rows(self.ws)
+        except Exception as e:  # noqa: BLE001 - the workspace never stops the window
+            self.status(f"{tr('Error')}: {e}")
             return
-        self.collapsed ^= {section}
-        self.ws.db.set_setting("ui.collapsed", sorted(self.collapsed))
-        text = item.text()[1:]
-        item.setText(("▸" if section in self.collapsed else "▾") + text)
-        self.apply_role()
+        self._status_lights()
+        sig = json.dumps(rows, sort_keys=True, default=str)
+        if sig == self._cad_sig and not force:
+            return
+        self._cad_sig = sig
+        keep = self.sel_row["rid"] if self.sel_row else None
+        self.browser.set_rows(rows, keep=keep)
+        if keep is not None and not any(r["rid"] == keep for r in rows):
+            self.select_row(None)
+
+    def select_row(self, row):
+        from . import cad
+        self.sel_row = row
+        if row is not None:
+            self.current_rid = row["rid"]
+        self.inspector.show_row(row)
+        marker = cad.load_marker(row["l7n"]) if row and row.get("l7n") and os.path.isfile(row["l7n"]) else None
+        msg = ""
+        if row is not None and marker is None:
+            msg = (tr("No marker yet") + " — " + tr(cad.STAGE_TEXT[row["stage"]])
+                   + ("\n" + row["problems"][0] if row["problems"] else ""))
+        self.marker.set_marker(marker, row, msg)
+        if row is not None:
+            self.browser.add_pieces(row["rid"], marker)
+
+    def _need_row(self):
+        if self.sel_row is None:
+            QMessageBox.information(self, "LEVEL7 MTM", tr("Choose an order line in the browser"))
+        return self.sel_row
+
+    def open_cutting(self):
+        import subprocess
+        r = self.sel_row
+        if r and r["outputs"] and os.path.isfile(r["outputs"][0]):
+            if os.name == "nt":
+                subprocess.Popen(["explorer", "/select,", os.path.normpath(r["outputs"][0])])
+            else:
+                QMessageBox.information(self, tr("Cutting files"), "\n".join(r["outputs"]))
+        else:
+            self.pages["GRAFIS markers"].open_out()
+
+    def renest_selected(self):
+        r = self._need_row()
+        if r is None:
+            return
+        if not r["result"]:
+            QMessageBox.information(self, "LEVEL7 Nesting", tr("This row has no marker yet"))
+            return
+        self.pages["GRAFIS markers"].renest(r["result"])
+
+    def nesting_selected(self):
+        r = self._need_row()
+        if r is not None and r["result"]:
+            self.pages["GRAFIS markers"].show_marker(r["result"])
+        elif r is not None:
+            QMessageBox.information(self, "LEVEL7 Nesting", tr("This row has no marker yet"))
+
+    def write_model(self):
+        from ..services.grafis_orders import order_mdl
+        r = self.sel_row
+        if r is None:
+            self.pages["GRAFIS markers"].write_mdl()
+            return
+        self.run(lambda: order_mdl(self.ws, r["rid"]), lambda g: (self.refresh_cad(force=True), self.status(
+            f"{r['line']}: {tr(g['status'])} {g['path'] or ''} {'; '.join(g['problems'])}"[:300])))
+
+    def open_details(self):
+        if self.sel_row is not None:
+            self.current_rid = self.sel_row["rid"]
+        self.goto("Order details")
+
+    def open_setup(self):
+        self.goto("GRAFIS markers")
+        self.pages["GRAFIS markers"].settings_btn.setChecked(True)
+
+    # ---- tabs
+    def _close_tab(self, i):
+        if i > 0:
+            self.tabs.removeTab(i)
+
+    def _tab_changed(self, i):
+        p = self.current_page()
+        if p is not None:
+            self.guard(p.refresh)
+        elif i == 0:
+            self.refresh_cad()
 
     def current_page(self):
-        t = self.nav_titles[self.nav.currentRow()] if 0 <= self.nav.currentRow() < len(self.nav_titles) else None
-        return self.pages.get(t)
+        w = self.tabs.currentWidget() if hasattr(self, "tabs") else None
+        return next((self.pages[t] for t, s in self.wrappers.items() if s is w), None)
+
+    def goto(self, title):
+        w = self.wrappers[title]
+        if self.tabs.indexOf(w) < 0:
+            self.tabs.addTab(w, tr(title))
+        if self.tabs.currentWidget() is w:
+            self.guard(self.pages[title].refresh)
+        self.tabs.setCurrentWidget(w)
 
     def toggle_theme(self):
         from PySide6.QtWidgets import QApplication
@@ -2493,13 +2667,26 @@ class MainWindow(QMainWindow):
         new = "light" if themes.name() == "dark" else "dark"
         self.ws.db.set_setting("ui.theme", new)
         themes.apply(QApplication.instance(), new)
-        cur = self.nav_titles[self.nav.currentRow()] if self.nav.currentRow() >= 0 else None
+        self._rebuild()
+
+    def _rebuild(self):
+        open_ = [t for t, s in self.wrappers.items() if self.tabs.indexOf(s) >= 0]
+        cur = self.current_page()
+        cur = cur.title if cur is not None else None
+        for p in self.pages.values():
+            if getattr(p, "timer", None) is not None:
+                p.timer.stop()
         self.build()
+        for t in open_:
+            self.goto(t)
         if cur:
             self.goto(cur)
+        else:
+            self.tabs.setCurrentIndex(0)
 
     def closeEvent(self, e):
         self.updates.release()
+        self.cad_timer.stop()
         super().closeEvent(e)
 
     def _before_update(self) -> bool:
@@ -2512,24 +2699,19 @@ class MainWindow(QMainWindow):
         for p in self.pages.values():
             if getattr(p, "timer", None) is not None:
                 p.timer.stop()
-        if getattr(self, "timer", None) is not None:
-            self.timer.stop()
+        for t in (getattr(self, "timer", None), getattr(self, "cad_timer", None)):
+            if t is not None:
+                t.stop()
         return True
 
     def apply_role(self):
-        section_row, visible, closed = None, False, False
-        cur = self.nav_titles[self.nav.currentRow()] if 0 <= self.nav.currentRow() < len(self.nav_titles) else None
-        for i, title in enumerate(self.nav_titles + [None]):
-            if title is None:                          # a section header: hidden when all its pages are
-                if section_row is not None:
-                    self.nav.item(section_row).setHidden(not visible)
-                if i < len(self.nav_titles):
-                    section_row, visible = i, False
-                    closed = self.nav_sections.get(i) in self.collapsed
-                continue
-            allowed = not (_BY_TITLE[title].developer_only and not self.developer)
-            self.nav.item(i).setHidden(not allowed or (closed and title != cur))   # the open page stays visible
-            visible = visible or allowed
+        for title, a in self.page_actions.items():
+            a.setVisible(not (_BY_TITLE[title].developer_only and not self.developer))
+        if not self.developer:
+            for title, s in self.wrappers.items():
+                i = self.tabs.indexOf(s)
+                if i > 0 and _BY_TITLE[title].developer_only:
+                    self.tabs.removeTab(i)
         self.statusBar().showMessage(f"{tr('Role')}: {tr('Pattern developer') if self.developer else tr('Operator')}")
 
     def set_role(self, dev):
@@ -2544,20 +2726,7 @@ class MainWindow(QMainWindow):
         set_language(code)
         self.ws.db.set_setting("ui.language", code)
         QApplication.instance().setLayoutDirection(Qt.RightToLeft if code == "ar" else Qt.LeftToRight)
-        self.build()
-
-    def goto_row(self, row):
-        title = self.nav_titles[row] if 0 <= row < len(self.nav_titles) else None
-        if title is None:
-            return
-        self.stack.setCurrentWidget(self.wrappers[title])
-        self.guard(self.pages[title].refresh)
-
-    def goto(self, title):
-        row = self.nav_titles.index(title)
-        if self.nav.item(row).isHidden():                # in a closed section: show it
-            self.nav.item(row).setHidden(False)
-        self.nav.setCurrentRow(row)
+        self._rebuild()
 
     def open_revision(self, rid, page="Order details"):
         self.current_rid = rid
@@ -2596,6 +2765,7 @@ class MainWindow(QMainWindow):
                     page.add_log(f"  GRAFIS {g['line_number']}: {tr(g['status'])} "
                                  f"{os.path.basename(g['path'] or '')} {'; '.join(g['problems'])}")
             page.refresh()
+            self.refresh_cad()
         self.run(work, done)
 
     def import_dialog(self):

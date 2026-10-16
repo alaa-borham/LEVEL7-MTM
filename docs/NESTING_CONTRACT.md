@@ -54,6 +54,15 @@ LEVEL7 Nesting's command line only; neither imports the other's code.
 | cutting files | `level7-cli export <order>.l7n --format plt --plt-preset algotex_grafis` / `--format iso --iso-preset bullmer_grafis` / `--format dxf` | writes the file; `device_tested: false` until a 1:1 test cut |
 | look at the marker | starts `LEVEL7Nesting.exe <order>.l7n` | opens the file given on the command line |
 
-Rules: LEVEL7 MTM never changes a file LEVEL7 Nesting wrote (it only reads the JSON it prints); LEVEL7 Nesting
+Rules: LEVEL7 MTM never changes a file LEVEL7 Nesting wrote (it only reads the JSON it prints and, to draw the
+marker, the saved `.l7n` — see below); LEVEL7 Nesting
 never needs LEVEL7 MTM to run. A new field is added, never renamed; `format_version` changes only for a
 breaking change.
+
+## Marker shown in LEVEL7 MTM (read only)
+
+The CAD workspace of LEVEL7 MTM draws the marker LEVEL7 Nesting saved: it opens the `.l7n` (ZIP, `project.json`,
+format `level7-nesting-project` v1) read only and uses `markers[-1].fabric.width`, `.length`, `.placements`
+(`piece_uid`, `size`, `x`, `y`, `rotation`, `mirrored`, `sx`, `sy`, `placed`) and `pieces[].sizes[size].cut` /
+`.grain.points` / `.holes`, transformed exactly like LEVEL7 Nesting (mirror x → −x, rotate CCW, shrinkage scale,
+translate). It never writes the file; editing the marker stays in LEVEL7 Nesting ("Show marker in LEVEL7 Nesting").
