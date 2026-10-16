@@ -196,6 +196,8 @@ AR = {
     "Variables (JSON)": "المتغيرات (JSON)",
     "Properties (JSON)": "الخصائص (JSON)",
     "Name": "الاسم",
+    "cutting files are in the old folder": "ملفات قص موجودة في المجلد القديم",
+    "Move them to the new folder?": "نقلها إلى المجلد الجديد؟",
     "Folders MDL / SCB / ER / CUT…": "المجلدات MDL / SCB / ER / CUT…",
     "Open cutting files folder": "فتح مجلد ملفات القص",
     "Show marker in LEVEL7 Nesting": "عرض الماركر في LEVEL7 Nesting",

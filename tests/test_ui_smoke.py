@@ -109,3 +109,39 @@ def test_x_value_row_turns_active_when_a_code_is_typed(ws):
     assert page.t.item(row, 5).data(Qt.CheckStateRole) is None              # inactive again
     win.close()
     app.processEvents()
+
+
+def test_chosen_cutting_folder_and_moving_existing_files(ws, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    win = MainWindow(ws)
+    page = win.pages["GRAFIS markers"]
+    old, new = tmp_path / "old", tmp_path / "mine"
+    old.mkdir()
+    (old / "Order-1.plt").write_text("x")
+    (old / "Order-1.l7n").write_text("x")
+    ws.db.set_setting("cutting.output", str(old))
+    import json
+    with ws.db.tx() as c:
+        c.execute("INSERT INTO cutting_jobs(sha256, scb_path, created_at, status, outputs, info, log) VALUES "
+                  "('s','p','t','done',?,?,'')", (json.dumps([str(old / "Order-1.plt")]),
+                                                  json.dumps({"l7n": str(old / "Order-1.l7n")})))
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(new))
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    page.choose_out()
+    assert ws.db.get_setting("cutting.output") == str(new) and ws.db.get_setting("cutting.output_chosen")
+    assert (new / "Order-1.plt").exists() and not (old / "Order-1.plt").exists()
+    job = ws.db.one("SELECT outputs, info FROM cutting_jobs")
+    assert json.loads(job["info"])["l7n"] == str(new / "Order-1.l7n")
+    assert json.loads(job["outputs"]) == [str(new / "Order-1.plt")]
+    # the folders button keeps the chosen cutting folder
+    base = tmp_path / "base"
+    base.mkdir()
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(base))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    page.choose_folders()
+    assert ws.db.get_setting("cutting.output") == str(new) and not (base / "CUT").exists()
+    page.timer.stop()
+    win.close()
+    app.processEvents()

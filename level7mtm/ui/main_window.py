@@ -804,14 +804,21 @@ class GrafisPage(Page):
         if not d:
             return
         sub = {}
-        for name in ("MDL", "SCB", "ER", "CUT"):
+        chosen = self.ws.db.get_setting("cutting.output_chosen", False)
+        for name in ("MDL", "SCB", "ER") + (() if chosen else ("CUT",)):
             have = next((e for e in os.listdir(d) if e.lower() == name.lower() and os.path.isdir(os.path.join(d, e))),
                         None)
             sub[name] = os.path.join(d, have or name)
             os.makedirs(sub[name], exist_ok=True)
         self.ws.db.set_setting("grafis.input", sub["MDL"])
         self.ws.db.set_setting("errors.folder", sub["ER"])
-        self.ws.db.set_setting("cutting.output", sub["CUT"])
+        if not chosen:                                  # a cutting folder the owner chose stays
+            from ..services.auto_cut import settings
+            old = settings(self.ws)["out"]
+            self.ws.db.set_setting("cutting.output", sub["CUT"])
+            self._offer_move(old, sub["CUT"])
+        else:
+            sub["CUT"] = self.ws.db.get_setting("cutting.output")
         if self.watcher:
             self.timer.stop()
             self.watcher = None
@@ -891,11 +898,43 @@ class GrafisPage(Page):
             QMessageBox.information(self, "LEVEL7 Nesting", l7n)
 
     def choose_out(self):
-        d = QFileDialog.getExistingDirectory(self, tr("Cutting files folder…"),
-                                             self.ws.db.get_setting("cutting.output", ""))
-        if d:
-            self.ws.db.set_setting("cutting.output", d)
-            self.refresh()
+        from ..services.auto_cut import settings
+        old = settings(self.ws)["out"]
+        d = QFileDialog.getExistingDirectory(self, tr("Cutting files folder…"), old)
+        if not d:
+            return
+        self.ws.db.set_setting("cutting.output", d)
+        self.ws.db.set_setting("cutting.output_chosen", True)       # the folders button keeps this choice
+        self._offer_move(old, d)
+        self.refresh()
+
+    def _offer_move(self, old, new):
+        """Move the cutting files already written (PLT / ISO / L7N) from the old folder to the new one."""
+        import shutil
+        if not old or not os.path.isdir(old) or os.path.normcase(os.path.abspath(old)) == \
+                os.path.normcase(os.path.abspath(new)):
+            return
+        files = [f for f in os.listdir(old) if f.lower().endswith((".plt", ".iso", ".l7n"))]
+        if not files or QMessageBox.question(self, tr("Cutting files folder"),
+                                             f"{len(files)} {tr('cutting files are in the old folder')}:\n{old}\n\n"
+                                             f"{tr('Move them to the new folder?')}") != QMessageBox.Yes:
+            return
+        os.makedirs(new, exist_ok=True)
+        moved = {}
+        for f in files:
+            target = os.path.join(new, f)
+            if not os.path.exists(target):
+                shutil.move(os.path.join(old, f), target)
+                moved[os.path.join(old, f)] = target
+        with self.ws.db.tx() as c:                      # the jobs keep pointing at their files
+            for r in c.execute("SELECT id, outputs, info FROM cutting_jobs").fetchall():
+                outs = [moved.get(p, p) for p in json.loads(r["outputs"])]
+                info = json.loads(r["info"])
+                if info.get("l7n") in moved:
+                    info["l7n"] = moved[info["l7n"]]
+                c.execute("UPDATE cutting_jobs SET outputs=?, info=? WHERE id=?",
+                          (json.dumps(outs), json.dumps(info, ensure_ascii=False), r["id"]))
+            self.ws.db.audit(c, self.ws.actor, "cutting.files_moved", "folder", new, {"files": len(moved)})
 
     def accept(self):
         paths = selected_data(self.t)
