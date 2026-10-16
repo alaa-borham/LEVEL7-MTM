@@ -761,6 +761,8 @@ class GrafisPage(Page):
         d = QFileDialog.getExistingDirectory(self, tr("GRAFIS input folder…"), gsettings(self.ws)["out"])
         if d:
             self.ws.db.set_setting("grafis.input", d)
+            if self.watcher:                          # watch the new MDL folder too
+                self.start(self.watcher.folder)
             self.refresh()
 
     def write_mdl(self):
@@ -821,7 +823,13 @@ class GrafisPage(Page):
         self.refresh()
 
     def start(self, folder):
+        from ..services.grafis_orders import settings as gsettings
+        from ..services.mdl_intake import register_mdl
         self.watcher = FolderWatcher(self.ws, folder, settle_seconds=3, extensions=(".scb",), handler=self._register)
+        mdl_dir = gsettings(self.ws)["out"]           # the MDL folder: models saved back by GRAFIS
+        os.makedirs(mdl_dir, exist_ok=True)
+        self.mdl_watcher = FolderWatcher(self.ws, mdl_dir, settle_seconds=3, extensions=(".mdl",),
+                                         handler=lambda p: register_mdl(self.ws, p))
         self.ws.db.set_setting("grafis.watch.folder", folder)
         self.ws.db.set_setting("grafis.watch.enabled", True)
         self.timer.start(2000)
@@ -836,7 +844,8 @@ class GrafisPage(Page):
             self.busy = False
             if res:
                 self.refresh()
-        w = Worker(self.watcher.poll)
+        mw = getattr(self, "mdl_watcher", None)
+        w = Worker(lambda: self.watcher.poll() + (mw.poll() if mw else []))
         w.signals.done.connect(done)
         w.signals.failed.connect(lambda msg: (setattr(self, "busy", False), self.win.status(msg[:200])))
         self.win.pool.start(w)

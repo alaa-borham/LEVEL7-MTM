@@ -158,6 +158,8 @@ def order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = N
     except (XWriteError, OSError) as e:
         res["problems"] = [str(e)]
         return _save(ws, res, tsha)
+    with open(path, "rb") as fh:                   # recognises the file as written (before GRAFIS saves it)
+        res["sha256"] = hashlib.sha256(fh.read()).hexdigest()
     res.update(status="written", path=path)
     return _save(ws, res, tsha)
 
