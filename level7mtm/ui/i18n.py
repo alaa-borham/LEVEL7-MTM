@@ -196,6 +196,9 @@ AR = {
     "Variables (JSON)": "المتغيرات (JSON)",
     "Properties (JSON)": "الخصائص (JSON)",
     "Name": "الاسم",
+    "GRAFIS part": "القطعة في GRAFIS",
+    "Choose for each design option the GRAFIS parts it needs (* = every order). Exactly these parts are switched to production in the order's model.":
+        "اختر لكل خيار تصميم قطع GRAFIS التي يحتاجها (* = لكل الطلبات). هذه القطع فقط تُحوَّل إلى «إنتاج» في موديل الطلب وتنزل إلى الماركر.",
     "Robot: run now": "الروبوت: تشغيل الآن",
     "No order model is waiting for GRAFIS in": "لا يوجد موديل طلب ينتظر GRAFIS في",
     "Write the models again with 'Write GRAFIS model for order…'.": "أعد كتابة الموديلات بزر «كتابة موديل GRAFIS لطلب…».",

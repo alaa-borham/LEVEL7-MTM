@@ -12,7 +12,7 @@ from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
                                QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
-                               QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QSplitter,
+                               QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QSplitter,
                                QStackedWidget, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
 from .. import ENGINE_VERSION, __version__
@@ -1076,6 +1076,109 @@ class OptionsPage(Page):
         self.refresh()
 
 
+class GrafisPartsPage(Page):
+    """Design option → GRAFIS part (number, material, normal / mirrored copies). The base model may have no
+    production part: exactly the parts chosen here (for the order's options) are produced."""
+    title = "GRAFIS parts"
+    COLS = ["Design option", "GRAFIS part", "Material", "Copies", "Mirrored"]
+
+    def __init__(self, win):
+        super().__init__(win)
+        lay = QVBoxLayout(self)
+        self.info = QLabel()
+        self.info.setWordWrap(True)
+        lay.addWidget(self.info)
+        self.t = QTableWidget(0, len(self.COLS))
+        self.t.setHorizontalHeaderLabels([tr(c) for c in self.COLS])
+        self.t.horizontalHeader().setStretchLastSection(True)
+        self.t.verticalHeader().setVisible(False)
+        lay.addWidget(self.t, 1)
+        bar = QHBoxLayout()
+        for text, fn in (("Add row", lambda: self.add_row({})), ("Remove row", self.remove_row), ("Save", self.save)):
+            b = QPushButton(tr(text))
+            b.clicked.connect(fn)
+            bar.addWidget(b)
+        bar.addStretch()
+        lay.addLayout(bar)
+        self.parts: dict = {}
+        self.options: list = []
+
+    def _mdl(self):
+        m = self.ws.db.get_setting("grafis.mdl")
+        return m if m and os.path.isfile(m) else None
+
+    def refresh(self):
+        from ..services.gparts import model_parts, option_choices, parts_table
+        mdl = self._mdl()
+        self.info.setText(tr("Choose for each design option the GRAFIS parts it needs (* = every order). Exactly "
+                             "these parts are switched to production in the order's model.") +
+                          f"\n{tr('GRAFIS model (MDL)')}: {mdl or '⚠ ' + tr('not set')}")
+        try:
+            self.parts = model_parts(mdl) if mdl else {}
+        except Exception as e:  # noqa: BLE001
+            self.parts = {}
+            self.info.setText(f"{tr('Error')}: {e}")
+        self.options = option_choices(self.ws)
+        self.t.setRowCount(0)
+        for r in parts_table(self.ws):
+            self.add_row(r)
+        self.t.resizeColumnsToContents()
+
+    def add_row(self, r: dict):
+        i = self.t.rowCount()
+        self.t.insertRow(i)
+        oc = QComboBox()
+        for key, lab in self.options:
+            oc.addItem(tr("always") + " (*)" if key == "*" else lab, key)
+        oc.setCurrentIndex(max(oc.findData(r.get("option") or "*"), 0))
+        pc = QComboBox()
+        for n, (name, mat) in sorted(self.parts.items()):
+            if name.strip("*").strip():
+                pc.addItem(f"{n:03d}  {name}", n)
+        if r.get("part") is not None and pc.findData(int(r["part"])) < 0:
+            pc.addItem(f"{int(r['part']):03d}  {r.get('name', '')} ⚠", int(r["part"]))
+        pc.setCurrentIndex(max(pc.findData(int(r["part"])) if r.get("part") is not None else 0, 0))
+        mc = QComboBox()
+        mats = sorted({m for _, m in self.parts.values() if m} | {"O"})
+        mc.addItems(mats)
+        mc.setCurrentText(r.get("material") or "O")
+        if not r:                                     # new row: the part's own material
+            pc.currentIndexChanged.connect(lambda _=0, pc=pc, mc=mc: mc.setCurrentText(
+                (self.parts.get(pc.currentData(), ("", None))[1]) or "O"))
+            mc.setCurrentText((self.parts.get(pc.currentData(), ("", None))[1]) or "O")
+        cs, ms = QSpinBox(), QSpinBox()
+        cs.setRange(0, 99)
+        ms.setRange(0, 99)
+        cs.setValue(int(r.get("copies", 1)))
+        ms.setValue(int(r.get("mirrored", 0)))
+        for j, w in enumerate((oc, pc, mc, cs, ms)):
+            self.t.setCellWidget(i, j, w)
+
+    def remove_row(self):
+        if self.t.currentRow() >= 0:
+            self.t.removeRow(self.t.currentRow())
+
+    def rows(self) -> list[dict]:
+        out = []
+        for i in range(self.t.rowCount()):
+            w = [self.t.cellWidget(i, j) for j in range(5)]
+            if w[1].currentData() is None:
+                continue
+            out.append({"option": w[0].currentData(), "part": int(w[1].currentData()), "material": w[2].currentText(),
+                        "copies": w[3].value(), "mirrored": w[4].value()})
+        return out
+
+    def save(self):
+        from ..services.gparts import save_parts
+        try:
+            ver = save_parts(self.ws, self.rows(), self._mdl())
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(self, tr("Error"), str(e))
+            return
+        QMessageBox.information(self, tr("GRAFIS parts"), f"{tr('Saved')}: {tr('Rules')} {ver}")
+        self.refresh()
+
+
 class XValuesPage(Page):
     """Every X value of a GRAFIS part next to the XML code(s) that fill it. Saved as a new rules version."""
     title = "X values for GRAFIS"
@@ -1742,7 +1845,7 @@ class LogPage(Page):
         self.win.close()
 
 
-PAGES = [OrdersPage, ImportPage, OrderPage, ModelPage, PreviewPage, ValidationPage, SendPage, GrafisPage, XValuesPage, OptionsPage,
+PAGES = [OrdersPage, ImportPage, OrderPage, ModelPage, PreviewPage, ValidationPage, SendPage, GrafisPage, XValuesPage, OptionsPage, GrafisPartsPage,
          LibraryPage,
          RulesPage,
          SettingsPage, LogPage]

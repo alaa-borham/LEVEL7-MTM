@@ -95,8 +95,12 @@ def plan_values(ws, rid: int, template: str) -> dict:
     gp = grafis_parts_for(style, res.options)
     model_parts = production(cont)
     if gp is None:
-        parts_note = ("GRAFIS parts per option not configured — the model's own production parts are kept: " +
-                      ", ".join(f"{n:03d} {nm}" for n, (nm, sp) in sorted(model_parts.items()) if sp))
+        kept = [f"{n:03d} {nm}" for n, (nm, sp) in sorted(model_parts.items()) if sp]
+        if not kept:                                    # base model with production off: parts must come from options
+            problems.append("no GRAFIS part to produce: the base model has none and the GRAFIS parts table is "
+                            "empty — fill it in (screen 'GRAFIS parts')")
+        parts_note = "GRAFIS parts per option not configured — the model's own production parts are kept: " + \
+            ", ".join(kept)
     else:
         parts = {}
         for num, row in sorted(gp.items()):
