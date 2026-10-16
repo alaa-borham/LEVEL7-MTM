@@ -627,6 +627,20 @@ class GrafisPage(Page):
             bar0.addWidget(b)
         bar0.addStretch()
         lay.addLayout(bar0)
+        brow = QHBoxLayout()
+        self.robot = QCheckBox(tr("GRAFIS robot on this PC: open the model, Test Run All Parts, save"))
+        self.robot.setChecked(bool(self.ws.db.get_setting("robot.enabled", False)))
+        self.robot.toggled.connect(lambda on: (self.ws.db.set_setting("robot.enabled", on), self.refresh()))
+        brow.addWidget(self.robot)
+        for text, fn in (("Teach: Test Run All Parts button", lambda: self.teach("test_run")),
+                         ("Teach: Save button", lambda: self.teach("save")),
+                         ("Teach: Close button", lambda: self.teach("close")),
+                         ("Robot: try again", self.robot_retry)):
+            b = QPushButton(tr(text))
+            b.clicked.connect(fn)
+            brow.addWidget(b)
+        brow.addStretch()
+        lay.addLayout(brow)
         self.auto_mdl = QCheckBox(tr("Automatic: write the order's X values into a GRAFIS model (MDL) on import"))
         self.auto_mdl.setChecked(bool(self.ws.db.get_setting("grafis.auto_mdl", True)))
         self.auto_mdl.toggled.connect(lambda on: (self.ws.db.set_setting("grafis.auto_mdl", on), self.refresh()))
@@ -682,7 +696,14 @@ class GrafisPage(Page):
         except NestingNotConfigured:
             cli = "⚠ " + tr("not found")
         mdl = gs["template"]
-        self.info.setText(f"{tr('GRAFIS model (MDL)')}: {mdl or '⚠ ' + tr('not set')}"
+        from ..services.grafis_robot import settings as rsettings
+        rb = rsettings(self.ws)["buttons"]
+        last = self.ws.db.one("SELECT status, message, path FROM robot_jobs ORDER BY id DESC LIMIT 1")
+        robot_line = (f"{tr('GRAFIS robot')}: {tr('on') if self.robot.isChecked() else tr('off')} — "
+                      f"Test Run: {'✓' if 'test_run' in rb else '⚠ ' + tr('not taught')}, "
+                      f"Save: {'✓' if 'save' in rb else 'Ctrl+S'}, Close: {'✓' if 'close' in rb else '—'}"
+                      + (f" — {os.path.basename(last['path'])}: {last['status']} {last['message']}" if last else ""))
+        self.info.setText(robot_line + "\n" + f"{tr('GRAFIS model (MDL)')}: {mdl or '⚠ ' + tr('not set')}"
                           f"{'' if not mdl or os.path.isfile(mdl) else ' ⚠ ' + tr('not found')} — "
                           f"{tr('GRAFIS input folder')}: {gs['out']} — "
                           f"{tr('Errors folder (ER)')}: {self.ws.db.get_setting('errors.folder') or '⚠ ' + tr('not set')}\n"
@@ -726,6 +747,28 @@ class GrafisPage(Page):
         if p:
             self.ws.db.set_setting("grafis.mdl", p)
             self.refresh()
+
+    def teach(self, name):
+        from ..services.grafis_robot import teach
+        QMessageBox.information(self, tr("GRAFIS robot"), tr("Open a model in GRAFIS. After OK you have 5 seconds to "
+                                                             "point the mouse at the button (do not click)."))
+
+        def record():
+            try:
+                spec = teach(self.ws, name)
+            except Exception as e:  # noqa: BLE001
+                QMessageBox.warning(self, tr("GRAFIS robot"), str(e))
+                return
+            QMessageBox.information(self, tr("GRAFIS robot"), f"{tr('Saved')}: {name} — {spec['title']} "
+                                                              f"({spec['dx']}, {spec['dy']})")
+            self.refresh()
+        QTimer.singleShot(5000, record)
+
+    def robot_retry(self):
+        with self.ws.db.tx() as c:
+            c.execute("DELETE FROM robot_jobs WHERE status<>'done'")
+            self.ws.db.audit(c, self.ws.actor, "robot.retry", "robot", "-")
+        self.refresh()
 
     def choose_folders(self):
         """One main folder with the subfolders MDL (order models for GRAFIS), SCB (GRAFIS output, watched) and ER
@@ -845,7 +888,13 @@ class GrafisPage(Page):
             if res:
                 self.refresh()
         mw = getattr(self, "mdl_watcher", None)
-        w = Worker(lambda: self.watcher.poll() + (mw.poll() if mw else []))
+
+        def work():
+            from ..services.grafis_robot import step
+            out = self.watcher.poll() + (mw.poll() if mw else [])
+            r = step(self.ws)                         # robot: one pending model (if switched on)
+            return out + ([r] if r else [])
+        w = Worker(work)
         w.signals.done.connect(done)
         w.signals.failed.connect(lambda msg: (setattr(self, "busy", False), self.win.status(msg[:200])))
         self.win.pool.start(w)

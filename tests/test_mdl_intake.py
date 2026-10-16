@@ -47,8 +47,13 @@ def test_saved_model_states(ws, tmp_path):
     rev = ws.revision(r["check"].lines[0]["revision_id"])
     assert rev["status"] == "sent_to_nesting"
     assert register_mdl(ws, p1, cut=False)["status"] == "duplicate"
+    # the second line's model, identical content once saved, is its own job (second garment)
+    with open(p2, "wb") as fh:
+        fh.write(read(p1))
+    r2 = register_mdl(ws, p2, cut=False)
+    assert r2["status"] == "handed_over" and r2["check"].lines[0]["line_number"] == "9-53-2_2"
     # X value changed by hand in GRAFIS: held
-    _saved_by_grafis(p2, recalculated=True, x1=1600.0)
+    _saved_by_grafis(p2, recalculated=True, x1=1600.0)            # saved again with X1 changed by hand
     r = register_mdl(ws, p2, cut=False)
     assert r["status"] == "needs_review" and any("002/X1" in m for _, m in r["check"].issues)
 

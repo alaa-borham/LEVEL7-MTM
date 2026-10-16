@@ -31,7 +31,9 @@ def _sha(path):
 
 
 def check_mdl(ws, path: str) -> tuple[ScbCheck, dict | None]:
-    chk = ScbCheck(path, _sha(path))
+    content = _sha(path)
+    # identity = content + file: two order lines with identical models are still two jobs (two garments)
+    chk = ScbCheck(path, hashlib.sha256(f"{content}|{os.path.abspath(path).lower()}".encode()).hexdigest())
     row = ws.db.one("SELECT * FROM grafis_orders WHERE status='written' AND path=? ORDER BY id DESC", (path,))
     if row is None:
         by_name = [r for r in ws.db.q("SELECT * FROM grafis_orders WHERE status='written' ORDER BY id DESC")
@@ -41,7 +43,7 @@ def check_mdl(ws, path: str) -> tuple[ScbCheck, dict | None]:
         chk.issues.append(("blocking", "this model was not written by LEVEL7 MTM for an order line"))
         return chk, None
     info = json.loads(row["info"])
-    if info.get("sha256") == chk.sha256:
+    if info.get("sha256") == content:
         chk.info = {"waiting": True}
         return chk, row                                  # still as written: GRAFIS has not saved it yet
     rev = ws.revision(row["revision_id"])

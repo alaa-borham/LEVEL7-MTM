@@ -179,6 +179,17 @@ MIGRATIONS: list[str] = [
         info TEXT NOT NULL
     )
     """,
+    # 7 — GRAFIS robot: one row per order model it worked on (never retried silently)
+    """
+    CREATE TABLE robot_jobs (
+        id INTEGER PRIMARY KEY,
+        sha256 TEXT NOT NULL,
+        path TEXT NOT NULL,
+        at TEXT NOT NULL,
+        status TEXT NOT NULL,
+        message TEXT NOT NULL
+    )
+    """,
 ]
 
 
