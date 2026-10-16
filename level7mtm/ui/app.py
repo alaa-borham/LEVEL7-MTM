@@ -10,6 +10,24 @@ def default_data_folder() -> str:
     return os.path.join(base, "LEVEL7 MTM")
 
 
+def _install_crash_log(folder: str) -> None:
+    """A windowed program has no console: unhandled errors go to <data>/level7mtm-errors.log."""
+    import faulthandler
+    import traceback
+    os.makedirs(folder, exist_ok=True)
+    log = open(os.path.join(folder, "level7mtm-errors.log"), "a", encoding="utf-8", buffering=1)
+    faulthandler.enable(log)
+
+    def hook(tp, val, tb):
+        log.write("".join(traceback.format_exception(tp, val, tb)))
+        sys.__excepthook__(tp, val, tb)
+    sys.excepthook = hook
+    if sys.stderr is None:            # pythonw / frozen windowed
+        sys.stderr = log
+    if sys.stdout is None:
+        sys.stdout = log
+
+
 def main(argv=None) -> int:
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication, QMessageBox
@@ -19,9 +37,10 @@ def main(argv=None) -> int:
     from .main_window import MainWindow
 
     argv = list(sys.argv if argv is None else argv)
+    folder = os.environ.get("LEVEL7MTM_DATA") or default_data_folder()
+    _install_crash_log(folder)
     app = QApplication.instance() or QApplication(argv)
     app.setApplicationName("LEVEL7 MTM")
-    folder = os.environ.get("LEVEL7MTM_DATA") or default_data_folder()
     try:
         ws = Workspace(folder, actor=os.environ.get("USERNAME") or os.environ.get("USER") or "operator")
     except Exception as e:  # noqa: BLE001

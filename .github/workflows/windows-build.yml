@@ -69,8 +69,11 @@ jobs:
           $env:LEVEL7MTM_DATA = (Resolve-Path $d).Path
           $p = Start-Process "dist\LEVEL7MTM\LEVEL7MTM.exe" -PassThru
           Start-Sleep -Seconds 12
+          $log = Join-Path $env:LEVEL7MTM_DATA "level7mtm-errors.log"
+          if (Test-Path $log) { Get-Content $log }
           if ($p.HasExited) { throw "GUI exited early with code $($p.ExitCode)" }
           Stop-Process -Id $p.Id
+          $global:LASTEXITCODE = 0
 
       - name: Build installer (Inno Setup)
         shell: pwsh
@@ -96,10 +99,14 @@ jobs:
           & "$dir\level7mtm-cli.exe" --data installed-ws calc 9-53-1_2
           if ($LASTEXITCODE -ne 0) { throw "installed CLI calculation failed" }
           $env:QT_QPA_PLATFORM = "offscreen"
+          $env:LEVEL7MTM_DATA = (New-Item -ItemType Directory -Force installed-ws).FullName
           $p = Start-Process "$dir\LEVEL7MTM.exe" -PassThru
           Start-Sleep -Seconds 12
+          $log = Join-Path $env:LEVEL7MTM_DATA "level7mtm-errors.log"
+          if (Test-Path $log) { Get-Content $log }
           if ($p.HasExited) { throw "installed GUI exited early with code $($p.ExitCode)" }
           Stop-Process -Id $p.Id
+          $global:LASTEXITCODE = 0
           Write-Host "installed OK"
 
       - uses: actions/upload-artifact@v4
@@ -117,4 +124,6 @@ jobs:
             frozen.dxf
             frozen.pdf
             frozen-TEST.l7n
+            frozen-ws/level7mtm-errors.log
+            installed-ws/level7mtm-errors.log
             install.log
