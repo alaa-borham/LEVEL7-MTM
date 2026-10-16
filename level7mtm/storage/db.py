@@ -138,6 +138,22 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE generations RENAME COLUMN xvars_doc TO rules_doc
     """,
+    # 4 — results received from GRAFIS (SCB markers) and their hand-over to LEVEL7 Nesting
+    """
+    CREATE TABLE grafis_results (
+        id INTEGER PRIMARY KEY,
+        sha256 TEXT NOT NULL UNIQUE,
+        path TEXT NOT NULL,
+        checked_at TEXT NOT NULL,
+        info TEXT NOT NULL,
+        pieces TEXT NOT NULL,
+        lines TEXT NOT NULL,
+        issues TEXT NOT NULL,
+        status TEXT NOT NULL,
+        handed_over INTEGER NOT NULL DEFAULT 0,
+        nesting_path TEXT
+    )
+    """,
 ]
 
 

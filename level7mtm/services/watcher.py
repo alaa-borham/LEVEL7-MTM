@@ -24,9 +24,12 @@ class WatchState:
 
 
 class FolderWatcher:
-    def __init__(self, workspace, folder: str, settle_seconds: float = 3.0, clock=time.monotonic):
+    def __init__(self, workspace, folder: str, settle_seconds: float = 3.0, clock=time.monotonic,
+                 extensions: tuple[str, ...] = (".xml",), handler=None):
         self.ws = workspace
         self.folder = folder
+        self.extensions = extensions
+        self.handler = handler or workspace.import_file
         self.settle = settle_seconds
         self.clock = clock
         self.state = WatchState()
@@ -39,7 +42,7 @@ class FolderWatcher:
         out = []
         for n in names:
             low = n.lower()
-            if n.startswith("~") or low.endswith(IGNORED_SUFFIXES) or not low.endswith(".xml"):
+            if n.startswith("~") or low.endswith(IGNORED_SUFFIXES) or not low.endswith(self.extensions):
                 continue
             p = os.path.join(self.folder, n)
             if os.path.isfile(p):
@@ -64,23 +67,34 @@ class FolderWatcher:
                 continue
             if t - prev[2] < self.settle or st.st_size == 0:
                 continue
-            out = self.ws.import_file(p)
+            out = self.handler(p)
             results.append(out)
             self.state.done[p] = sig
             self.state.seen.pop(p, None)
-            if out.status == "failed":
-                self.state.failed[p] = out.message
+            if _failed(out):
+                self.state.failed[p] = _message(out)
             else:
                 self.state.failed.pop(p, None)
         return results
 
     def retry(self, path: str):
         self.state.done.pop(path, None)
-        out = self.ws.import_file(path)
+        out = self.handler(path)
         st = os.stat(path)
         self.state.done[path] = (st.st_size, st.st_mtime)
-        if out.status == "failed":
-            self.state.failed[path] = out.message
+        if _failed(out):
+            self.state.failed[path] = _message(out)
         else:
             self.state.failed.pop(path, None)
         return out
+
+
+def _failed(out) -> bool:
+    st = out.get("status") if isinstance(out, dict) else out.status
+    return st in ("failed", "unmatched", "needs_review")
+
+
+def _message(out) -> str:
+    if isinstance(out, dict):
+        return "; ".join(m for _, m in out["check"].issues) or out.get("status", "")
+    return out.message

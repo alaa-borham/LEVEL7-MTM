@@ -6,6 +6,7 @@
     level7mtm export LINE_NUMBER dxf|pdf     export the latest calculation
     level7mtm nest LINE_NUMBER ... -o F.l7n [--test]   write a LEVEL7 Nesting file
     level7mtm grafis-x LINE [--mdl F.mdl]    X values of an order line for GRAFIS (CSV + JSON)
+    level7mtm grafis-scb FILE.scb [--accept REASON]   check a GRAFIS marker and hand it to nesting
     level7mtm mdl-report FILE.mdl -o DIR     GRAFIS formula report (Markdown + JSON)
     level7mtm backup                         back up the database
 
@@ -58,6 +59,10 @@ def main(argv=None) -> int:
     s.add_argument("line")
     s.add_argument("--mdl", help="GRAFIS model file (adds names, defaults and size ranges)")
     s.add_argument("-o", "--outdir")
+    s = sub.add_parser("grafis-scb", help="check a GRAFIS marker (SCB named after the XML) and hand it to nesting")
+    s.add_argument("files", nargs="+")
+    s.add_argument("--nesting-dir")
+    s.add_argument("--accept", metavar="REASON", help="accept review findings (never blocking ones), reason recorded")
     s = sub.add_parser("mdl-report")
     s.add_argument("mdl")
     s.add_argument("-o", "--outdir", default="reports")
@@ -117,6 +122,20 @@ def _run(a) -> int:
             print("warning:", w)
         print(*d["files"], sep="\n")
         return 0
+    if a.cmd == "grafis-scb":
+        from .services.grafis_intake import register_scb
+        rc = 0
+        for f in a.files:
+            r = register_scb(ws, f, nesting_dir=a.nesting_dir, confirm_reason=a.accept)
+            ch = r["check"]
+            print(f"{os.path.basename(f)}: {r['status']}  lines={[ln['line_number'] for ln in ch.lines]}  "
+                  f"width={ch.info.get('width_mm')} bundles={ch.info.get('bundles')} pieces={ch.info.get('pieces_placed')}")
+            for sev, m in ch.issues:
+                print(f"  [{sev}] {m}")
+            if r["nesting_path"]:
+                print("  ->", r["nesting_path"])
+            rc |= r["status"] not in ("handed_over", "duplicate")
+        return rc
     if a.cmd == "backup":
         print(ws.db.backup(os.path.join(ws.folder, "backups")))
         return 0

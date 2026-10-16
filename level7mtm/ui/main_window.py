@@ -590,6 +590,105 @@ class SendPage(Page):
                     self.win.status(p)
 
 
+class GrafisPage(Page):
+    """Phase 1: GRAFIS computes the pattern and writes an SCB per order (named after the XML). Here the SCB is
+    checked against the order and handed to LEVEL7 Nesting unchanged."""
+    title = "GRAFIS markers"
+
+    def __init__(self, win):
+        super().__init__(win)
+        lay = QVBoxLayout(self)
+        self.info = QLabel()
+        self.info.setWordWrap(True)
+        lay.addWidget(self.info)
+        bar = QHBoxLayout()
+        for text, fn in (("Register GRAFIS marker (SCB)…", self.register), ("Watch GRAFIS output folder", self.toggle),
+                         ("Nesting folder…", self.choose_nesting), ("Accept review findings…", self.accept)):
+            b = QPushButton(tr(text))
+            b.clicked.connect(fn)
+            bar.addWidget(b)
+        bar.addStretch()
+        lay.addLayout(bar)
+        self.t = table(["File", "Order line", "Status", "Width", "Bundles", "Pieces", "Findings"])
+        lay.addWidget(self.t, 1)
+        self.watcher = None
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.poll)
+        folder = self.ws.db.get_setting("grafis.watch.folder")
+        if folder and self.ws.db.get_setting("grafis.watch.enabled", False) and os.path.isdir(folder):
+            self.start(folder)
+
+    def _nesting_dir(self):
+        return self.ws.db.get_setting("nesting.inbox") or os.path.join(self.ws.folder, "nesting")
+
+    def refresh(self):
+        self.info.setText(f"{tr('GRAFIS output folder')}: {self.ws.db.get_setting('grafis.watch.folder') or '—'}"
+                          f" ({tr('watching') if self.watcher else tr('not watching')}) — "
+                          f"{tr('Nesting folder')}: {self._nesting_dir()}")
+        rows = self.ws.db.q("SELECT * FROM grafis_results ORDER BY checked_at DESC")
+        out, colors, data = [], [], []
+        for r in rows:
+            info, issues, lines = json.loads(r["info"]), json.loads(r["issues"]), json.loads(r["lines"])
+            out.append([os.path.basename(r["path"]), ", ".join(ln["line_number"] for ln in lines), tr(r["status"]),
+                        info.get("width_mm"), info.get("bundles"), info.get("pieces_placed"),
+                        " | ".join(f"[{tr(sv)}] {m}" for sv, m in issues)])
+            colors.append({"handed_over": STATUS_COLORS["approved"], "needs_review": STATUS_COLORS["review"],
+                           "unmatched": STATUS_COLORS["blocking"]}.get(r["status"]))
+            data.append(r["path"])
+        fill(self.t, out, colors, data)
+
+    def _register(self, path, reason=None):
+        from ..services.grafis_intake import register_scb
+        return register_scb(self.ws, path, nesting_dir=self._nesting_dir(), confirm_reason=reason)
+
+    def register(self):
+        paths, _ = QFileDialog.getOpenFileNames(self, "GRAFIS", self.ws.db.get_setting("grafis.watch.folder", ""),
+                                                "GRAFIS marker (*.scb *.SCB)")
+        for p in paths:
+            self.win.guard(lambda p=p: self._register(p))
+        self.refresh()
+
+    def accept(self):
+        paths = selected_data(self.t)
+        if not paths:
+            return
+        reason = ask_reason(self, tr("Accept review findings…"))
+        if reason:
+            for p in paths:
+                r = self.win.guard(lambda p=p: self._register(p, reason))
+                if r and r["status"] != "handed_over":
+                    QMessageBox.warning(self, "GRAFIS", "\n".join(m for _, m in r["check"].issues))
+        self.refresh()
+
+    def choose_nesting(self):
+        d = QFileDialog.getExistingDirectory(self, tr("Nesting folder…"), self._nesting_dir())
+        if d:
+            self.ws.db.set_setting("nesting.inbox", d)
+            self.refresh()
+
+    def toggle(self):
+        if self.watcher:
+            self.timer.stop()
+            self.watcher = None
+            self.ws.db.set_setting("grafis.watch.enabled", False)
+        else:
+            d = QFileDialog.getExistingDirectory(self, tr("Watch GRAFIS output folder"),
+                                                 self.ws.db.get_setting("grafis.watch.folder", ""))
+            if d:
+                self.start(d)
+        self.refresh()
+
+    def start(self, folder):
+        self.watcher = FolderWatcher(self.ws, folder, settle_seconds=3, extensions=(".scb",), handler=self._register)
+        self.ws.db.set_setting("grafis.watch.folder", folder)
+        self.ws.db.set_setting("grafis.watch.enabled", True)
+        self.timer.start(2000)
+
+    def poll(self):
+        if self.watcher and self.win.guard(self.watcher.poll):
+            self.refresh()
+
+
 class LibraryPage(Page):
     title = "Model library"
     developer_only = True
@@ -1051,7 +1150,8 @@ class LogPage(Page):
         self.win.close()
 
 
-PAGES = [OrdersPage, ImportPage, OrderPage, ModelPage, PreviewPage, ValidationPage, SendPage, LibraryPage, RulesPage,
+PAGES = [OrdersPage, ImportPage, OrderPage, ModelPage, PreviewPage, ValidationPage, SendPage, GrafisPage, LibraryPage,
+         RulesPage,
          SettingsPage, LogPage]
 
 
