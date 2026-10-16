@@ -893,7 +893,8 @@ class XValuesPage(Page):
                 self.t.setItem(i, j, it)
             ck = QTableWidgetItem()
             ck.setFlags((ck.flags() | Qt.ItemIsUserCheckable) & ~Qt.ItemIsEditable)
-            ck.setCheckState(Qt.Checked if (r["confirmed"] or not r["codes"]) else Qt.Unchecked)
+            if r["codes"]:                    # an X without an XML code has nothing to confirm: no box
+                ck.setCheckState(Qt.Checked if r["confirmed"] else Qt.Unchecked)
             self.t.setItem(i, 5, ck)
             if r["codes"]:
                 for j in range(6):
@@ -907,7 +908,8 @@ class XValuesPage(Page):
             codes = [c.strip() for c in re.split(r"[,،;\s]+", self.t.item(i, 3).text()) if c.strip()]
             out.append({"x": int(self.t.item(i, 0).text()[1:]), "codes": codes,
                         "formula": self.t.item(i, 4).text().strip() or "{M}",
-                        "confirmed": self.t.item(i, 5).checkState() == Qt.Checked})
+                        "confirmed": self.t.item(i, 5).data(Qt.CheckStateRole) is None   # code typed in now
+                        or self.t.item(i, 5).checkState() == Qt.Checked})
         return out
 
     def save(self):
