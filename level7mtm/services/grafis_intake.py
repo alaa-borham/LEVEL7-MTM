@@ -98,11 +98,13 @@ def check_scb(ws, path: str, renest: bool | None = None) -> ScbCheck:
         m = re.search(rf"^{k}\s*(\d+)", raw, re.M)
         if m:
             sb[k] = m.group(1)
+    mat = next(((k[8:], v) for k, v in sb.items() if k.startswith("MATERIAL") and len(k) == 9), (None, None))
     num = lambda k: float(sb[k]) if sb.get(k, "").replace(".", "", 1).isdigit() else None   # noqa: E731
     chk.info = {"width_mm": num("WIDTH"), "length_mm": num("LENGTH"), "efficiency_pct": num("EFFCNCY"),
                 "bundles": int(num("BUNDLES") or 0), "pieces_placed": int(num("PCSTOTAL") or 0) if
                 sb.get("PCSTOTAL") else None, "unplaced": int(num("PCSUNPLC") or 0), "sizes": sizes,
-                "user": sb.get("USER"), "created": sb.get("CRTIME"), "material": sb.get("MATERIALO")}
+                "user": sb.get("USER"), "created": sb.get("CRTIME"), "material": mat[1],
+                "material_code": mat[0]}
     # --- which order lines
     stem = os.path.splitext(os.path.basename(path))[0]
     by_file = ws.db.q("SELECT r.id FROM revisions r JOIN import_files f ON f.id=r.import_file "
@@ -163,21 +165,17 @@ def _expected_parts(ws, chk: ScbCheck) -> None:
         _, cat, res = ws.resolve_order(chk.lines[0]["revision_id"])
     except Exception:  # noqa: BLE001 - catalog problems are reported elsewhere
         return
+    from .catalog import grafis_parts_for
     style = cat["products"][res.product]["styles"][res.style]
-    gp = style.get("grafis_parts")
-    if not gp:
-        chk.issues.append(("info", "expected GRAFIS parts per option are not configured in the catalog; piece list "
-                                   "shown for review only"))
-        return
     rev = ws.revision(chk.lines[0]["revision_id"])
-    expected = {}
-    for name, spec in gp.get("base", {}).items():
-        expected[name] = (spec["copies"], spec["mirrored"])
-    for key, parts in gp.get("options", {}).items():
-        g, v = key.split("=")
-        if rev["normalized"]["options"].get(g) == v:
-            for name, spec in parts.items():
-                expected[name] = (spec["copies"], spec["mirrored"])
+    gp = grafis_parts_for(style, rev["normalized"]["options"])
+    if gp is None:
+        chk.issues.append(("info", "GRAFIS parts per option are not configured (Rules editor → GRAFIS parts); "
+                                   "piece list shown for review only"))
+        return
+    code = chk.info.get("material_code")          # one marker per material: "MATERIALO = upper fabric"
+    expected = {row["name"]: (row["copies"], row["mirrored"]) for row in gp.values()
+                if code is None or row["material"] == code}
     have = {p["name"]: (p["copies"], p["mirrored"]) for p in chk.pieces}
     for name, cm in expected.items():
         if name not in have:

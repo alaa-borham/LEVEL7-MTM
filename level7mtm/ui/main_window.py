@@ -627,7 +627,7 @@ class GrafisPage(Page):
         self.auto_mdl.setChecked(bool(self.ws.db.get_setting("grafis.auto_mdl", True)))
         self.auto_mdl.toggled.connect(lambda on: (self.ws.db.set_setting("grafis.auto_mdl", on), self.refresh()))
         lay.addWidget(self.auto_mdl)
-        self.models = table(["Time", "Order line", "Status", "File", "X values", "Findings"])
+        self.models = table(["Time", "Order line", "Status", "File", "X values", "GRAFIS parts", "Findings"])
         lay.addWidget(self.models, 1)
         for text, fn in (("Register GRAFIS marker (SCB)…", self.register), ("Watch GRAFIS output folder", self.toggle),
                          ("Accept review findings…", self.accept), ("Nesting folder…", self.choose_nesting),
@@ -665,6 +665,8 @@ class GrafisPage(Page):
             info = json.loads(r["info"])
             mo.append([r["created_at"], r["line_number"], tr(r["status"]), os.path.basename(r["path"] or ""),
                        ", ".join(f"{x['x']}={x['value_mm']:g}" for x in info.get("rows", [])),
+                       ", ".join(f"{p['part']} {p['name']} {p['material']} {p['copies']}+{p['mirrored']}"
+                                 for p in info.get("part_rows", [])) or info.get("parts_note", ""),
                        " | ".join(info.get("problems", []))])
             mc.append({"written": STATUS_COLORS["approved"], "blocked": STATUS_COLORS["blocking"],
                        "not_configured": STATUS_COLORS["blocking"]}.get(r["status"]))
@@ -855,6 +857,17 @@ MEAS_COLS = ["Code", "Name (ar)", "Name (en)", "Unit", "Kind", "Method", "Order"
 PIECE_COLS = ["Piece", "Name", "Material", "Copies", "Mirrored", "Rotations", "Mirror allowed", "Preview",
               "Production"]
 OPT_COLS = ["Group", "Value", "Pieces", "Variables (JSON)", "Properties (JSON)"]
+GPART_COLS = ["Design option", "GRAFIS part no.", "GRAFIS part name", "Material", "Copies", "Mirrored"]
+
+
+def _grafis_model_parts(ws) -> dict[int, tuple]:
+    """{part number: (name, PartSpec | None)} of the GRAFIS model chosen in the GRAFIS screen ({} if none)."""
+    mdl = ws.db.get_setting("grafis.mdl")
+    if not mdl or not os.path.isfile(mdl):
+        return {}
+    from ..grafis.container import read_container
+    from ..grafis.parts import production
+    return production(read_container(mdl))
 
 
 def _put(t: QTableWidget, rows):
@@ -900,15 +913,17 @@ class RulesPage(Page):
         self.pt.setHorizontalHeaderLabels([tr(c) for c in PIECE_COLS])
         self.ot = QTableWidget(0, len(OPT_COLS))
         self.ot.setHorizontalHeaderLabels([tr(c) for c in OPT_COLS])
+        self.gpt = QTableWidget(0, len(GPART_COLS))
+        self.gpt.setHorizontalHeaderLabels([tr(c) for c in GPART_COLS])
         for t, name in ((self.rt, "Rules"), (self.mt, "Measurement definitions"), (self.pt, "Production pieces"),
-                        (self.ot, "Design option rules")):
+                        (self.ot, "Design option rules"), (self.gpt, "GRAFIS parts")):
             t.horizontalHeader().setStretchLastSection(True)
             sub.addTab(t, tr(name))
         self.sub = sub
         lx.addWidget(sub, 3)
         bx = QHBoxLayout()
         for text, fn in (("Add row", self.add_row), ("Remove row", self.remove_row), ("Test with order", self.test_rules),
-                         ("Save as new version", self.save_catalog)):
+                         ("Parts of the GRAFIS model", self.show_model_parts), ("Save as new version", self.save_catalog)):
             b = QPushButton(tr(text))
             b.clicked.connect(fn)
             bx.addWidget(b)
@@ -995,6 +1010,26 @@ class RulesPage(Page):
         _put(self.ot, [[o["group"], o["value"], ",".join(o.get("pieces", [])),
                         json.dumps(o.get("variables", []), ensure_ascii=False),
                         json.dumps(o.get("properties", {}), ensure_ascii=False)] for o in st["option_rules"]])
+        _put(self.gpt, [[g.get("option") or "*", g["part"], g.get("name", ""), g["material"], g["copies"],
+                         g["mirrored"]] for g in sorted(st.get("grafis_parts") or [],
+                                                         key=lambda g: (g.get("option") or "", g["part"]))])
+
+    def show_model_parts(self):
+        """List the parts of the GRAFIS model (number, name, current production) to fill the GRAFIS parts table."""
+        try:
+            parts = _grafis_model_parts(self.ws)
+        except Exception as e:  # noqa: BLE001
+            self.trace.setPlainText(f"{tr('Error')}: {e}")
+            return
+        if not parts:
+            self.trace.setPlainText(tr("Choose the GRAFIS model (MDL) in the GRAFIS screen first"))
+            return
+        groups = self._style().get("option_groups", {})
+        self.trace.setPlainText(
+            tr("Design option") + ": * = " + tr("always") + " · " +
+            " · ".join(f"{g}={v}" for g, vs in groups.items() for v in vs) + "\n\n" +
+            "\n".join(f"{n:03d}  {nm:<28} " + (f"{tr('Production')}: {sp.material} {sp.copies:02d} {sp.mirrored:02d}"
+                                                if sp else "") for n, (nm, sp) in sorted(parts.items())))
 
     def _cur(self):
         return self.sub.currentWidget()
@@ -1050,6 +1085,22 @@ class RulesPage(Page):
             orules.append({"group": row[0], "value": row[1], "pieces": [x for x in row[2].split(",") if x],
                            "variables": json.loads(row[3] or "[]"), "properties": json.loads(row[4] or "{}")})
         st["option_rules"] = orules
+        model_parts = _grafis_model_parts(self.ws)
+        gparts = []
+        for row in _rows(self.gpt):
+            if not row[1]:
+                continue
+            num = int(float(row[1]))
+            if model_parts and num not in model_parts:
+                raise ValueError(f"{tr('GRAFIS parts')}: {num:03d} — {tr('not found')} (MDL)")
+            name = row[2] or (model_parts.get(num, ("",))[0])
+            gparts.append({"option": "" if row[0] in ("", "*") else row[0], "part": num, "name": name.strip(),
+                           "material": (row[3] or "O").strip().upper(), "copies": int(float(row[4] or 1)),
+                           "mirrored": int(float(row[5] or 0))})
+        if gparts:
+            st["grafis_parts"] = gparts
+        else:
+            st.pop("grafis_parts", None)
         return cat
 
     def test_rules(self):
@@ -1071,6 +1122,11 @@ class RulesPage(Page):
         lines = [f"{t.rule_id:8} {t.source:14} → {t.target:34} {t.expression:14} = "
                  f"{'' if t.value is None else f'{t.value:.1f}'} [{t.status}] {t.message}" for t in res.trace]
         lines += ["", tr("Production pieces") + ": " + ", ".join(res.piece_plan)]
+        from ..services.catalog import grafis_parts_for
+        gp = grafis_parts_for(cat["products"][pid]["styles"][sid], rev["normalized"]["options"])
+        lines += [tr("GRAFIS parts") + ": " + (", ".join(f"{n:03d} {g.get('name', '')} {g['material']} "
+                                                         f"{g['copies']}+{g['mirrored']}" for n, g in sorted(gp.items()))
+                                               if gp else "—")]
         lines += [f"[{i.severity}] {i.message}" for i in res.issues]
         self.trace.setPlainText("\n".join(lines))
 

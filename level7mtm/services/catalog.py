@@ -107,6 +107,37 @@ def check_catalog(doc: dict) -> None:
             for orule in st.get("option_rules", []):
                 if orule["value"] not in st.get("option_groups", {}).get(orule["group"], []):
                     raise CatalogError(f"{where}: option rule for unknown option {orule['group']}={orule['value']}")
+            gp = st.get("grafis_parts")
+            if gp is not None:
+                if not isinstance(gp, list):
+                    raise CatalogError(f"{where}: grafis_parts must be a list of rows")
+                for row in gp:
+                    opt = row.get("option") or ""
+                    if opt not in ("", "*"):
+                        g, _, v = opt.partition("=")
+                        if v not in st.get("option_groups", {}).get(g, []):
+                            raise CatalogError(f"{where}: GRAFIS part {row.get('part')} for unknown option {opt}")
+                    n, c, m = row.get("part"), row.get("copies"), row.get("mirrored")
+                    if not (isinstance(n, int) and 1 <= n <= 999):
+                        raise CatalogError(f"{where}: GRAFIS part number {n!r} invalid")
+                    if not (isinstance(c, int) and isinstance(m, int) and 0 <= c <= 99 and 0 <= m <= 99 and c + m):
+                        raise CatalogError(f"{where}: GRAFIS part {n}: copies / mirrored must be 0…99, not both 0")
+                    if not re.fullmatch(r"[A-Z]", str(row.get("material", ""))):
+                        raise CatalogError(f"{where}: GRAFIS part {n}: material is one letter (O, F, …)")
+
+
+def grafis_parts_for(style: dict, options: dict[str, str]) -> dict[int, dict] | None:
+    """GRAFIS production parts for the chosen options ({part number: row}); None when not configured.
+    Rows with option "" or "*" are always produced; an option row overrides a base row of the same part."""
+    rows = style.get("grafis_parts")
+    if not rows:
+        return None
+    out: dict[int, dict] = {}
+    for row in sorted(rows, key=lambda r: (r.get("option") or "") not in ("", "*")):
+        opt = row.get("option") or ""
+        if opt in ("", "*") or options.get(opt.partition("=")[0]) == opt.partition("=")[2]:
+            out[row["part"]] = row
+    return out
 
 
 def find_style(doc: dict, item: str | None, measurement_table: str | None) -> tuple[str, str]:

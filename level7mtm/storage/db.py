@@ -175,7 +175,7 @@ MIGRATIONS: list[str] = [
         created_at TEXT NOT NULL,
         status TEXT NOT NULL,
         path TEXT,
-        template_sha256 TEXT,
+        template_sha256 TEXT,               -- template SHA-256 + ":catalog<document id>"
         info TEXT NOT NULL
     )
     """,

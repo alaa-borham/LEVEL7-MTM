@@ -2,13 +2,17 @@
 (MDL) with the order's X values already filled in, named after the XML (``Order-9-53-1_2.mdl``), into the GRAFIS
 input folder. Nobody types in the X-value window.
 
-Values come from the confirmed catalog rules (XML value → X number of a part, owner decisions #13–#15). Nothing is
-written when anything is unclear — the line is held with the reason:
+Values come from the confirmed catalog rules (XML value → X number of a part, owner decisions #13–#15). The
+production parts come from the style's "GRAFIS parts" table (design option → GRAFIS part number, material,
+normal / mirrored copies), entered by the owner in the Rules editor: exactly those parts are produced. Without that
+table the model's own production parts are kept (and the report says so). Nothing is written when anything is
+unclear — the line is held with the reason:
 * the order line needs review, or the catalog step reports a blocking problem;
 * a rule is not confirmed, or a measurement of a confirmed rule is missing (GRAFIS would silently keep its
   placeholder);
 * the X number is not in the model's X table, or its name in the MDL differs from the rule's ``x_name``
-  (another model version than the rules were written for).
+  (another model version than the rules were written for);
+* a configured GRAFIS part is not in the model or has another name there.
 X values the order does not supply keep the model's own value and are listed in the report.
 """
 from __future__ import annotations
@@ -19,8 +23,10 @@ import os
 import re
 
 from ..grafis.container import read_container
+from ..grafis.parts import PartSpec, production
 from ..grafis.xvalues import read_xvalues
 from ..grafis.xwriter import XWriteError, write_order_mdl
+from .catalog import grafis_parts_for
 from ..storage.db import now
 
 
@@ -84,7 +90,32 @@ def plan_values(ws, rid: int, template: str) -> dict:
             values[(part, num)] = t.value
     kept = [f"{p:03d}/X{n} {g.name}".strip() + f" = {g.default:g}" for p, tab in sorted(tables.items())
             for n, g in sorted(tab.items()) if (p, n) not in values]
-    return {"values": values, "rows": rows, "kept_default": kept, "problems": problems}
+    # production parts chosen by the design options
+    parts, part_rows, parts_note = None, [], ""
+    gp = grafis_parts_for(style, rev["normalized"]["options"])
+    model_parts = production(cont)
+    if gp is None:
+        parts_note = ("GRAFIS parts per option not configured — the model's own production parts are kept: " +
+                      ", ".join(f"{n:03d} {nm}" for n, (nm, sp) in sorted(model_parts.items()) if sp))
+    else:
+        parts = {}
+        for num, row in sorted(gp.items()):
+            have = model_parts.get(num)
+            if have is None:
+                problems.append(f"GRAFIS part {num:03d} ({row.get('name', '')}) is not in {os.path.basename(template)}")
+                continue
+            if row.get("name") and row["name"].strip() != have[0].strip():
+                problems.append(f"GRAFIS part {num:03d} is '{have[0]}' in the MDL, the table says '{row['name']}' — "
+                                f"other model version?")
+                continue
+            parts[num] = PartSpec(row["material"], row["copies"], row["mirrored"])
+            part_rows.append({"part": f"{num:03d}", "name": have[0], "material": row["material"],
+                              "copies": row["copies"], "mirrored": row["mirrored"],
+                              "option": row.get("option") or "*"})
+        if not parts:
+            problems.append("no GRAFIS part selected for this order")
+    return {"values": values, "rows": rows, "kept_default": kept, "problems": problems, "parts": parts,
+            "part_rows": part_rows, "parts_note": parts_note}
 
 
 def order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = None) -> dict:
@@ -94,7 +125,7 @@ def order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = N
     out_dir = out_dir or st["out"]
     rev = ws.revision(rid)
     res = {"revision_id": rid, "line_number": rev["line_number"], "status": "blocked", "path": None,
-           "problems": [], "rows": [], "kept_default": []}
+           "problems": [], "rows": [], "kept_default": [], "part_rows": [], "parts_note": ""}
     if rev["status"] in ("superseded", "cancelled"):
         res.update(status="skipped", problems=[f"order line is {rev['status']}"])
         return res
@@ -103,6 +134,7 @@ def order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = N
         return _save(ws, res, None)
     with open(template, "rb") as fh:
         tsha = hashlib.sha256(fh.read()).hexdigest()
+    tsha += f":catalog{ws.db.get_setting('active.catalog')}"        # a new rules / parts version writes again
     path = os.path.join(out_dir, mdl_name(ws, rev))
     dup = ws.db.one("SELECT * FROM grafis_orders WHERE revision_id=? AND status='written' AND template_sha256=? "
                     "ORDER BY id DESC", (rid, tsha))
@@ -114,14 +146,15 @@ def order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = N
     except Exception as e:                         # catalog / template unreadable: hold the line, say why
         res["problems"] = [f"{type(e).__name__}: {e}"]
         return _save(ws, res, tsha)
-    res.update(rows=plan["rows"], kept_default=plan["kept_default"], problems=plan["problems"])
+    res.update(rows=plan["rows"], kept_default=plan["kept_default"], problems=plan["problems"],
+               part_rows=plan["part_rows"], parts_note=plan["parts_note"])
     if plan["problems"]:
         return _save(ws, res, tsha)
     if not plan["values"]:
         res["problems"] = ["no X value to write"]
         return _save(ws, res, tsha)
     try:
-        write_order_mdl(template, plan["values"], path)
+        write_order_mdl(template, plan["values"], path, plan["parts"])
     except (XWriteError, OSError) as e:
         res["problems"] = [str(e)]
         return _save(ws, res, tsha)

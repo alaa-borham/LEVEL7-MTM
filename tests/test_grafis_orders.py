@@ -103,3 +103,94 @@ def test_scb_of_a_line_model_matches_only_that_line(ws, tmp_path):
     shutil.copy(SCB, scb)
     chk = check_scb(ws, str(scb))
     assert [ln["line_number"] for ln in chk.lines] == ["9-53-2_2"]
+
+
+# GRAFIS parts as the owner enters them in the Rules editor (test data: the reference model's own 13 parts for the
+# base, and options that switch jabzour / chest pocket parts — the real table comes from the owner)
+GPARTS = [{"option": "", "part": n, "name": nm, "material": mt, "copies": c, "mirrored": m} for n, nm, mt, c, m in (
+    (7, "front1", "O", 1, 0), (8, "back1", "O", 1, 0), (9, "shoulder1", "O", 1, 1), (10, "side", "O", 1, 1),
+    (34, "ashtack", "O", 2, 2), (36, "sleeve SH-101", "O", 1, 1), (74, "down-001+14+004+Royal", "F", 1, 0))] + [
+    {"option": "jabzour=splender", "part": 24, "name": "jabzour splender FB", "material": "O", "copies": 1,
+     "mirrored": 0},
+    {"option": "pocket_chest=cut", "part": 13, "name": "pocket chest cut", "material": "O", "copies": 1, "mirrored": 0},
+    {"option": "collar=classic", "part": 80, "name": "Gallab Royal-Full fab", "material": "O", "copies": 1,
+     "mirrored": 1}]
+
+
+def _with_parts(ws, rows):
+    pk, cat = ws.active("catalog")
+    cat = json.loads(json.dumps(cat))
+    for prod in cat["products"].values():
+        for st in prod["styles"].values():
+            st["grafis_parts"] = rows
+    cat["version"] += "+parts" + str(len(rows))
+    ws.set_active("catalog", ws.save_document("catalog", cat))
+
+
+@needs_mdl
+def test_part_selection_written_into_model():
+    from level7mtm.grafis.parts import PartSpec, production
+    from level7mtm.grafis.xwriter import XWriteError, build_order_model
+    data = read(MDL)
+    own = {n: s for n, (_, s) in production(parse_container(data)).items() if s}
+    assert len(own) == 13
+    same, changed = build_order_model(data, {}, own)
+    assert changed == [] and same == data                                   # nothing to do: identical file
+    want = {7: PartSpec("O", 1, 0), 13: PartSpec("O", 1, 0), 36: PartSpec("O", 1, 1), 17: PartSpec("F", 1, 0)}
+    out, changed = build_order_model(data, {(2, 1): 1570.0}, want)
+    assert {n: s for n, (_, s) in production(parse_container(out)).items() if s} == want
+    assert 13 in changed and 22 in changed and 7 not in changed
+    ok, n = check_all(out)
+    assert ok == n
+    from level7mtm.grafis.textsections import read_text
+    tl = {p.number: p for p in read_text(parse_container(out)).parts}
+    assert (tl[13].production, tl[13].material, tl[13].count, tl[13].mirrored) == (True, "O", 1, 0)
+    assert not tl[22].production and tl[17].material == "F"
+    with pytest.raises(XWriteError, match="999"):
+        build_order_model(data, {}, {999: PartSpec()})
+    with pytest.raises(XWriteError, match="material 'Z'"):
+        build_order_model(data, {}, {13: PartSpec("Z", 1, 0)})
+
+
+@needs_mdl
+def test_order_model_gets_the_parts_of_its_options(ws, tmp_path):
+    from level7mtm.grafis.parts import production
+    ws.db.set_setting("grafis.mdl", MDL)
+    ws.db.set_setting("grafis.input", str(tmp_path / "in"))
+    _with_parts(ws, GPARTS)
+    o = import_and_prepare(ws, XML_53)
+    assert [g["status"] for g in o.grafis] == ["written", "written"]
+    by_line = {g["line_number"]: g for g in o.grafis}
+    p1 = {n for n, (_, s) in production(read_container_path(by_line["9-53-1_2"]["path"])).items() if s}
+    p2 = {n for n, (_, s) in production(read_container_path(by_line["9-53-2_2"]["path"])).items() if s}
+    assert p1 == {7, 8, 9, 10, 34, 36, 74, 24, 13}                       # collar square: no part 80
+    assert p2 == p1 | {80}                                                # collar classic
+    assert read_xvalues(by_line["9-53-1_2"]["path"], 2)[1].default == 1570
+    # a part name that differs from the model: held, nothing written
+    bad = [dict(GPARTS[0], name="front2")] + GPARTS[1:]
+    _with_parts(ws, bad)
+    g = order_mdl(ws, by_line["9-53-1_2"]["revision_id"])
+    assert g["status"] == "blocked" and any("front1" in p for p in g["problems"])
+
+
+@needs_mdl
+def test_scb_check_compares_parts_of_its_material(ws, tmp_path):
+    import shutil
+    from level7mtm.services.grafis_intake import check_scb
+    _with_parts(ws, [r for r in GPARTS if r["option"] != "collar=classic"] + [
+        {"option": "", "part": 14, "name": "NN", "material": "O", "copies": 1, "mirrored": 0},
+        {"option": "", "part": 22, "name": "second jabzour", "material": "O", "copies": 1, "mirrored": 0}])
+    ws.import_file(XML_53)
+    scb = tmp_path / "Order-9-53-1_2__9-53-1_2.scb"
+    shutil.copy(SCB, scb)
+    chk = check_scb(ws, str(scb))
+    msgs = [m for _, m in chk.issues]
+    assert chk.info["material_code"] == "O"
+    assert not any("down-001" in m for m in msgs)                     # interlining part: other marker
+    assert any(s == "blocking" and "pocket chest cut" in m for s, m in chk.issues)   # expected, missing in SCB
+    assert any("Gallab Royal-Full fab" in m and "not expected" in m for m in msgs)
+
+
+def read_container_path(p):
+    from level7mtm.grafis.container import read_container
+    return read_container(p)
