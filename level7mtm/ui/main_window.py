@@ -716,20 +716,28 @@ class GrafisPage(Page):
                           f"LEVEL7 Nesting: {cli} — {tr('Cutting files folder')}: {st['out']} — "
                           f"{', '.join(st['formats']).upper()} ({st['plt_preset']}, {st['iso_preset']})")
         rows = self.ws.db.q("SELECT * FROM grafis_results ORDER BY checked_at DESC")
-        out, colors, data = [], [], []
+        out, colors, data, seen = [], [], [], set()
         for r in rows:
+            if r["path"] in seen:                     # an older attempt of the same file: the newest row counts
+                continue
+            seen.add(r["path"])
             info, issues, lines = json.loads(r["info"]), json.loads(r["issues"]), json.loads(r["lines"])
             cj = self.ws.db.one("SELECT status, outputs, info FROM cutting_jobs WHERE sha256=? ORDER BY id DESC",
                                 (r["sha256"],))
             cut = ""
             if cj:
                 ci = json.loads(cj["info"])
+                if info.get("pieces_placed") is None and ci.get("placed") is not None:
+                    info["pieces_placed"] = ci["placed"]        # model read by LEVEL7 Nesting: pieces it placed
+                if cj["status"] == "done":
+                    r = dict(r, status="cutting_done")
                 cut = (", ".join(os.path.basename(x) for x in json.loads(cj["outputs"])) if cj["status"] == "done"
                        else f"{tr(cj['status'])}: {ci.get('message', '')}")
             out.append([os.path.basename(r["path"]), ", ".join(ln["line_number"] for ln in lines), tr(r["status"]),
                         info.get("width_mm"), info.get("bundles"), info.get("pieces_placed"), cut,
                         " | ".join(f"[{tr(sv)}] {m}" for sv, m in issues)])
-            colors.append({"handed_over": STATUS_COLORS["approved"], "needs_review": STATUS_COLORS["review"],
+            colors.append({"handed_over": STATUS_COLORS["approved"], "cutting_done": STATUS_COLORS["approved"],
+                           "needs_review": STATUS_COLORS["review"],
                            "unmatched": STATUS_COLORS["blocking"]}.get(r["status"]))
             data.append(r["path"])
         fill(self.t, out, colors, data)
