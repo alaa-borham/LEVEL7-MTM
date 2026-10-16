@@ -190,6 +190,11 @@ MIGRATIONS: list[str] = [
         message TEXT NOT NULL
     )
     """,
+    # 8 — "clean the list": rows hidden from the GRAFIS screen (history and audit are kept)
+    """
+    ALTER TABLE grafis_orders ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE grafis_results ADD COLUMN archived INTEGER NOT NULL DEFAULT 0
+    """,
 ]
 
 

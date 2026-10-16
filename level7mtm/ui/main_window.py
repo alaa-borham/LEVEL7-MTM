@@ -651,7 +651,7 @@ class GrafisPage(Page):
                          ("Accept review findings…", self.accept), ("Nesting folder…", self.choose_nesting),
                          ("LEVEL7 Nesting program…", self.choose_cli), ("Cutting files folder…", self.choose_out),
                          ("Open cutting files folder", self.open_out), ("Show marker in LEVEL7 Nesting", self.show_marker),
-                         ("Nest again", self.renest)):
+                         ("Nest again", self.renest), ("Clean the list…", self.clean_list)):
             b = QPushButton(tr(text))
             b.clicked.connect(fn)
             bar.addWidget(b)
@@ -698,7 +698,7 @@ class GrafisPage(Page):
         from ..services.grafis_orders import settings as gsettings
         gs = gsettings(self.ws)
         mrows = self.ws.db.q("SELECT g.*, r.line_number FROM grafis_orders g JOIN revisions r ON r.id=g.revision_id "
-                             "WHERE g.id IN (SELECT MAX(id) FROM grafis_orders GROUP BY revision_id) "   # latest only
+                             "WHERE g.archived=0 AND g.id IN (SELECT MAX(id) FROM grafis_orders GROUP BY revision_id) "
                              "ORDER BY g.id DESC LIMIT 500")
         mo, mc = [], []
         for r in mrows:
@@ -736,7 +736,7 @@ class GrafisPage(Page):
                           f"{tr('Nesting folder')}: {self._nesting_dir()}\n"
                           f"LEVEL7 Nesting: {cli} — {tr('Cutting files folder')}: {st['out']} — "
                           f"{', '.join(st['formats']).upper()} ({st['plt_preset']}, {st['iso_preset']})")
-        rows = self.ws.db.q("SELECT * FROM grafis_results ORDER BY checked_at DESC")
+        rows = self.ws.db.q("SELECT * FROM grafis_results WHERE archived=0 ORDER BY checked_at DESC")
         out, colors, data, seen = [], [], [], set()
         for r in rows:
             if r["path"] in seen:                     # an older attempt of the same file: the newest row counts
@@ -897,6 +897,25 @@ class GrafisPage(Page):
             os.startfile(d)                            # Windows Explorer
         else:
             QMessageBox.information(self, tr("Cutting files folder"), d)
+
+    def clean_list(self):
+        from ..services.cleanup import clean, files_of_rows
+        n = len(files_of_rows(self.ws))
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("Clean the list…"))
+        box.setText(tr("Hide all rows of this screen? The history stays in the log."))
+        only = box.addButton(tr("Clean the list only"), QMessageBox.AcceptRole)
+        files = box.addButton(f"{tr('Clean and delete the files')} ({n})", QMessageBox.DestructiveRole)
+        box.addButton(tr("Cancel"), QMessageBox.RejectRole)
+        box.exec()
+        if box.clickedButton() not in (only, files):
+            return
+        out = clean(self.ws, delete_files=box.clickedButton() is files)
+        self.refresh()
+        msg = f"{tr('Done')}: {out['rows']} {tr('rows')}, {len(out['deleted'])} {tr('files deleted')}"
+        if out["failed"]:
+            msg += "\n\n" + tr("Not deleted (open in another program?)") + ":\n" + "\n".join(out["failed"][:10])
+        QMessageBox.information(self, tr("Clean the list…"), msg)
 
     def renest(self):
         """Nest the selected row again (e.g. after a longer nesting time was set) and rewrite its cutting files."""

@@ -148,7 +148,7 @@ def _find(drv, spec: dict, prefer: str = "") -> int | None:
 def pending(ws) -> list[dict]:
     """Order models written by this program and still not saved by GRAFIS (and not tried by the robot)."""
     out = []
-    for r in ws.db.q("SELECT * FROM grafis_orders WHERE status='written' AND id IN "
+    for r in ws.db.q("SELECT * FROM grafis_orders WHERE status='written' AND archived=0 AND id IN "
                      "(SELECT MAX(id) FROM grafis_orders GROUP BY revision_id) ORDER BY id"):
         info = json.loads(r["info"])
         p = r["path"]

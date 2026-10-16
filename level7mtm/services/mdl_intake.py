@@ -104,8 +104,8 @@ def register_mdl(ws, path: str, cut: bool | None = None) -> dict:
     if chk.info.get("waiting"):
         return {"status": "waiting_for_grafis", "check": chk, "cutting": None}
     status = "checked" if chk.ok else ("unmatched" if row is None else "needs_review")
-    dup = ws.db.one("SELECT id, handed_over FROM grafis_results WHERE sha256=?", (chk.sha256,))
-    if dup and dup["handed_over"]:
+    dup = ws.db.one("SELECT id, handed_over, archived FROM grafis_results WHERE sha256=?", (chk.sha256,))
+    if dup and dup["handed_over"] and not dup["archived"]:
         return {"status": "duplicate", "check": chk, "cutting": None}
     ok = chk.ok
     with ws.db.tx() as c:
@@ -114,7 +114,7 @@ def register_mdl(ws, path: str, cut: bool | None = None) -> dict:
                   "handed_over" if ok else status, int(ok), path if ok else None)
         if dup:
             c.execute("UPDATE grafis_results SET checked_at=?, info=?, pieces=?, lines=?, issues=?, status=?, "
-                      "handed_over=?, nesting_path=? WHERE id=?", values + (dup["id"],))
+                      "handed_over=?, nesting_path=?, archived=0 WHERE id=?", values + (dup["id"],))
         else:
             c.execute("INSERT INTO grafis_results(checked_at, info, pieces, lines, issues, status, handed_over, "
                       "nesting_path, sha256, path) VALUES (?,?,?,?,?,?,?,?,?,?)", values + (chk.sha256, path))

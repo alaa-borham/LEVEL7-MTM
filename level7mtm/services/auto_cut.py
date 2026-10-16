@@ -72,7 +72,7 @@ def auto_cut(ws, chk, scb_path: str, force: bool = False) -> dict:
     ``force``: nest again (e.g. with a longer nesting time) although cutting files exist."""
     st = settings(ws)
     dup = ws.db.one("SELECT * FROM cutting_jobs WHERE sha256=? AND status='done'", (chk.sha256,))
-    if dup and not force:
+    if dup and not force and all(os.path.isfile(p) for p in json.loads(dup["outputs"])):
         return {"status": "duplicate", "outputs": json.loads(dup["outputs"]), "log": []}
     log: list[str] = []
     result = {"status": "failed", "outputs": [], "log": log}

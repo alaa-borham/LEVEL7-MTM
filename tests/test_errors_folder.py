@@ -58,3 +58,23 @@ def test_good_order_writes_mdl_and_nothing_in_er(ws, tmp_path):
     assert [g["status"] for g in out.grafis] == ["written", "written"]
     assert not er.exists() or not os.listdir(er)
     assert len(os.listdir(tmp_path / "MDL")) == 2
+
+
+@needs_mdl
+def test_clean_list_hides_rows_and_can_delete_files(ws, tmp_path):
+    from level7mtm.services.cleanup import clean, files_of_rows
+    from level7mtm.services.grafis_robot import pending
+    ws.db.set_setting("grafis.mdl", MDL)
+    ws.db.set_setting("grafis.input", str(tmp_path / "MDL"))
+    out = import_and_prepare(ws, XML_53)
+    paths = [g["path"] for g in out.grafis]
+    assert len(files_of_rows(ws)) == 2 and len(pending(ws)) == 2
+    r = clean(ws)                                          # list only: files stay
+    assert r["rows"] == 2 and all(os.path.exists(p) for p in paths) and pending(ws) == []
+    assert ws.db.one("SELECT COUNT(*) AS n FROM grafis_orders")["n"] == 2   # history kept
+    from level7mtm.services.grafis_orders import order_mdl
+    for rid in {g["revision_id"] for g in ws.db.q("SELECT revision_id FROM grafis_orders")}:
+        assert order_mdl(ws, rid)["status"] == "written"      # a cleaned order can be written again
+    assert len(pending(ws)) == 2                               # … and the robot takes it again
+    r = clean(ws, delete_files=True)
+    assert len(r["deleted"]) == 2 and not any(os.path.exists(p) for p in paths)
