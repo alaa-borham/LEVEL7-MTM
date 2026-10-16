@@ -1080,7 +1080,7 @@ class GrafisPartsPage(Page):
     """Design option → GRAFIS part (number, material, normal / mirrored copies). The base model may have no
     production part: exactly the parts chosen here (for the order's options) are produced."""
     title = "GRAFIS parts"
-    COLS = ["Design option", "GRAFIS part", "Material", "Copies", "Mirrored"]
+    COLS = ["Design option", "GRAFIS part", "Material", "Copies", "Mirrored", ""]
 
     def __init__(self, win):
         super().__init__(win)
@@ -1132,12 +1132,13 @@ class GrafisPartsPage(Page):
             oc.addItem(tr("always") + " (*)" if key == "*" else lab, key)
         oc.setCurrentIndex(max(oc.findData(r.get("option") or "*"), 0))
         pc = QComboBox()
+        pc.addItem(tr("— choose the part —"), None)         # nothing picked by itself
         for n, (name, mat) in sorted(self.parts.items()):
             if name.strip("*").strip():
                 pc.addItem(f"{n:03d}  {name}", n)
         if r.get("part") is not None and pc.findData(int(r["part"])) < 0:
             pc.addItem(f"{int(r['part']):03d}  {r.get('name', '')} ⚠", int(r["part"]))
-        pc.setCurrentIndex(max(pc.findData(int(r["part"])) if r.get("part") is not None else 0, 0))
+        pc.setCurrentIndex(max(pc.findData(int(r["part"])), 0) if r.get("part") is not None else 0)
         mc = QComboBox()
         mats = sorted({m for _, m in self.parts.values() if m} | {"O"})
         mc.addItems(mats)
@@ -1151,8 +1152,18 @@ class GrafisPartsPage(Page):
         ms.setRange(0, 99)
         cs.setValue(int(r.get("copies", 1)))
         ms.setValue(int(r.get("mirrored", 0)))
-        for j, w in enumerate((oc, pc, mc, cs, ms)):
+        rm = QPushButton("✕")
+        rm.setToolTip(tr("Remove row"))
+        rm.setFixedWidth(36)
+        rm.clicked.connect(lambda _=False, b=rm: self._remove_widget_row(b))
+        for j, w in enumerate((oc, pc, mc, cs, ms, rm)):
             self.t.setCellWidget(i, j, w)
+
+    def _remove_widget_row(self, button):
+        for i in range(self.t.rowCount()):            # rows move up when one above is removed: find it now
+            if self.t.cellWidget(i, 5) is button:
+                self.t.removeRow(i)
+                return
 
     def remove_row(self):
         if self.t.currentRow() >= 0:

@@ -68,6 +68,11 @@ def test_parts_page_round_trip(ws, base_off):
     assert w[2].currentText() == "F"                                  # the part's own material
     w[4].setValue(0)
     assert page.rows() == [{"option": "jabzour=splender", "part": 17, "material": "F", "copies": 1, "mirrored": 0}]
+    page.add_row({})                                                  # a new row picks no part by itself
+    assert len(page.rows()) == 1
+    page.add_row({"option": "*", "part": 7, "material": "O", "copies": 1, "mirrored": 0})
+    page.t.cellWidget(1, 5).click()                                   # ✕ of the empty row
+    assert [r["part"] for r in page.rows()] == [17, 7] and page.t.rowCount() == 2
     save_parts(ws, page.rows(), base_off)
     page.refresh()
     assert page.rows()[0]["part"] == 17
