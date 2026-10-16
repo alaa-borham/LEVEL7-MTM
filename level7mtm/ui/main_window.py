@@ -530,7 +530,8 @@ class SendPage(Page):
         bar = QHBoxLayout()
         for text, fn in (("Send selected to nesting", lambda: self.send(False)),
                          ("TEST export (not for production)", lambda: self.send(True)),
-                         ("Export DXF", lambda: self.export("dxf")), ("Export PDF", lambda: self.export("pdf"))):
+                         ("Export DXF", lambda: self.export("dxf")), ("Export PDF", lambda: self.export("pdf")),
+                         ("X values for GRAFIS", self.grafis_x)):
             b = QPushButton(tr(text))
             b.clicked.connect(fn)
             bar.addWidget(b)
@@ -541,7 +542,9 @@ class SendPage(Page):
         lay.addWidget(self.jobs, 1)
 
     def refresh(self):
-        rows = [r for r in self.ws.list_revisions() if r["status"] in ("ready_for_review", "approved", "sent_to_nesting")]
+        rows = [r for r in self.ws.list_revisions() if r["status"] in ("ready", "needs_review", "ready_for_review",
+                                                                       "validation_failed", "approved",
+                                                                       "sent_to_nesting")]
         fill(self.t, [[r["line_number"], r["revision"], tr(r["status"]), r["quantity"]] for r in rows],
              [STATUS_COLORS.get(r["status"]) for r in rows], [r["id"] for r in rows])
         jobs = self.ws.db.q("SELECT id, created_at, status, path, test_only FROM nesting_jobs ORDER BY created_at DESC")
@@ -559,6 +562,23 @@ class SendPage(Page):
         self.win.run(lambda: self.ws.send_to_nesting(ids, path, test_only=test),
                      lambda j: (QMessageBox.information(self, "LEVEL7", f"{j['path']}" + (" (existing job)" if j[
                          "duplicate"] else "")), self.refresh()))
+
+    def grafis_x(self):
+        from ..services.grafis_handover import x_sheet
+        ids = selected_data(self.t)
+        if not ids:
+            return
+        mdl = self.ws.db.get_setting("grafis.mdl")
+        if not mdl or not os.path.exists(mdl):
+            mdl, _ = QFileDialog.getOpenFileName(self, "GRAFIS", "", "GRAFIS (*.mdl *.MDL)")
+            if mdl:
+                self.ws.db.set_setting("grafis.mdl", mdl)
+        for rid in ids:
+            d = self.win.guard(lambda rid=rid: x_sheet(self.ws, rid, mdl or None))
+            if d:
+                QMessageBox.information(self, tr("X values for GRAFIS"), "\n".join(
+                    [f"{r['x']} {r['x_name']}: {r['order_value_mm']} mm" for r in d["rows"] if not r["superseded"]]
+                    + [""] + d["warnings"][:12] + ["", *d["files"]]))
 
     def export(self, kind):
         ids = selected_data(self.t)

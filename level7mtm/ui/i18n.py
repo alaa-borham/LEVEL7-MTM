@@ -140,6 +140,7 @@ AR = {
     "Label": "الاسم",
     "Engine test model — NOT the customer pattern": "نموذج اختبار المحرك — ليس بترون العميل",
     "Style": "الستايل",
+    "X values for GRAFIS": "قيم X لجرافس",
     "Base pattern": "البترون الأساسي",
     "Rules": "قواعد الربط",
     "Measurement definitions": "تعريفات القياسات",

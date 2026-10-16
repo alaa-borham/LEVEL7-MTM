@@ -35,7 +35,8 @@ def test_catalog_structure(cat):
 
 def test_owner_example_rule(cat):
     r = next(r for r in style(cat)["rules"] if r["source"].get("code") == "FL")
-    assert r["target"] == {"piece": "002", "construction": "Basic-Construction 0", "variable": "X1"}
+    assert {k: r["target"][k] for k in ("piece", "construction", "variable")} == {
+        "piece": "002", "construction": "Basic-Construction 0", "variable": "X1"}
     assert r["value"] == "{M}" and r["status"] == "confirmed"
     res = resolve(cat, "saudi-thobe", "alshiaka-2027", MM_9_53, OPTS)
     assert res.inputs["X1"] == 1570

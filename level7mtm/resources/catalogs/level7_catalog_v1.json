@@ -2,7 +2,7 @@
  "format": "level7mtm-catalog",
  "format_version": 1,
  "catalog_id": "level7",
- "version": "1.0.0",
+ "version": "1.1.0",
  "status": "draft",
  "description": {
   "ar": "مكتبة المنتجات والستايلات وتعريفات القياسات وقواعد الربط. قواعد الربط تربط القياس أو خيار التصميم بمتغير البترون فقط؛ المعادلات الهندسية التي تحول المتغيرات إلى أشكال موجودة في ملف البترون الأساسي.",
@@ -619,7 +619,8 @@
        "target": {
         "piece": "002",
         "construction": "Basic-Construction 0",
-        "variable": "X1"
+        "variable": "X1",
+        "x_name": ""
        },
        "value": "{M}",
        "order": 10,
@@ -631,7 +632,7 @@
        ],
        "enabled": true,
        "status": "confirmed",
-       "note": "Owner example: FL → 002 → Basic-Construction 0 → X1, value {M}"
+       "note": "Owner example: FL → 002 → Basic-Construction 0 → X1, value {M} | GRAFIS X table part 002: X1 '' (read from MDL, matches owner screenshot)"
       },
       {
        "id": "R002",
@@ -642,7 +643,8 @@
        "target": {
         "piece": "002",
         "construction": "Basic-Construction 0",
-        "variable": "X3"
+        "variable": "X3",
+        "x_name": "shoulder--B"
        },
        "value": "{M}",
        "order": 20,
@@ -653,8 +655,8 @@
         "*"
        ],
        "enabled": true,
-       "status": "proposed",
-       "note": ""
+       "status": "confirmed",
+       "note": "GRAFIS X table part 002: X3 'shoulder--B' (read from MDL, matches owner screenshot) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13)"
       },
       {
        "id": "R003",
@@ -665,7 +667,8 @@
        "target": {
         "piece": "002",
         "construction": "Basic-Construction 0",
-        "variable": "X4"
+        "variable": "X4",
+        "x_name": "down FRONT Rr Rr"
        },
        "value": "{M}",
        "order": 30,
@@ -676,8 +679,8 @@
         "*"
        ],
        "enabled": true,
-       "status": "proposed",
-       "note": ""
+       "status": "confirmed",
+       "note": "GRAFIS X table part 002: X4 'down FRONT Rr Rr' (read from MDL, matches owner screenshot) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13)"
       },
       {
        "id": "R004",
@@ -688,7 +691,8 @@
        "target": {
         "piece": "002",
         "construction": "Basic-Construction 0",
-        "variable": "X5"
+        "variable": "X5",
+        "x_name": "down FRONT Lr ba"
        },
        "value": "{M}",
        "order": 40,
@@ -699,8 +703,8 @@
         "*"
        ],
        "enabled": true,
-       "status": "proposed",
-       "note": ""
+       "status": "confirmed",
+       "note": "GRAFIS X table part 002: X5 'down FRONT Lr ba' (read from MDL, matches owner screenshot) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13)"
       },
       {
        "id": "R005",
@@ -711,7 +715,8 @@
        "target": {
         "piece": "002",
         "construction": "Basic-Construction 0",
-        "variable": "X6"
+        "variable": "X6",
+        "x_name": "armhole high--C2"
        },
        "value": "{M}",
        "order": 50,
@@ -722,8 +727,8 @@
         "*"
        ],
        "enabled": true,
-       "status": "proposed",
-       "note": ""
+       "status": "confirmed",
+       "note": "GRAFIS X table part 002: X6 'armhole high--C2' (read from MDL, matches owner screenshot) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13)"
       },
       {
        "id": "R006",
@@ -734,7 +739,8 @@
        "target": {
         "piece": "002",
         "construction": "Basic-Construction 0",
-        "variable": "X7"
+        "variable": "X7",
+        "x_name": "collar--E1"
        },
        "value": "{M}",
        "order": 60,
@@ -745,8 +751,8 @@
         "*"
        ],
        "enabled": true,
-       "status": "proposed",
-       "note": "Collar Square neck size"
+       "status": "confirmed",
+       "note": "Collar Square neck size | GRAFIS X table part 002: X7 'collar--E1' (read from MDL, matches owner screenshot) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13)"
       },
       {
        "id": "R007",
@@ -757,7 +763,8 @@
        "target": {
         "piece": "002",
         "construction": "Basic-Construction 0",
-        "variable": "X7"
+        "variable": "X7",
+        "x_name": "collar--E1"
        },
        "value": "{M}",
        "order": 70,
@@ -768,8 +775,8 @@
         "*"
        ],
        "enabled": true,
-       "status": "proposed",
-       "note": "Gallab neck size; second rule on the same target"
+       "status": "confirmed",
+       "note": "Gallab neck size; second rule on the same target | GRAFIS X table part 002: X7 'collar--E1' (read from MDL, matches owner screenshot) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13)"
       },
       {
        "id": "R008",
@@ -780,7 +787,8 @@
        "target": {
         "piece": "002",
         "construction": "Basic-Construction 0",
-        "variable": "X9"
+        "variable": "X9",
+        "x_name": "chest girth"
        },
        "value": "{M}",
        "order": 80,
@@ -791,8 +799,8 @@
         "*"
        ],
        "enabled": true,
-       "status": "proposed",
-       "note": ""
+       "status": "confirmed",
+       "note": "GRAFIS X table part 002: X9 'chest girth' (read from MDL, matches owner screenshot) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13)"
       },
       {
        "id": "R009",
@@ -803,7 +811,8 @@
        "target": {
         "piece": "002",
         "construction": "Basic-Construction 0",
-        "variable": "X12"
+        "variable": "X12",
+        "x_name": "waist girth--D"
        },
        "value": "{M}",
        "order": 90,
@@ -814,8 +823,8 @@
         "*"
        ],
        "enabled": true,
-       "status": "proposed",
-       "note": ""
+       "status": "confirmed",
+       "note": "GRAFIS X table part 002: X12 'waist girth--D' (read from MDL, matches owner screenshot) | owner confirmed XML→MDL variable mapping (facts-and-decisions #13)"
       },
       {
        "id": "R010",
@@ -838,7 +847,7 @@
        ],
        "enabled": true,
        "status": "proposed",
-       "note": ""
+       "note": "X13 is not in the X table of part 002 (12 entries) — to confirm"
       },
       {
        "id": "R011",
@@ -861,7 +870,7 @@
        ],
        "enabled": true,
        "status": "proposed",
-       "note": ""
+       "note": "X14 is not in the X table of part 002 (12 entries) — to confirm"
       },
       {
        "id": "R012",
@@ -884,7 +893,7 @@
        ],
        "enabled": true,
        "status": "proposed",
-       "note": ""
+       "note": "X15 is not in the X table of part 002 (12 entries) — to confirm"
       },
       {
        "id": "R013",
@@ -907,7 +916,7 @@
        ],
        "enabled": true,
        "status": "proposed",
-       "note": ""
+       "note": "X23 is not in the X table of part 002 (12 entries) — to confirm"
       },
       {
        "id": "R014",
@@ -930,7 +939,7 @@
        ],
        "enabled": true,
        "status": "proposed",
-       "note": ""
+       "note": "X31 is not in the X table of part 002 (12 entries) — to confirm"
       },
       {
        "id": "R015",
@@ -953,7 +962,7 @@
        ],
        "enabled": true,
        "status": "proposed",
-       "note": ""
+       "note": "X37 is not in the X table of part 002 (12 entries) — to confirm"
       }
      ],
      "option_rules": [
@@ -1093,7 +1102,12 @@
        "variables": [],
        "properties": {}
       }
-     ]
+     ],
+     "grafis": {
+      "mdl": "1-S- alshiaka-2027.mdl",
+      "part": "002",
+      "x_table_block": "(3,2,3,1)"
+     }
     }
    }
   }

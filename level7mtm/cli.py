@@ -5,6 +5,7 @@
     level7mtm calc LINE_NUMBER               calculate the pattern of an order line (e.g. 9-53-1_2)
     level7mtm export LINE_NUMBER dxf|pdf     export the latest calculation
     level7mtm nest LINE_NUMBER ... -o F.l7n [--test]   write a LEVEL7 Nesting file
+    level7mtm grafis-x LINE [--mdl F.mdl]    X values of an order line for GRAFIS (CSV + JSON)
     level7mtm mdl-report FILE.mdl -o DIR     GRAFIS formula report (Markdown + JSON)
     level7mtm backup                         back up the database
 
@@ -53,6 +54,10 @@ def main(argv=None) -> int:
     s.add_argument("lines", nargs="+")
     s.add_argument("-o", "--output", required=True)
     s.add_argument("--test", action="store_true", help="allow non-approved results; output marked TEST")
+    s = sub.add_parser("grafis-x", help="X values of an order line for GRAFIS (CSV + JSON)")
+    s.add_argument("line")
+    s.add_argument("--mdl", help="GRAFIS model file (adds names, defaults and size ranges)")
+    s.add_argument("-o", "--outdir")
     s = sub.add_parser("mdl-report")
     s.add_argument("mdl")
     s.add_argument("-o", "--outdir", default="reports")
@@ -100,6 +105,17 @@ def _run(a) -> int:
     if a.cmd == "nest":
         j = ws.send_to_nesting([_rid(ws, x) for x in a.lines], a.output, test_only=a.test)
         print(j["path"], "(existing job)" if j["duplicate"] else "")
+        return 0
+    if a.cmd == "grafis-x":
+        from .services.grafis_handover import x_sheet
+        d = x_sheet(ws, _rid(ws, a.line), a.mdl or ws.db.get_setting("grafis.mdl"), out_dir=a.outdir)
+        for r in d["rows"]:
+            if not r["superseded"]:
+                print(f"{r['piece']} {r['x']:<4} {r['x_name']:<20} {r['order_value_mm']:>8} mm  "
+                      f"({r['source']}, {r['rule']} {r['rule_status']})")
+        for w in d["warnings"]:
+            print("warning:", w)
+        print(*d["files"], sep="\n")
         return 0
     if a.cmd == "backup":
         print(ws.db.backup(os.path.join(ws.folder, "backups")))

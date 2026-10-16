@@ -99,3 +99,32 @@ def test_construction_protocol_counts():
     assert checked == 72
     steps = program_steps(c, 7)
     assert [s.program for s in steps] == ["GraPrg_GK_FL_x001_00"]
+
+
+@needs_mdl
+def test_xvalue_table_matches_grafis_window():
+    """Values as shown in the owner's screenshot of the GRAFIS X-value window (part 002)."""
+    from level7mtm.grafis.xvalues import read_xvalues
+    x = read_xvalues(MDL, 2)
+    assert (x[1].default, x[1].sizes["__HN40_0"]) == (1500.0, 1320.0)
+    assert (x[3].name, x[3].default, x[3].sizes["__HN40_0"]) == ("shoulder--B", 440.0, 370.0)
+    assert (x[4].default, x[4].sizes["__HN40_0"]) == (55.0, 50.0)
+    assert x[5].default == 70.0 and x[6].name == "armhole high--C2" and x[6].sizes["__HN40_0"] == 340.0
+    assert (x[7].name, x[7].default, x[7].sizes["__HN40_0"]) == ("collar--E1", 400.0, 350.0)
+    assert (x[8].name, x[8].default, x[8].sizes["__HN41_0"]) == ("front width 1", 360.0, 360.0)
+    assert (x[9].name, x[9].default) == ("chest girth", 600.0)
+
+
+@needs_mdl
+def test_x_sheet_for_grafis(ws, tmp_path):
+    from conftest import XML_53
+    from level7mtm.services.grafis_handover import x_sheet
+    ws.import_file(XML_53)
+    rid = next(r["id"] for r in ws.list_revisions() if r["line_number"] == "9-53-1_2")
+    d = x_sheet(ws, rid, MDL, out_dir=str(tmp_path))
+    rows = {r["x"]: r for r in d["rows"]}
+    assert rows["X1"]["order_value_mm"] == 1570 and rows["X1"]["rule_status"] == "confirmed"
+    assert rows["X3"]["x_name"] == "shoulder--B" and rows["X3"]["grafis_size_range_mm"] == "370–450"
+    assert any("X8 front width 1: not supplied" in w for w in d["warnings"])     # never silently defaulted
+    assert any(w.startswith("X9 chest girth: order value 690") for w in d["warnings"])
+    assert d["grafis_size_name"] == "9-53-1_2" and os.path.exists(d["files"][0])
