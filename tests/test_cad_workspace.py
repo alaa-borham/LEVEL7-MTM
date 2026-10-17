@@ -152,6 +152,21 @@ def test_snap_to_corners_first_then_edges():
     assert sharp_corners(curve) == [(0, 0), (200, 10), (200, 100), (0, 100)]          # steps of the curve are not
 
 
+def test_curve_never_goes_round_a_corner():
+    from level7mtm.ui.cad import contour_length, curve_between, nearest_on_contour, sharp_corners
+    # a piece with a curved neck: the curve between two of its points is measured, never round a corner
+    neck = [(0, 100)] + [(50 - 50 * __import__("math").cos(t / 10 * 3.14159 / 2) * 0 + t * 5, 100 - (t * 5) ** 2 / 50)
+                         for t in range(1, 10)] + [(50, 50), (300, 50), (300, 200), (0, 200)]
+    corners = sharp_corners(neck)
+    sa = nearest_on_contour(neck, neck[2])[1]
+    sb = nearest_on_contour(neck, neck[7])[1]
+    length, way = curve_between(neck, corners, sa, sb)
+    assert abs(length - (sb - sa)) < 1e-6                            # along the neck curve
+    far = nearest_on_contour(neck, (300, 120))[1]                    # on the other side of a corner
+    assert curve_between(neck, corners, sa, far) is None
+    assert contour_length(neck) > 0
+
+
 def test_measuring_geometry():
     from level7mtm.ui.cad import arc_between, contour_length, nearest_on_contour
     sq = [(0, 0), (100, 0), (100, 50), (0, 50)]
@@ -188,16 +203,18 @@ def test_measure_tools_on_the_marker(tmp_path):
     assert v.meas["text"] == "11.2 cm" and panel.hud_measure[0].isVisible()      # in centimetres
     panel.use_tool("curve")
     v.measure_click((30, 0))                                         # on the edge of front1 (first copy)
-    v.measure_click((100, 20))
-    assert v.meas["text"] == "9.0 cm" and v.meas["extra"].startswith("front1")   # 7 + 2 along the edge
-    assert "7.3 cm" in v.meas["extra"]                               # and the straight distance (√(70²+20²))
+    v.measure_click((100, 20))                                       # past the corner (100, 0): not one curve
+    assert v.meas["text"] in ("Not one curve", "ليست منحنى واحدًا") and "value" not in v.meas
+    v.measure_click((30, 0))
+    v.measure_click((80, 0))                                         # same edge: 5 cm along it
+    assert v.meas["text"] == "5.0 cm" and v.meas["extra"].startswith("front1")
     app.processEvents()
     v.viewport().repaint()
-    assert v.box.isVisible() and "9.0 cm" in v.box.value.text()
+    assert v.box.isVisible() and "5.0 cm" in v.box.value.text()
     v.box.move(5, 300)                                               # the owner drags the box away …
     v.box.moved = True
     v.measure_click((30, 0))
-    v.measure_click((100, 20))
+    v.measure_click((80, 0))
     v.viewport().repaint()
     assert v.box.pos().y() == 300                                    # … and it stays where he put it
     k = v.transform().m11()

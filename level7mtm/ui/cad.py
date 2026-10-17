@@ -258,6 +258,31 @@ def arc_between(pts, sa: float, sb: float):
     return total - inner, way
 
 
+def arc_options(pts, sa: float, sb: float):
+    """Both ways along the contour between two arc positions: [(length, points)] (shorter first)."""
+    total = contour_length(pts)
+    a, b = sorted((sa, sb))
+    q = _closed(pts)
+    cum, acc = [0.0], 0.0
+    for i in range(len(q) - 1):
+        acc += math.dist(q[i], q[i + 1])
+        cum.append(acc)
+    inner = [point_at(pts, a)] + [q[i] for i in range(len(q)) if a < cum[i] < b] + [point_at(pts, b)]
+    outer = [point_at(pts, b)] + [q[i] for i in range(len(q)) if cum[i] > b] + \
+        [q[i] for i in range(len(q)) if 0 < cum[i] < a] + [point_at(pts, a)]
+    return sorted([(b - a, inner), (total - (b - a), outer)], key=lambda o: o[0])
+
+
+def curve_between(pts, corners, sa: float, sb: float, tol: float = 0.5):
+    """The way along the cut line between two points that passes no corner (one curve), or None."""
+    for length, way in arc_options(pts, sa, sb):
+        inside = way[1:-1]
+        if not any(math.dist(c, w) <= tol for c in corners for w in inside
+                   if math.dist(c, way[0]) > tol and math.dist(c, way[-1]) > tol):
+            return length, way
+    return None
+
+
 class MeasureBox(QFrame):
     """The measured value in a box the owner can drag anywhere on the canvas; once moved it stays there."""
 
@@ -492,23 +517,39 @@ class MarkerView(QGraphicsView):
                 self.meas.update(value=d, text=f"{d / 10:.1f} cm", extra=f"ΔX {dx / 10:.1f}  ΔY {dy / 10:.1f} cm")
                 self.measured.emit(self.meas["text"])
         else:
-            q, kind = self.snap(p)
-            if kind is None:
-                q = p
             near = None
-            for i, pc in enumerate(self.marker["pieces"]):
-                d, s_, c = nearest_on_contour(pc["cut"], q)
+            prev = self.meas.get("first") if self.meas.get("kind") == "curve" and not self.meas.get("way") else None
+            cands = ([prev[0]] if prev is not None else []) + list(range(len(self.marker["pieces"])))
+            for i in cands:                                   # the piece whose line is nearest (the first click's
+                pc = self.marker["pieces"][i]                 # piece first, so touching pieces do not mix)
+                d, s_, c = nearest_on_contour(pc["cut"], p)
                 if d <= self._tol() and (near is None or d < near[0]):
                     near = (d, i, s_, c)
+                if prev is not None and i == prev[0] and near is not None:
+                    break
             if near is None:
                 return                                        # not on a piece edge
+            pc = self.marker["pieces"][near[1]]
+            px = 1 / (self.transform().m11() or 1.0)
+            cs = [v for v in pc.get("corners") or [] if math.dist(v, p) <= self.SNAP_CORNER * px]
+            if cs:                                            # a corner of this piece close by: exactly on it
+                v = min(cs, key=lambda v: math.dist(v, p))
+                d, s_, c = nearest_on_contour(pc["cut"], v)
+                near = (d, near[1], s_, c)
             _, i, s_, c = near
             first = self.meas.get("first")
             if self.meas.get("kind") != "curve" or first is None or first[0] != i or self.meas.get("way"):
                 self.meas = {"kind": "curve", "first": (i, s_, c), "pts": [c]}
                 return
             pc = self.marker["pieces"][i]
-            length, way = arc_between(pc["cut"], first[1], s_)
+            got = curve_between(pc["cut"], pc.get("corners") or [], first[1], s_)
+            if got is None:                                # a corner between them both ways: not one curve
+                self.meas = {"kind": "curve", "pts": [first[2], c], "text": tr("Not one curve"),
+                             "extra": tr("Pick two points on the same curve (between two corners)")}
+                self.measured.emit("")
+                self.viewport().update()
+                return
+            length, way = got
             self.meas = {"kind": "curve", "first": first, "pts": [first[2], c], "way": way, "value": length,
                          "text": f"{length / 10:.1f} cm",
                          "extra": f"{pc['name']} — {tr('straight')} {math.dist(first[2], c) / 10:.1f} cm"}
