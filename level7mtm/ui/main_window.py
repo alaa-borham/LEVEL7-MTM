@@ -63,6 +63,14 @@ class Worker(QRunnable):
             self.signals.failed.emit(f"{e}\n\n{traceback.format_exc()}")
 
 
+def renest_why(chk) -> str:
+    """Why a model cannot be nested again: never an empty reason."""
+    if chk.info.get("waiting"):
+        return tr("The model was written again and GRAFIS has not saved it yet: the robot runs it, then it is nested")
+    why = "; ".join(tr(m) for s_, m in chk.issues if s_ != "info") or "; ".join(tr(m) for _, m in chk.issues)
+    return why or tr("No order line matches this model")
+
+
 def remnant_note(r: dict) -> str:
     """What "small pieces together" did, for the message after nesting."""
     rm = r.get("remnant")
@@ -1382,7 +1390,7 @@ class GrafisPage(Page):
         def work():
             chk = check_mdl(self.ws, p)[0] if p.lower().endswith(".mdl") else check_scb(self.ws, p, renest=True)
             if not chk.ok or not chk.lines:
-                return {"status": "failed", "message": "; ".join(m for s_, m in chk.issues if s_ != "info")}
+                return {"status": "failed", "message": renest_why(chk)}
             return auto_cut(self.ws, chk, p, force=True)
         self.win.run(work, lambda r: (self.refresh(), self.win.refresh_cad(force=True), QMessageBox.information(
             self, "LEVEL7 Nesting", f"{tr(r['status'])}: "
@@ -2587,11 +2595,11 @@ class MainWindow(QMainWindow):
         self.ribbon = cad.Ribbon([
             (tr("The order"), [("import", "import", tr("Import XML"), self.import_dialog),
                            ("orders", "orders", tr("Orders"), lambda: self.goto("Orders")),
-                           ("details", "ruler", tr("Measurements"), self.open_details)]),
+                           ("details", "ruler", tr("Order info"), self.open_details)]),
             ("GRAFIS", [("write", "model", tr("Write model"), self.write_model),
                         ("robot", "robot", tr("Robot"), lambda: grafis().robot_now()),
-                        ("xvalues", "xvalues", tr("X values"), lambda: self.goto("X values for GRAFIS")),
-                        ("options", "options", tr("Options"), lambda: self.goto("Design options")),
+                        ("xvalues", "xvalues", tr("Size table setup"), lambda: self.goto("X values for GRAFIS")),
+                        ("options", "options", tr("Piece options setup"), lambda: self.goto("Design options")),
                         ("parts", "parts", tr("Parts"), lambda: self.goto("GRAFIS parts"))]),
             (tr("Nesting"), [("renest", "renest", tr("Nest again"), self.renest_selected),
                              ("nesting", "marker", "LEVEL7 Nesting", self.nesting_selected),
@@ -2630,7 +2638,7 @@ class MainWindow(QMainWindow):
                                         ("open_cut", tr("Open cutting file") + "  PLT / ISO", True),
                                         ("nesting", tr("Show marker in LEVEL7 Nesting"), False),
                                         ("renest", tr("Nest again"), False),
-                                        ("details", tr("Measurements and options"), False),
+                                        ("details", tr("Order info"), False),
                                         ("m_line", "📏  " + tr("Measure lengths"), False),
                                         ("m_curve", "〰  " + tr("Measure curves"), False)])
         b = self.inspector.buttons

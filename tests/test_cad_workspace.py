@@ -261,3 +261,11 @@ def test_measure_tools_on_the_marker(tmp_path):
     panel.use_tool("select")
     assert v.tool is None and not v.meas
     panel.close()
+
+
+def test_renest_reason_is_never_empty():
+    from types import SimpleNamespace
+    from level7mtm.ui.main_window import renest_why
+    assert renest_why(SimpleNamespace(info={"waiting": True}, issues=[]))
+    assert renest_why(SimpleNamespace(info={}, issues=[]))
+    assert "x" in renest_why(SimpleNamespace(info={}, issues=[("info", "x")]))
