@@ -84,7 +84,7 @@ def load_marker(path: str) -> dict | None:
             return None
         m = proj["markers"][-1]
         pieces = {p["uid"]: p for p in proj.get("pieces", [])}
-    except (OSError, KeyError, ValueError, zipfile.BadZipFile):
+    except (OSError, KeyError, ValueError, TypeError, AttributeError, zipfile.BadZipFile):   # damaged file
         return None
     out = []
     for pl in m.get("placements", []):
@@ -188,7 +188,9 @@ def order_rows(ws, limit: int = 300) -> list[dict]:
     out = []
     from ..services.customers import names as customer_names
     names = customer_names(ws)
-    for rev in ws.list_revisions()[:limit]:
+    for rev in ws.list_revisions():
+        if len(out) >= limit:                                 # the newest open lines (cleaned / cancelled ones
+            break                                             # do not count)
         if rev["status"] == "cancelled":
             continue
         rid = rev["id"]
@@ -1213,9 +1215,13 @@ class Ribbon(QFrame):
         order = ("full", "small", "icons")
         real = self._lay.sizeHint().width()
         self.widths[self.mode] = real
-        if real > self.scroll.viewport().width() - 12 and self.mode != "icons":
+        too_wide = real > self.scroll.viewport().width() - 12
+        if too_wide and self.mode != "icons":
             self._apply(order[order.index(self.mode) + 1])
             QTimer.singleShot(0, self._verify)
+            return
+        # icons only and still too wide (a very small window): a scroll bar, so nothing is out of reach
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded if too_wide else Qt.ScrollBarAlwaysOff)
 
 
 class OrderBrowser(QWidget):

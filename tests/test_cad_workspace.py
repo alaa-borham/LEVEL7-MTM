@@ -452,3 +452,29 @@ def test_pattern_sheet_one_of_each_piece_side_by_side(tmp_path):
             (x1, y1), (x2, y2) = pc["grain"][0], pc["grain"][-1]
             assert abs(x2 - x1) < 1e-6 * max(1, abs(y2 - y1)) + 1e-6
     assert pattern_sheet(None) is None
+
+
+def test_language_switch_keeps_folder_state_and_menus(ws):
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from PySide6.QtWidgets import QMenu
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    win = MainWindow(ws)
+    win.show()
+    app.processEvents()
+    g = win.pages["GRAFIS markers"]
+    state = g.mdl_watcher.state if g.mdl_watcher else None
+    menus = len(win.menuBar().findChildren(QMenu))
+    for lang in ("en", "ar", "en"):
+        win.set_lang(lang)
+        app.processEvents()
+    from PySide6.QtCore import QEvent
+    app.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)   # deleteLater of the old menus
+    app.processEvents()
+    g2 = win.pages["GRAFIS markers"]
+    assert g2 is not g
+    if state is not None:
+        assert g2.mdl_watcher.state is state                       # files already handled stay handled
+    assert len(win.menuBar().findChildren(QMenu)) <= menus         # the old menus are gone

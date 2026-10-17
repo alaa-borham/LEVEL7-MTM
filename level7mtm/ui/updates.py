@@ -146,12 +146,18 @@ class UpdateManager(QObject):
             updater.start_installer(path)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.warning(self.w, tr("Updates"), f"{tr('Update failed')}: {exc}")
+            resume = getattr(self.w, "_resume_after_update", None)
+            if resume:
+                resume()                                  # the watch and the robot run again
             return
         QApplication.instance().quit()
 
     def release(self):
         """Window closes: stop the timer; wait briefly for a running check / download."""
         self.timer.stop()
+        if self.dl is not None:
+            self.dl.cancel = True
         for t in (self.thread, self.dl):
-            if t is not None and t.isRunning():
-                t.wait(1500)
+            if t is not None and t.isRunning() and not t.wait(3000):
+                t.terminate()                             # offline: never "QThread destroyed while running"
+                t.wait(1000)

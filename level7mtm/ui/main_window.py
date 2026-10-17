@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import traceback
+import threading
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QColor
@@ -174,6 +175,18 @@ def measurement_dialog(parent, code: str, name: str, value_mm: float) -> tuple[f
     if d.exec() != QDialog.Accepted or not why.text().strip():
         return None
     return round(box.value() * 10, 1), why.text().strip()
+
+
+_GRAFIS_POLL = threading.Lock()          # one GRAFIS folder poll / robot step at a time
+
+
+def alive(obj) -> bool:
+    """False once Qt has deleted the widget (e.g. pages made anew on a theme / language switch)."""
+    try:
+        import shiboken6
+        return shiboken6.isValid(obj)
+    except ImportError:
+        return True
 
 
 def ask_reason(parent, title) -> str | None:
@@ -1599,14 +1612,18 @@ class GrafisPage(Page):
         return self.timer.isActive() and self.mdl_watcher is not None
 
     def poll(self):
-        """Runs in a worker thread: nesting can take a minute and must not freeze the window."""
-        if not (self.watcher or self.mdl_watcher) or self.busy:
+        """Runs in a worker thread: nesting can take a minute and must not freeze the window. One poll at a time
+        for the whole program (also across a theme / language switch, which makes this page anew)."""
+        if not (self.watcher or self.mdl_watcher) or not _GRAFIS_POLL.acquire(blocking=False):
             return
         self.busy = True
 
         def done(res):
-            self.busy = False
+            _GRAFIS_POLL.release()
             self.ws.db.set_setting("grafis.last_poll_error", "")
+            if not alive(self):                           # the page was made anew meanwhile
+                return
+            self.busy = False
             if res:
                 self.refresh()
         mw = getattr(self, "mdl_watcher", None)
@@ -1618,8 +1635,13 @@ class GrafisPage(Page):
             return out + ([r] if r else [])
         w = Worker(work)
         w.signals.done.connect(done)
-        w.signals.failed.connect(lambda msg: (setattr(self, "busy", False), self.win.status(msg[:200]),
-                                              self.ws.db.set_setting("grafis.last_poll_error", msg[:500])))
+        def failed(msg):
+            _GRAFIS_POLL.release()
+            self.ws.db.set_setting("grafis.last_poll_error", msg[:500])
+            if alive(self):
+                self.busy = False
+                self.win.status(msg[:200])
+        w.signals.failed.connect(failed)
         self.win.pool.start(w)
 
 
@@ -2929,7 +2951,12 @@ class MainWindow(QMainWindow):
 
     def _menus(self):
         from . import themes
+        from PySide6.QtWidgets import QMenu
         mb = self.menuBar()
+        for a in getattr(self, "_menu_actions", []):      # the menus of before (theme / language switch)
+            a.deleteLater()
+        for m in mb.findChildren(QMenu):
+            m.deleteLater()
         mb.clear()
         m = mb.addMenu(tr("File"))
         a = QAction(tr("Import XML files…"), self)
@@ -2980,6 +3007,8 @@ class MainWindow(QMainWindow):
         a.setChecked(self.updates.auto_enabled())
         a.toggled.connect(self.updates.set_auto)
         h.addAction(a)
+        from PySide6.QtWidgets import QMenu
+        self._menu_actions = [x for m in mb.findChildren(QMenu) for x in m.actions() if x.parent() is self]
 
     def _statusbar(self):
         sb = self.statusBar()
@@ -3066,7 +3095,15 @@ class MainWindow(QMainWindow):
         if row is not None:
             self.current_rid = row["rid"]
         self.inspector.show_row(row)
-        marker = cad.load_marker(row["l7n"]) if row and row.get("l7n") and os.path.isfile(row["l7n"]) else None
+        l7n = row.get("l7n") if row else None
+        try:
+            key = (row["rid"], l7n, os.path.getmtime(l7n), row.get("job")) if l7n else None
+        except OSError:
+            key = None
+        if key is not None and key == getattr(self, "_shown_key", None):
+            return                     # the same marker: keep zoom, selection and measurements (list refreshed)
+        self._shown_key = key
+        marker = cad.load_marker(l7n) if l7n and os.path.isfile(l7n) else None
         msg = ""
         if row is not None and marker is None:
             msg = (tr("No marker yet") + " — " + tr(cad.STAGE_TEXT[row["stage"]])
@@ -3221,7 +3258,14 @@ class MainWindow(QMainWindow):
         for p in self.pages.values():
             if getattr(p, "timer", None) is not None:
                 p.timer.stop()
+        old = self.pages.get("GRAFIS markers")
+        kept = {k: getattr(old, k, None) for k in ("watcher", "mdl_watcher")} if old is not None else {}
         self.build()
+        new = self.pages.get("GRAFIS markers")
+        for k, w in kept.items():                         # what the folders already handled stays handled
+            nw = getattr(new, k, None)
+            if w is not None and nw is not None and os.path.normcase(w.folder) == os.path.normcase(nw.folder):
+                nw.state = w.state
         for t in open_:
             self.goto(t)
         if cur:
@@ -3232,6 +3276,12 @@ class MainWindow(QMainWindow):
     def closeEvent(self, e):
         self.updates.release()
         self.cad_timer.stop()
+        for p in self.pages.values():                     # no new background work; the running one may finish
+            if getattr(p, "timer", None) is not None:
+                p.timer.stop()
+        if getattr(self, "timer", None) is not None:
+            self.timer.stop()
+        self.pool.waitForDone(15000)
         super().closeEvent(e)
 
     def _before_update(self) -> bool:
@@ -3248,6 +3298,15 @@ class MainWindow(QMainWindow):
             if t is not None:
                 t.stop()
         return True
+
+    def _resume_after_update(self):
+        """The installer did not start: everything stopped for it runs again."""
+        g = self.pages.get("GRAFIS markers")
+        if g is not None and (g.watcher or g.mdl_watcher):
+            g.timer.start(2000)
+        if self.watcher:
+            self.timer.start(self.watch_interval_s() * 1000)
+        self.cad_timer.start(5000)
 
     def apply_role(self):
         for title, a in self.page_actions.items():
@@ -3290,7 +3349,15 @@ class MainWindow(QMainWindow):
     def run(self, fn, on_done):
         self.status(tr("Working…"))
         w = Worker(fn)
-        w.signals.done.connect(lambda res: (self.status(tr("Done")), on_done(res)))
+
+        def done(res):
+            self.status(tr("Done"))
+            try:
+                on_done(res)
+            except RuntimeError as e:                   # the page that asked was made anew meanwhile
+                if "already deleted" not in str(e):
+                    raise
+        w.signals.done.connect(done)
         w.signals.failed.connect(lambda msg: (self.status(tr("Error")), QMessageBox.warning(self, tr("Error"), msg)))
         self.pool.start(w)
 
