@@ -458,7 +458,7 @@ class Ribbon(QFrame):
     def __init__(self, groups, extra=()):
         super().__init__()
         self.setObjectName("ribbon")
-        self.setFixedHeight(84)
+        self.setFixedHeight(96)                                   # room for two-line labels and the group titles
         outer = QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         self.scroll = QScrollArea()
@@ -539,20 +539,60 @@ class Ribbon(QFrame):
         lay.addStretch()
         self.inner = inner
         self.compact = False
-        self.full_width = inner.sizeHint().width()
+        self.mode = "full"
+        self.widths = {}
+        self._lay = lay
+        self.measure()
+
+    def measure(self):
+        """How wide each size is (after the style is applied); measured again when shown."""
+        cur = self.mode
+        for m in ("small", "icons", "full"):
+            self._apply(m)
+            for b in self.buttons.values():
+                b.ensurePolished()
+                b.updateGeometry()
+            self._lay.invalidate()
+            self._lay.activate()
+            self.widths[m] = self._lay.sizeHint().width()
+        self.full_width = self.widths["full"]
+        self._apply(cur)
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        self.measure()
+        self.resizeEvent(None)
+
+    def _apply(self, mode: str):
+        """full: big icons, labels; small: smaller icons, labels in a smaller (still readable) font;
+        icons: icons only, label in the tooltip."""
+        self.mode = mode
+        self.compact = mode == "icons"
+        for b in self.buttons.values():
+            b.setToolButtonStyle(Qt.ToolButtonIconOnly if mode == "icons" else Qt.ToolButtonTextUnderIcon)
+            b.setIconSize(QSize(24, 24) if mode == "full" else QSize(19, 19))
+            b.setMinimumWidth(36 if mode == "icons" else 0)
+            b.setStyleSheet("" if mode == "full" else "QToolButton { font-size: 8pt; padding: 1px 3px; }")
+            full = b.toolTip()
+            words = full.split(" ")
+            if mode == "small" and len(words) > 1 and len(full) > 9:     # long labels on two lines
+                k = max(range(1, len(words)), key=lambda i: -abs(len(" ".join(words[:i])) - len(" ".join(words[i:]))))
+                b.setText(" ".join(words[:k]) + "\n" + " ".join(words[k:]))
+            else:
+                b.setText(full)
+        self.brand_text.setVisible(mode == "full")
 
     def set_compact(self, on: bool):
-        if on == self.compact:
-            return
-        self.compact = on
-        for b in self.buttons.values():
-            b.setToolButtonStyle(Qt.ToolButtonIconOnly if on else Qt.ToolButtonTextUnderIcon)
-            b.setMinimumWidth(36 if on else 0)
-        self.brand_text.setVisible(not on)
+        self._apply("icons" if on else "full")
 
     def resizeEvent(self, e):
-        super().resizeEvent(e)
-        self.set_compact(self.width() < self.full_width)
+        if e is not None:
+            super().resizeEvent(e)
+        w = self.width()
+        want = "full" if w >= self.widths.get("full", 0) else ("small" if w >= self.widths.get("small", 0)
+                                                                else "icons")
+        if want != self.mode:
+            self._apply(want)
 
 
 class OrderBrowser(QWidget):
