@@ -139,8 +139,8 @@ def order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = N
 
 
 def _order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = None, force: bool = False) -> dict:
+    from .customers import pattern_for
     st = settings(ws)
-    template = template or st["template"]
     out_dir = out_dir or st["out"]
     rev = ws.revision(rid)
     res = {"revision_id": rid, "line_number": rev["line_number"], "status": "blocked", "path": None,
@@ -148,6 +148,12 @@ def _order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = 
     if rev["status"] in ("superseded", "cancelled"):
         res.update(status="skipped", problems=[f"order line is {rev['status']}"])
         return res
+    if not template:                              # the pattern (body shape) the order's Variation chooses
+        template, why = pattern_for(ws, rid)
+        if why:
+            res["problems"] = [why]
+            return _save(ws, res, None)
+    res["template"] = template
     if not template or not os.path.isfile(template):
         res.update(status="not_configured", problems=["GRAFIS model (MDL) not set — choose it in the GRAFIS screen"])
         return _save(ws, res, None)

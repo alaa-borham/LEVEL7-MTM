@@ -142,3 +142,51 @@ def update_customer(ws, cid: str, name: str | None = None, reference: str | None
     with ws.db.tx() as c:
         ws.db.audit(c, ws.actor, "customer.changed", "customer", cid, {"name": name, "reference": reference,
                                                                         "mdl": mdl})
+
+
+# ------------------------------------------------------------------ patterns (owner: "each customer has about 7
+# pattern files"; "chosen by a Variation"): the body shapes Slim2, Athlete1 … each with its own GRAFIS model;
+# the size table, options and fixed pieces stay the customer's.
+def patterns(ws, cid: str | None = None) -> list[dict]:
+    """[{variation, mdl}] of the customer (the current one when not given)."""
+    with ws.for_customer(cid or ws.customer()):
+        return [dict(p) for p in ws.db.get_setting(ws._key("grafis.patterns")) or []]
+
+
+def set_patterns(ws, rows: list[dict], cid: str | None = None) -> None:
+    clean, seen = [], set()
+    for r in rows:
+        v, m = (r.get("variation") or "").strip(), (r.get("mdl") or "").strip()
+        if not v and not m:
+            continue
+        if not v or not m:
+            raise WorkflowError("each pattern needs the Variation name of the XML and its GRAFIS model (MDL)")
+        if v.lower() in seen:
+            raise WorkflowError(f"the Variation '{v}' is given twice")
+        seen.add(v.lower())
+        clean.append({"variation": v, "mdl": m})
+    with ws.for_customer(cid or ws.customer()):
+        ws.db.set_setting(ws._key("grafis.patterns"), clean)
+        with ws.db.tx() as c:
+            ws.db.audit(c, ws.actor, "customer.patterns", "customer", ws.customer(), {"patterns": clean})
+
+
+def pattern_for(ws, rid: int) -> tuple[str | None, str]:
+    """The GRAFIS model of an order line: the pattern whose Variation the order has, else (no patterns set) the
+    customer's model. Returns (mdl, "") or (None, why)."""
+    rev = ws.revision(rid)
+    cid = rev["normalized"].get("customer") or DEFAULT_CUSTOMER
+    pats = patterns(ws, cid)
+    if not pats:
+        with ws.for_customer(cid):
+            return ws.grafis_mdl(), ""
+    codes = {str(c).strip().lower() for c in rev["raw_line"].get("option_codes") or []}
+    hit = [p for p in pats if p["variation"].lower() in codes]
+    if len(hit) == 1:
+        return hit[0]["mdl"], ""
+    if len(hit) > 1:
+        return None, (f"the order has several pattern Variations ({', '.join(p['variation'] for p in hit)}) — "
+                      f"only one may choose the pattern")
+    return None, (f"no pattern for this order: none of its Variations is a pattern of the customer "
+                  f"({', '.join(p['variation'] for p in pats)})")
+
