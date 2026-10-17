@@ -228,3 +228,27 @@ def test_nesting_failure_says_why():
         "1 piece(s) not placed — front1 base:__HN40_0 wider than the fabric")
     assert _why("error: ValueError: no pieces", 2) == "error: ValueError: no pieces"
     assert "exit code 3" in _why("", 3)
+
+
+def test_one_robot_at_a_time_and_a_broken_report_never_retries(ws, monkeypatch, tmp_path):
+    from level7mtm.services import errors_folder, grafis_robot
+    job = {"path": str(tmp_path / "a.mdl"), "sha256": "x", "line_number": "1"}
+    grafis_robot._RUNNING.acquire()
+    try:
+        assert grafis_robot.run_one(ws, job)["status"] == "busy"          # the timer and "Robot now" never both
+    finally:
+        grafis_robot._RUNNING.release()
+
+    def broken(*a, **k):
+        raise PermissionError()
+    monkeypatch.setattr(errors_folder, "report", broken)
+
+    class NoGrafis:
+        def windows(self):
+            return []
+
+        def open(self, p):
+            raise TimeoutError()
+    r = grafis_robot.run_one(ws, job, drv=NoGrafis(), sleep=lambda s: None)
+    assert r["status"] == "failed" and r["message"].startswith("TimeoutError")   # a reason, never empty
+    assert ws.db.one("SELECT id FROM robot_jobs WHERE path=?", (job["path"],))     # recorded: not run again

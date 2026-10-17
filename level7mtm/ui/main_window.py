@@ -1335,7 +1335,7 @@ class GrafisPage(Page):
                                     tr("Write the models again with 'Write GRAFIS model for order…'."))
             return
         self.win.run(lambda: run_one(self.ws, jobs[0]), lambda r: (self.refresh(), QMessageBox.information(
-            self, tr("GRAFIS robot"), f"{os.path.basename(r['path'])}: {r['status']}\n{r['message']}")))
+            self, tr("GRAFIS robot"), f"{os.path.basename(r['path'])}: {tr(r['status'])}\n{tr_msg(r['message'])}")))
 
     def robot_retry(self):
         with self.ws.db.tx() as c:

@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import sys
+import threading
 import time
 
 from ..storage.db import now
@@ -33,6 +34,7 @@ def settings(ws) -> dict:
             "dialogs": ws.db.get_setting("robot.dialogs", {}) or {},
             "run_wait": float(ws.db.get_setting("robot.run_wait_s", 8)),
             "save_timeout": float(ws.db.get_setting("robot.save_timeout_s", 120)),
+            "run_timeout": float(ws.db.get_setting("robot.run_timeout_s", 300)),     # Test Run All Parts
             # background: never move the mouse (GRAFIS menu commands / clicks sent to the button itself);
             # auto: background where possible, else the mouse as before; mouse: always the real mouse
             "mode": ws.db.get_setting("robot.mode", "auto"),
@@ -55,6 +57,29 @@ class Win32:
         self.u.WindowFromPoint.argtypes = [wintypes.POINT]
         self.u.WindowFromPoint.restype = wintypes.HWND
         self.u.GetAncestor.restype = wintypes.HWND
+        H, U, P, L = wintypes.HWND, wintypes.UINT, ctypes.c_void_p, wintypes.LPARAM    # 64-bit window handles
+        for name, args in (("GetAncestor", [H, U]), ("GetWindowTextW", [H, wintypes.LPWSTR, ctypes.c_int]),
+                           ("GetClassNameW", [H, wintypes.LPWSTR, ctypes.c_int]), ("IsWindowVisible", [H]),
+                           ("GetWindowRect", [H, P]), ("ShowWindow", [H, ctypes.c_int]),
+                           ("SetForegroundWindow", [H]), ("GetWindowThreadProcessId", [H, P]),
+                           ("SendMessageTimeoutW", [H, U, wintypes.WPARAM, L, U, U, P])):
+            getattr(self.u, name).argtypes = args
+        self.u.SendMessageTimeoutW.restype = L
+
+    def process_of(self, h) -> str:
+        """The program a window belongs to (e.g. werfault.exe), "" when it cannot be read."""
+        k = self.ct.windll.kernel32
+        pid = self.wt.DWORD()
+        self.u.GetWindowThreadProcessId(h, self.ct.byref(pid))
+        hp = k.OpenProcess(0x1000, False, pid.value)                   # PROCESS_QUERY_LIMITED_INFORMATION
+        if not hp:
+            return ""
+        try:
+            b = self.ct.create_unicode_buffer(520)
+            n = self.wt.DWORD(520)
+            return os.path.basename(b.value) if k.QueryFullProcessImageNameW(hp, 0, b, self.ct.byref(n)) else ""
+        finally:
+            k.CloseHandle(hp)
 
     def _text(self, h):
         b = self.ct.create_unicode_buffer(512)
@@ -350,7 +375,13 @@ def _answer_dialogs(drv, st, notes: list) -> None:
         title, low = w["title"] or "", (w["title"] or "").lower()
         if w["cls"] != "#32770":
             continue
-        if "werfault" in low or "application error" in low or "anwendungsfehler" in low:
+        proc = ""
+        if hasattr(drv, "process_of"):
+            try:
+                proc = drv.process_of(w["hwnd"]).lower()
+            except Exception:  # noqa: BLE001
+                proc = ""
+        if proc == "werfault.exe" or "werfault" in low or "application error" in low or "anwendungsfehler" in low:
             drv.close(w["hwnd"])
             if "GRAFIS crashed (Windows error box closed)" not in notes:
                 notes.append("GRAFIS crashed (Windows error box closed)")
@@ -375,7 +406,10 @@ def pending(ws) -> list[dict]:
                      "(SELECT MAX(id) FROM grafis_orders GROUP BY revision_id) ORDER BY id"):
         info = json.loads(r["info"])
         p = r["path"]
-        if not p or not os.path.isfile(p) or info.get("sha256") != _sha(p):
+        try:
+            if not p or not os.path.isfile(p) or info.get("sha256") != _sha(p):
+                continue
+        except OSError:                                # being written / locked: looked at next time
             continue
         if ws.db.one("SELECT id FROM robot_jobs WHERE sha256=? AND path=?", (info["sha256"], p)):
             continue
@@ -383,12 +417,35 @@ def pending(ws) -> list[dict]:
     return out
 
 
+_RUNNING = threading.Lock()                       # one robot at a time: GRAFIS gets one model after the other
+
+
 def run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) -> dict:
-    """Open → Test Run All Parts → save → (close) for one model. Returns {status, message}."""
+    """Open → Test Run All Parts → save → (close) for one model. Returns {status, message}; status "busy" when
+    the robot is already working on a model (the timer and "Robot now" never drive GRAFIS together)."""
     from .activity import working
-    rids = [r["revision_id"] for r in ws.db.q("SELECT revision_id FROM grafis_orders WHERE path=?", (job["path"],))]
-    with working(rids, "robot"):
-        return _run_one(ws, job, drv, sleep, clock)
+    if not _RUNNING.acquire(blocking=False):
+        return {"status": "busy", "message": "the robot is working on another model", "path": job["path"]}
+    try:
+        rids = [r["revision_id"] for r in ws.db.q("SELECT revision_id FROM grafis_orders WHERE path=?",
+                                                  (job["path"],))]
+        with working(rids, "robot"):
+            return _run_one(ws, job, drv, sleep, clock)
+    finally:
+        _RUNNING.release()
+
+
+def _saved(path: str, old_sha: str, sleep=time.sleep) -> bool:
+    """GRAFIS has saved the model: its content changed and it stays the same for a moment (not still written)."""
+    try:
+        if not os.path.isfile(path) or _sha(path) == old_sha:
+            return False
+        a = os.stat(path)
+        sleep(1.5)
+        b = os.stat(path)
+        return (a.st_size, a.st_mtime) == (b.st_size, b.st_mtime)
+    except OSError:                                   # locked while GRAFIS writes it
+        return False
 
 
 def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) -> dict:
@@ -418,16 +475,25 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
         how = [_act(drv, st, main, "test_run", job["path"], True)]
         sleep(st["run_wait"])
         t0 = clock()
-        while not drv.responsive(main) and clock() - t0 < 300:
+        while clock() - t0 < st["run_timeout"]:
+            if drv.responsive(main):
+                break
+            _answer_dialogs(drv, st, notes)
             sleep(1)
+        else:
+            raise RobotError(f"GRAFIS not responding {st['run_timeout']:g} s after Test Run All Parts — "
+                             f"{_seen(drv, btn)}" + (f" — robot: {'; '.join(notes)}" if notes else ""))
+        _answer_dialogs(drv, st, notes)               # a box after the test run blocks the save
         how.append(_act(drv, st, main, "save", job["path"], True))
         t0 = clock()
         while clock() - t0 < st["save_timeout"]:
-            if os.path.isfile(job["path"]) and _sha(job["path"]) != job["sha256"]:
+            if _saved(job["path"], job["sha256"], sleep):
                 break
+            _answer_dialogs(drv, st, notes)
             sleep(1)
         else:
-            raise RobotError(f"GRAFIS did not save {stem} within {st['save_timeout']:g} s")
+            raise RobotError(f"GRAFIS did not save {stem} within {st['save_timeout']:g} s — {_seen(drv, btn)}"
+                             + (f" — robot: {'; '.join(notes)}" if notes else ""))
         try:
             how.append(_act(drv, st, main, "close", job["path"], False))
         except RobotError:
@@ -435,12 +501,15 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
         res.update(status="done", message="opened, Test Run All Parts, saved — " +
                    ", ".join(h for h in how + notes if h))
     except Exception as e:  # noqa: BLE001 - every failure is reported, never retried silently
-        res["message"] = str(e)
-        errors_folder.report(ws, os.path.splitext(os.path.basename(job["path"]))[0], [res["message"]],
-                             "GRAFIS robot")
-        from .done_folder import move_failed
-        move_failed(ws, [r["revision_id"] for r in ws.db.q("SELECT revision_id FROM grafis_orders WHERE path=?",
-                                                           (job["path"],))], [res["message"]], "GRAFIS robot")
+        res["message"] = str(e) or type(e).__name__
+        try:                                          # the report must never make the job run again
+            errors_folder.report(ws, os.path.splitext(os.path.basename(job["path"]))[0], [res["message"]],
+                                 "GRAFIS robot")
+            from .done_folder import move_failed
+            move_failed(ws, [r["revision_id"] for r in ws.db.q("SELECT revision_id FROM grafis_orders WHERE path=?",
+                                                               (job["path"],))], [res["message"]], "GRAFIS robot")
+        except Exception as e2:  # noqa: BLE001
+            res["message"] += f" (error report not written: {e2 or type(e2).__name__})"
     with ws.db.tx() as c:
         c.execute("INSERT INTO robot_jobs(sha256, path, at, status, message) VALUES (?,?,?,?,?)",
                   (job["sha256"], job["path"], now(), res["status"], res["message"]))
