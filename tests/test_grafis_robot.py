@@ -179,3 +179,52 @@ def test_robot_works_in_the_background_without_the_mouse(ws, tmp_path):
                                                           "text": "Test Run All Parts", "id": 4711}]
     ws.db.set_setting("robot.menu", {"test_run": "Teile > Test Run All Parts", "save": "Datei > Speichern"})
     assert robot._menu_item(BackgroundGrafis(), 1, "save", {"save": "Datei > Speichern"})["id"] == 57603
+
+
+def test_robot_answers_grafis_start_windows_and_the_crash_box(ws, tmp_path):
+    """At the owner's: a crashed GRAFIS (WerFault box), then "GRAFIS System Info-Box" and "GRAFIS - Start ..."
+    held the model back. The robot answers them in the background and goes on."""
+    class Starting(BackgroundGrafis):
+        def __init__(self):
+            super().__init__()
+            self.boxes = {7: ("WerFault.exe - Application Error", [("Close", 70)]),
+                          8: ("GRAFIS System Info-Box", [("OK", 80)]),
+                          9: ("GRAFIS - Start ...", [("Neu", 90), ("Letzte Datei", 91), ("Abbrechen", 92)])}
+            self.pressed, self.closed = [], []
+
+        def windows(self):
+            out = [{"hwnd": h, "title": t, "cls": "#32770"} for h, (t, _) in self.boxes.items()]
+            if not self.boxes and self.opened:
+                out.append({"hwnd": 1, "title": f"Grafis - [A: ..{self.opened[-30:]}]", "cls": "GrafisMain"})
+            return out
+
+        def buttons_of(self, h):
+            return [{"hwnd": b, "text": t} for t, b in self.boxes[h][1]]
+
+        def press(self, b):
+            self.pressed.append(b)
+            self.boxes = {h: v for h, v in self.boxes.items() if b not in [x for _, x in v[1]]}
+
+        def close(self, h):
+            self.closed.append(h)
+            self.boxes.pop(h, None)
+    ws.db.set_setting("robot.open_timeout_s", 5)
+    ws.db.set_setting("robot.mode", "background")
+    ws.db.set_setting("robot.dialogs", {"GRAFIS - Start": "Abbrechen"})     # taught by the owner
+    p = tmp_path / "Order-9-50-1_0.mdl"
+    p.write_bytes(b"x")
+    import hashlib
+    g = Starting()
+    r = robot.run_one(ws, {"path": str(p), "sha256": hashlib.sha256(b"x").hexdigest()}, g, sleep=lambda s: None,
+                      clock=_clock())
+    assert g.closed == [7] and set(g.pressed) == {80, 92}                   # crash box closed, OK, taught button
+    assert r["status"] == "done", r["message"]
+    assert "GRAFIS crashed" in r["message"] and 'answered "GRAFIS System Info-Box" (OK)' in r["message"]
+
+
+def test_nesting_failure_says_why():
+    from level7mtm.services.auto_cut import _why
+    assert _why("x\nUNPLACED: front1 base:__HN40_0 wider than the fabric\n", 0).startswith(
+        "1 piece(s) not placed — front1 base:__HN40_0 wider than the fabric")
+    assert _why("error: ValueError: no pieces", 2) == "error: ValueError: no pieces"
+    assert "exit code 3" in _why("", 3)

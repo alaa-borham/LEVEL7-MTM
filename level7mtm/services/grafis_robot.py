@@ -29,7 +29,8 @@ BUTTONS = ("test_run", "save", "close")
 def settings(ws) -> dict:
     return {"enabled": bool(ws.db.get_setting("robot.enabled", False)),
             "buttons": ws.db.get_setting("robot.buttons", {}) or {},
-            "open_timeout": float(ws.db.get_setting("robot.open_timeout_s", 60)),
+            "open_timeout": float(ws.db.get_setting("robot.open_timeout_s", 120)),   # GRAFIS starts slowly
+            "dialogs": ws.db.get_setting("robot.dialogs", {}) or {},
             "run_wait": float(ws.db.get_setting("robot.run_wait_s", 8)),
             "save_timeout": float(ws.db.get_setting("robot.save_timeout_s", 120)),
             # background: never move the mouse (GRAFIS menu commands / clicks sent to the button itself);
@@ -95,6 +96,7 @@ class Win32:
             path = self._child_path(h, under)
             if path:
                 spec["child"] = {"path": path, "x": cp.x, "y": cp.y}
+            spec["text"] = self._text(under).replace("&", "").strip()
         return spec
 
     # -- background (no mouse, no keyboard): menu commands and clicks posted to the button's own window
@@ -183,6 +185,25 @@ class Win32:
         self.u.PostMessageW(h, 0x0200, 0, lp)                                # WM_MOUSEMOVE
         self.u.PostMessageW(h, 0x0201, 1, lp)                                # WM_LBUTTONDOWN (MK_LBUTTON)
         self.u.PostMessageW(h, 0x0202, 0, lp)                                # WM_LBUTTONUP
+
+    def buttons_of(self, h) -> list[dict]:
+        """The buttons of a dialog box: {"hwnd", "text"}."""
+        self._setup_bg()
+        out, c = [], None
+        while True:
+            c = self.u.FindWindowExW(h, c, "Button", None)
+            if not c:
+                break
+            out.append({"hwnd": c, "text": self._text(c).replace("&", "").strip()})
+        return out
+
+    def press(self, h):
+        self._setup_bg()
+        self.u.PostMessageW(h, 0x00F5, 0, 0)                                 # BM_CLICK: the button itself
+
+    def close(self, h):
+        self._setup_bg()
+        self.u.PostMessageW(h, 0x0010, 0, 0)                                 # WM_CLOSE
 
     def responsive(self, h, timeout_ms=2000) -> bool:
         res = self.wt.DWORD()
@@ -312,6 +333,41 @@ def _act(drv, st, main, name: str, path: str, required: bool) -> str | None:
     return None
 
 
+OK_TEXTS = ("ok", "o.k.", "weiter", "continue", "fortsetzen", "schließen", "schliessen", "close")
+
+
+def _answer_dialogs(drv, st, notes: list) -> None:
+    """GRAFIS start-up windows (System Info-Box, Start …) and the Windows crash box block the model from opening:
+    answer them in the background — the button taught for that window, else its OK — and say so."""
+    if not hasattr(drv, "buttons_of"):
+        return
+    taught = st.get("dialogs") or {}
+    try:
+        wins = drv.windows()
+    except Exception:  # noqa: BLE001
+        return
+    for w in wins:
+        title, low = w["title"] or "", (w["title"] or "").lower()
+        if w["cls"] != "#32770":
+            continue
+        if "werfault" in low or "application error" in low or "anwendungsfehler" in low:
+            drv.close(w["hwnd"])
+            if "GRAFIS crashed (Windows error box closed)" not in notes:
+                notes.append("GRAFIS crashed (Windows error box closed)")
+            continue
+        if "grafis" not in low and title not in taught:
+            continue
+        btns = drv.buttons_of(w["hwnd"])
+        want = next((t for k, t in taught.items() if title.startswith(k)), None)
+        b = next((b for b in btns if want and b["text"].lower() == want.lower()), None) or \
+            next((b for b in btns if b["text"].lower() in OK_TEXTS), None) or (btns[0] if len(btns) == 1 else None)
+        if b:
+            drv.press(b["hwnd"])
+            note = f"answered \"{title[:40]}\" ({b['text']})"
+            if note not in notes:
+                notes.append(note)
+
+
 def pending(ws) -> list[dict]:
     """Order models written by this program and still not saved by GRAFIS (and not tried by the robot)."""
     out = []
@@ -338,16 +394,19 @@ def run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) -> 
         if "test_run" not in btn and st["mode"] == "mouse":
             raise RobotError("the 'Test Run All Parts' button was not taught yet (GRAFIS screen → Robot)")
         stem = os.path.splitext(os.path.basename(job["path"]))[0]
+        notes: list[str] = []
+        _answer_dialogs(drv, st, notes)               # a box left from before (crash, start window) first
         drv.open(job["path"])
         t0, main = clock(), None
         while clock() - t0 < st["open_timeout"]:
             main = next((w["hwnd"] for w in drv.windows() if shows_file(w["title"], job["path"])), None)
             if main and drv.responsive(main):
                 break
+            _answer_dialogs(drv, st, notes)
             sleep(1)
         else:
             raise RobotError(f"GRAFIS did not show {stem} within {st['open_timeout']:g} s — "
-                             f"{_seen(drv, btn)}")
+                             f"{_seen(drv, btn)}" + (f" — robot: {'; '.join(notes)}" if notes else ""))
         sleep(2)
         how = [_act(drv, st, main, "test_run", job["path"], True)]
         sleep(st["run_wait"])
@@ -367,7 +426,7 @@ def run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) -> 
         except RobotError:
             pass                                      # closing is a courtesy: the model is saved
         res.update(status="done", message="opened, Test Run All Parts, saved — " +
-                   ", ".join(h for h in how if h))
+                   ", ".join(h for h in how + notes if h))
     except Exception as e:  # noqa: BLE001 - every failure is reported, never retried silently
         res["message"] = str(e)
         errors_folder.report(ws, os.path.splitext(os.path.basename(job["path"]))[0], [res["message"]],
@@ -386,6 +445,19 @@ def step(ws, drv=None) -> dict | None:
         return None
     jobs = pending(ws)
     return run_one(ws, jobs[0], drv) if jobs else None
+
+
+def teach_dialog(ws, drv=None) -> dict:
+    """The owner points at the button he presses in a GRAFIS window that appears at start (e.g. "GRAFIS - Start");
+    the robot presses that button in the background whenever this window appears."""
+    spec = (drv or Win32()).cursor_window()
+    if not spec.get("text"):
+        raise RobotError("point the mouse at a button of the GRAFIS window (it has no text there)")
+    d = dict(settings(ws)["dialogs"])
+    key = spec["title"].split("...")[0].split("…")[0].strip() or spec["title"]
+    d[key] = spec["text"]
+    ws.db.set_setting("robot.dialogs", d)
+    return {"title": key, "button": spec["text"]}
 
 
 def teach(ws, name: str, drv=None) -> dict:

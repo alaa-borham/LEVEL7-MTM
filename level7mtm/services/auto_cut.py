@@ -118,7 +118,7 @@ def auto_cut(ws, chk, scb_path: str, force: bool = False) -> dict:
                    "efficiency_pct": float(e.group(1)) if e else None,
                    "placed": int(placed.group(1)) if placed else None, "l7n": stem + ".l7n"})
     if rc != 0 or "UNPLACED:" in out_text or not os.path.exists(stem + ".l7n"):
-        result["message"] = "nesting did not produce a valid marker (see log)"
+        result["message"] = "nesting did not produce a valid marker: " + _why(out_text, rc)
         return _save(ws, chk, scb_path, result)
     for fmt in st["formats"]:
         target = f"{stem}.{fmt}"
@@ -128,12 +128,27 @@ def auto_cut(ws, chk, scb_path: str, force: bool = False) -> dict:
         elif fmt == "iso":
             args += ["--iso-preset", st["iso_preset"]]
         if _run(args, env, log) != 0 or not os.path.exists(target):
-            result["message"] = f"export {fmt} failed (see log)"
+            result["message"] = f"export {fmt} failed: " + _why("\n".join(log), 1)
             return _save(ws, chk, scb_path, result)
         result["outputs"].append(target)
     result["status"] = "done"
     result["device_tested"] = False
     return _save(ws, chk, scb_path, result)
+
+
+def _why(text: str, rc: int) -> str:
+    """The lines of LEVEL7 Nesting's output that say why (pieces not placed, the error), short enough to read."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    unplaced = [ln[len("UNPLACED:"):].strip() for ln in lines if ln.startswith("UNPLACED:")]
+    if unplaced:
+        return (f"{len(unplaced)} piece(s) not placed — " + "; ".join(unplaced[:4])
+                + (" …" if len(unplaced) > 4 else ""))
+    err = [ln for ln in lines if ln.lower().startswith(("error", "traceback")) or "Error:" in ln]
+    if err:
+        return err[-1][:300]
+    if rc != 0:
+        return f"LEVEL7 Nesting stopped with exit code {rc}" + (f" — {lines[-1][:200]}" if lines else "")
+    return "no marker file was written"
 
 
 def _save(ws, chk, scb_path, result) -> dict:

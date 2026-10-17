@@ -886,7 +886,8 @@ class GrafisPage(Page):
         step("robot", 4, "Teach the GRAFIS robot", "Open a model in GRAFIS, press a button below and point the mouse "
                                                    "at that GRAFIS button within 5 seconds.",
              (("Teach: Test Run All Parts button", lambda: self.teach("test_run")),
-              ("Teach: Save button", lambda: self.teach("save")), ("Teach: Close button", lambda: self.teach("close"))),
+              ("Teach: Save button", lambda: self.teach("save")), ("Teach: Close button", lambda: self.teach("close")),
+              ("Teach: button of a GRAFIS start window", self.teach_dialog)),
              extra=robot_box)
         auto_box = QWidget()
         al = QVBoxLayout(auto_box)
@@ -1206,6 +1207,22 @@ class GrafisPage(Page):
         if dlg.exec() == QDialog.Accepted:
             self.ws.db.set_setting("robot.menu", {k: c.currentData() for k, c in combos.items() if c.currentData()})
             self.refresh()
+
+    def teach_dialog(self):
+        from ..services.grafis_robot import teach_dialog
+        QMessageBox.information(self, tr("GRAFIS robot"), tr("Start GRAFIS so its start window shows. After OK you "
+                                                             "have 5 seconds to point the mouse at the button you "
+                                                             "press in that window (do not click)."))
+
+        def record():
+            try:
+                d = teach_dialog(self.ws)
+            except Exception as e:  # noqa: BLE001
+                QMessageBox.warning(self, tr("GRAFIS robot"), str(e))
+                return
+            QMessageBox.information(self, tr("GRAFIS robot"), f"{tr('Saved')}: «{d['title']}» → {d['button']}")
+            self.refresh()
+        QTimer.singleShot(5000, record)
 
     def robot_now(self):
         """Run the robot on the next waiting model now and show what happened (also when nothing is waiting)."""

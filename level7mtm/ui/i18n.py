@@ -412,6 +412,8 @@ AR = {
     "✓ This button can be pressed in the background, without the mouse.": "✓ هذا الزر يُضغط في الخلفية بدون الفأرة.",
     "This button needs the mouse; choose its GRAFIS menu command to work without it.": "هذا الزر يحتاج الفأرة؛ اختر أمره من قائمة GRAFIS ليعمل بدونها.",
     "s": "ث",
+    "Teach: button of a GRAFIS start window": "تعليم: زر نافذة بدء GRAFIS",
+    "Start GRAFIS so its start window shows. After OK you have 5 seconds to point the mouse at the button you press in that window (do not click).": "شغّل GRAFIS حتى تظهر نافذة البدء. بعد «موافق» لديك 5 ثوانٍ لتضع مؤشر الفأرة فوق الزر الذي تضغطه في تلك النافذة (بدون ضغط).",
 }
 
 
