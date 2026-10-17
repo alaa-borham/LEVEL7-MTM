@@ -1072,6 +1072,7 @@ class OrderBrowser(QWidget):
             (self.closed.discard if grp.isExpanded() else self.closed.add)(key)
         self.tree.blockSignals(True)
         self.tree.clear()
+        self._bars = {}
         c = themes.colours()
         current, first = None, None
         for key, title, stages, colour in self.GROUPS:
@@ -1114,12 +1115,68 @@ class OrderBrowser(QWidget):
         elif first is not None and keep is None:
             self.tree.setCurrentItem(first)
 
+    BUSY_TEXT = {"model": "Writing the model…", "robot": "Robot in GRAFIS…", "nesting": "Nesting…"}
+
+    def update_busy(self, busy: dict):
+        """A small progress bar under each order line the program is working on (services/activity.py)."""
+        from PySide6.QtWidgets import QProgressBar
+        bars = getattr(self, "_bars", {})
+        for it in list(self._order_items()):
+            rid = it.data(0, Qt.UserRole)
+            b = busy.get(rid)
+            have = bars.get(rid)
+            if have is not None:
+                try:
+                    alive = have[0].parent() is it and have[1].isVisible() is not None
+                except RuntimeError:                       # the row was rebuilt
+                    alive = False
+                if not alive:
+                    bars.pop(rid, None)
+                    have = None
+            if b is None:
+                if have is not None:
+                    it.removeChild(have[0])
+                    bars.pop(rid, None)
+                continue
+            if have is None:
+                ch = QTreeWidgetItem()
+                it.insertChild(0, ch)
+                ch.setFirstColumnSpanned(True)
+                w = QWidget()
+                lay = QHBoxLayout(w)
+                lay.setContentsMargins(4, 1, 8, 1)
+                lay.setSpacing(6)
+                lab = QLabel()
+                lab.setObjectName("busyText")
+                bar = QProgressBar()
+                bar.setObjectName("busyBar")
+                bar.setTextVisible(False)
+                bar.setFixedHeight(6)
+                lay.addWidget(lab)
+                lay.addWidget(bar, 1)
+                self.tree.setItemWidget(ch, 0, w)
+                it.setExpanded(True)
+                have = bars[rid] = (ch, bar, lab)
+            _, bar, lab = have
+            text = tr(self.BUSY_TEXT.get(b["what"], "Working…"))
+            if b["progress"] is None:
+                bar.setRange(0, 0)                         # moving: no estimate
+                lab.setText(text)
+            else:
+                bar.setRange(0, 100)
+                bar.setValue(int(b["progress"] * 100))
+                lab.setText(f"{text} {int(b['progress'] * 100)}%")
+        self._bars = bars
+
     def add_pieces(self, rid, marker):
         """Show the pieces of the line's marker under it."""
         for it in self._order_items():
             if it.data(0, Qt.UserRole) != rid:
                 continue
-            it.takeChildren()
+            bar = getattr(self, "_bars", {}).get(rid)
+            for k in reversed(range(it.childCount())):     # the pieces again (a progress bar stays)
+                if bar is None or it.child(k) is not bar[0]:
+                    it.removeChild(it.child(k))
             if marker:
                 counts: dict[str, int] = {}
                 for p in marker["pieces"]:

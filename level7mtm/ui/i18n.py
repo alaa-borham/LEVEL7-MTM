@@ -428,6 +428,9 @@ AR = {
     "largest free piece": "أكبر بقية قماش",
     "update LEVEL7 Nesting (Help → Check for updates) to use it": "لم يُطبَّق — حدّث LEVEL7 Nesting (مساعدة ← البحث عن تحديثات) ليعمل",
     "no better arrangement for this marker": "لا يوجد ترتيب أفضل لهذا الماركر (بقي كما هو)",
+    "Writing the model…": "كتابة الموديل…",
+    "Robot in GRAFIS…": "الروبوت في GRAFIS…",
+    "Nesting…": "التعشيق…",
 }
 
 

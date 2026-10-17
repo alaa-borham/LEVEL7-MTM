@@ -133,6 +133,12 @@ def plan_values(ws, rid: int, template: str) -> dict:
 def order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = None, force: bool = False) -> dict:
     """Write the order's MDL. Returns {status: written / duplicate / blocked / not_configured / skipped, ...}.
     ``force``: write again although the same model was written before (the owner asked for it)."""
+    from .activity import working
+    with working([rid], "model"):
+        return _order_mdl(ws, rid, template, out_dir, force)
+
+
+def _order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = None, force: bool = False) -> dict:
     st = settings(ws)
     template = template or st["template"]
     out_dir = out_dir or st["out"]

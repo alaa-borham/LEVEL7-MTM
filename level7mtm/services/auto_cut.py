@@ -91,6 +91,12 @@ def _size_key(cmd, env, path, guess, log, info=None) -> str:
 def auto_cut(ws, chk, scb_path: str, force: bool = False) -> dict:
     """Nest the checked SCB and write the cutting files. Returns {status, outputs, log, ...}.
     ``force``: nest again (e.g. with a longer nesting time) although cutting files exist."""
+    from .activity import working
+    with working([ln["revision_id"] for ln in chk.lines], "nesting", settings(ws)["time"] + 15):
+        return _auto_cut(ws, chk, scb_path, force)
+
+
+def _auto_cut(ws, chk, scb_path: str, force: bool = False) -> dict:
     st = settings(ws)
     dup = ws.db.one("SELECT * FROM cutting_jobs WHERE sha256=? AND status='done'", (chk.sha256,))
     if dup and not force and all(os.path.isfile(p) for p in json.loads(dup["outputs"])):

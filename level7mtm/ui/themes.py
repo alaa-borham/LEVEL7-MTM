@@ -166,6 +166,9 @@ QToolButton#tool:checked {{ background: {_rgb(acc, 0.22)}; border-color: {_rgb(a
 QLabel#hudValue {{ font-size: 13pt; font-weight: 800; }}
 QLabel#hudValueAcc {{ font-size: 13pt; font-weight: 800; color: {_rgb(acc)}; }}
 QLabel#hudLabel {{ color: {_rgb(mut)}; font-size: 8pt; }}
+QProgressBar#busyBar {{ background: {_rgb(c['border'])}; border: none; border-radius: 3px; }}
+QProgressBar#busyBar::chunk {{ background: {_rgb(acc)}; border-radius: 3px; }}
+QLabel#busyText {{ color: {_rgb(acc)}; font-size: 8pt; font-weight: 700; }}
 QLabel#sbDotOk {{ color: {_rgb(c['ok'])}; }}
 QLabel#sbDotBad {{ color: {_rgb(c['bad'])}; }}
 

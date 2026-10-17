@@ -2696,6 +2696,13 @@ class MainWindow(QMainWindow):
             self.poll_watch()
 
     def _tick(self):
+        from ..services.activity import snapshot
+        busy = snapshot()
+        if hasattr(self, "browser"):
+            self.browser.update_busy(busy)
+            if set(getattr(self, "_was_busy", {})) - set(busy):
+                self.refresh_cad()                         # a step just finished: show where the line is now
+            self._was_busy = busy
         lab = getattr(self, "erp_clock", None)
         if lab is None:
             return

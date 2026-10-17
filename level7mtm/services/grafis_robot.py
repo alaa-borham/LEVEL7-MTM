@@ -385,6 +385,13 @@ def pending(ws) -> list[dict]:
 
 def run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) -> dict:
     """Open → Test Run All Parts → save → (close) for one model. Returns {status, message}."""
+    from .activity import working
+    rids = [r["revision_id"] for r in ws.db.q("SELECT revision_id FROM grafis_orders WHERE path=?", (job["path"],))]
+    with working(rids, "robot"):
+        return _run_one(ws, job, drv, sleep, clock)
+
+
+def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) -> dict:
     from . import errors_folder
     st = settings(ws)
     btn = st["buttons"]

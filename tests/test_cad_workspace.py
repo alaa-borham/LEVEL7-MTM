@@ -97,6 +97,13 @@ def test_window_shows_the_selected_marker(ws, tmp_path):
     assert win.sel_row["rid"] == rev["id"] and win.marker.view.marker["length"] == 300
     assert item.childCount() == 1 and item.child(0).text(1) == "2×"                 # front1 twice
     assert win.marker.hud_values["pieces"].text() == "2"
+    from level7mtm.services.activity import working                               # a step running on the line
+    with working([rev["id"]], "nesting", expected_s=100):
+        win._tick()
+        bar = win.browser._bars[rev["id"]]
+        assert bar[0].parent() is item and bar[1].maximum() == 100 and "%" in bar[2].text()
+    win._tick()
+    assert rev["id"] not in win.browser._bars and item.childCount() == 1           # gone when it is done
     win.resize(700, 600)                                                           # narrow window: icons only
     app.processEvents()
     assert win.ribbon.compact and all(b.toolButtonStyle() == Qt.ToolButtonIconOnly for b in win.ribbon.buttons.values())
