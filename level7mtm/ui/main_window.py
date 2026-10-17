@@ -2181,8 +2181,9 @@ class CustomersPage(Page):
     def edit_patterns(self):
         """The customer's patterns (body shapes): the Variation name in the XML that chooses it and its GRAFIS
         model. The size table, piece options and fixed pieces stay the customer's."""
-        from ..services.customers import get, patterns, set_patterns
+        from ..services.customers import get, patterns, set_patterns, variations_seen
         cid = self._cid() or self.ws.customer()
+        seen = variations_seen(self.ws, cid)
         c = get(self.ws, cid)
         d = QDialog(self)
         d.setWindowTitle(f"{tr('Patterns…')} — {c['name']}")
@@ -2190,7 +2191,9 @@ class CustomersPage(Page):
         lay = QVBoxLayout(d)
         note = QLabel(tr("Each pattern: the Variation in the XML that chooses it (e.g. Athlete1, Slim2) and its "
                          "GRAFIS model. An order without one of these Variations goes to ER. No patterns: the "
-                         "customer's GRAFIS model is used for every order."))
+                         "customer's GRAFIS model is used for every order.") + "\n" +
+                      (tr("Variations in this customer's XML files") + ": " + ", ".join(seen) if seen else
+                       tr("No XML of this customer imported yet")))
         note.setWordWrap(True)
         lay.addWidget(note)
         t = QTableWidget(0, 2)
@@ -2202,7 +2205,11 @@ class CustomersPage(Page):
         def add_row(v="", m=""):
             r = t.rowCount()
             t.insertRow(r)
-            t.setItem(r, 0, QTableWidgetItem(v))
+            cb = QComboBox()                          # the names that came in this customer's XML files
+            cb.setEditable(True)
+            cb.addItems(seen)
+            cb.setCurrentText(v)
+            t.setCellWidget(r, 0, cb)
             t.setItem(r, 1, QTableWidgetItem(m))
         for p in patterns(self.ws, cid):
             add_row(p["variation"], p["mdl"])
@@ -2233,7 +2240,7 @@ class CustomersPage(Page):
         bb.rejected.connect(d.reject)
         lay.addWidget(bb)
         while d.exec() == QDialog.Accepted:
-            rows = [{"variation": (t.item(r, 0).text() if t.item(r, 0) else ""),
+            rows = [{"variation": (t.cellWidget(r, 0).currentText() if t.cellWidget(r, 0) else ""),
                      "mdl": (t.item(r, 1).text() if t.item(r, 1) else "")} for r in range(t.rowCount())]
             try:
                 set_patterns(self.ws, rows, cid)

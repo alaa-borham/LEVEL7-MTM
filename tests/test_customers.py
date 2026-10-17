@@ -97,7 +97,14 @@ def test_pattern_chosen_by_the_variation_of_the_order(ws, xml53, tmp_path):
     assert pattern_for(ws, rid) == (str(tmp_path / "athlete.mdl"), "")    # chosen by the order's Variation
     set_patterns(ws, [{"variation": "Slim2", "mdl": str(tmp_path / "slim.mdl")}])
     mdl, why = pattern_for(ws, rid)
-    assert mdl is None and "no pattern" in why and "Slim2" in why
+    assert mdl is None and "no pattern" in why and "Slim2" in why and "the order has: " in why and "Athlete1" in why
+    set_patterns(ws, [{"variation": "athlete_1", "mdl": str(tmp_path / "a.mdl")}])      # spaces / _ / case
+    assert pattern_for(ws, rid)[0] == str(tmp_path / "a.mdl")                            # = "Athlete1"
+    from level7mtm.services.customers import variations_seen
+    assert "Athlete1" in variations_seen(ws)
+    set_patterns(ws, [{"variation": "New Shape", "mdl": str(tmp_path / "n.mdl")}])     # read by the import
+    assert "New Shape" in ws.active("mapping")[1]["options"]["map"]
+    set_patterns(ws, [{"variation": "Slim2", "mdl": str(tmp_path / "slim.mdl")}])
     from level7mtm.services.grafis_orders import order_mdl
     r = order_mdl(ws, rid)
     assert r["status"] == "blocked" and "no pattern" in r["problems"][0]   # held, with the reason

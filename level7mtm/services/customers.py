@@ -167,6 +167,18 @@ def set_patterns(ws, rows: list[dict], cid: str | None = None) -> None:
         clean.append({"variation": v, "mdl": m})
     with ws.for_customer(cid or ws.customer()):
         ws.db.set_setting(ws._key("grafis.patterns"), clean)
+        _, prof = ws.active("mapping")
+        omap = prof.get("options", {}).get("map", {})
+        known = {_plain(k) for k in omap}
+        new = [p["variation"] for p in clean if _plain(p["variation"]) not in known]
+        if new:                                        # read by the import as the order's pattern
+            from .xtable import _next_version
+            prof = copy.deepcopy(prof)
+            for v in new:
+                prof["options"]["map"][v] = {"group": "pattern", "value": ID_RE.sub("_", v.lower()).strip("_"),
+                                             "label": {"ar": f"بترون {v}", "en": f"Pattern {v}"}}
+            prof["version"] = _next_version(ws, "mapping", prof["profile_id"], prof["version"])
+            ws.set_active("mapping", ws.save_document("mapping", prof, "pattern Variations"))
         with ws.db.tx() as c:
             ws.db.audit(c, ws.actor, "customer.patterns", "customer", ws.customer(), {"patterns": clean})
 
@@ -180,13 +192,32 @@ def pattern_for(ws, rid: int) -> tuple[str | None, str]:
     if not pats:
         with ws.for_customer(cid):
             return ws.grafis_mdl(), ""
-    codes = {str(c).strip().lower() for c in rev["raw_line"].get("option_codes") or []}
-    hit = [p for p in pats if p["variation"].lower() in codes]
+    have = [str(c) for c in rev["raw_line"].get("option_codes") or []]
+    codes = {_plain(c) for c in have}
+    hit = [p for p in pats if _plain(p["variation"]) in codes]
     if len(hit) == 1:
         return hit[0]["mdl"], ""
     if len(hit) > 1:
         return None, (f"the order has several pattern Variations ({', '.join(p['variation'] for p in hit)}) — "
                       f"only one may choose the pattern")
     return None, (f"no pattern for this order: none of its Variations is a pattern of the customer "
-                  f"({', '.join(p['variation'] for p in pats)})")
+                  f"({', '.join(p['variation'] for p in pats)}) — the order has: {', '.join(have) or '—'}")
+
+
+def _plain(name: str) -> str:
+    """Variation names compared without case, spaces, "_" or "-" ("Richy Big" = "richy_big")."""
+    return re.sub(r"[\s_\-]+", "", str(name)).lower()
+
+
+def variations_seen(ws, cid: str | None = None) -> list[str]:
+    """Every Variation name that came in the XML of the customer's orders (for choosing a pattern's name)."""
+    import json
+    cid = cid or ws.customer()
+    seen: dict[str, str] = {}
+    for r in ws.db.q("SELECT raw_line, normalized FROM revisions ORDER BY id DESC LIMIT 2000"):
+        if (json.loads(r["normalized"]).get("customer") or DEFAULT_CUSTOMER) != cid:
+            continue
+        for c in json.loads(r["raw_line"]).get("option_codes") or []:
+            seen.setdefault(_plain(c), str(c))
+    return sorted(seen.values(), key=str.lower)
 
