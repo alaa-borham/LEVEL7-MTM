@@ -478,3 +478,19 @@ def test_language_switch_keeps_folder_state_and_menus(ws):
     if state is not None:
         assert g2.mdl_watcher.state is state                       # files already handled stay handled
     assert len(win.menuBar().findChildren(QMenu)) <= menus         # the old menus are gone
+
+
+def test_pieces_button_is_a_drop_down_of_both_pages(ws):
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    win = MainWindow(ws)
+    win.show()
+    app.processEvents()
+    b = win.ribbon.buttons["options"]
+    acts = b.menu().actions()
+    assert len(acts) == 2 and "parts" not in win.ribbon.buttons
+    acts[1].trigger()                                             # Fixed pieces
+    assert win.current_page().title == "GRAFIS parts"

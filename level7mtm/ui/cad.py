@@ -1129,7 +1129,15 @@ class Ribbon(QFrame):
                 b.setText(text)
                 b.setToolTip(text)
                 b.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)   # never squeezed (no overlapping)
-                b.clicked.connect(fn)
+                if isinstance(fn, (list, tuple)):            # several pages under one button: a drop-down list
+                    from PySide6.QtWidgets import QMenu
+                    m = QMenu(b)
+                    for sub_text, sub_fn in fn:
+                        m.addAction(sub_text, sub_fn)
+                    b.setMenu(m)
+                    b.setPopupMode(QToolButton.InstantPopup)
+                else:
+                    b.clicked.connect(fn)
                 self.buttons[key] = b
                 row.addWidget(b)
             gl.addLayout(row, 1)
