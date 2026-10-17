@@ -327,3 +327,29 @@ def test_pan_tool_moves_the_whole_marker_view(tmp_path):
     QTest.mouseRelease(vp, Qt.LeftButton, Qt.NoModifier, QPoint(300, 250))
     after = v.mapToScene(v.viewport().rect().center())
     assert after.x() > before.x() and after.y() > before.y()
+
+
+def test_select_tool_picks_a_piece(tmp_path):
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from level7mtm.ui.cad import MarkerPanel, load_marker
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    p = tmp_path / "m.l7n"
+    _l7n(p)
+    panel = MarkerPanel()
+    panel.resize(900, 600)
+    panel.show()
+    panel.set_marker(load_marker(str(p)))
+    app.processEvents()
+    v = panel.view
+    pc = v.marker["pieces"][0]
+    xs, ys = [x for x, _ in pc["cut"]], [y for _, y in pc["cut"]]
+    at = v.mapFromScene((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
+    QTest.mouseClick(v.viewport(), Qt.LeftButton, Qt.NoModifier, at)
+    v.viewport().repaint()
+    assert v.selected is not None and v.box.isVisible() and "cm" in v.box.extra.text()
+    QTest.mouseClick(v.viewport(), Qt.LeftButton, Qt.NoModifier, v.mapFromScene(-120, -120))   # off the pieces
+    assert v.selected is None and not v.box.isVisible()

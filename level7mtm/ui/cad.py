@@ -355,6 +355,8 @@ class MarkerView(QGraphicsView):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._content = QRectF(-100, -100, 3000, 1700)             # what "whole marker" shows
         self.marker: dict | None = None
+        self.selected: int | None = None
+        self._items: list = []
         self.message = ""
         self._cursor: QPointF | None = None
         self._pan = None
@@ -378,6 +380,8 @@ class MarkerView(QGraphicsView):
         self.marker, self.message = marker, message
         self.meas = {}
         self.parts = []
+        self._items = []                                 # the piece outlines, in the order of marker["pieces"]
+        self.selected: int | None = None
         if hasattr(self, "box"):
             self.box.hide()
         if not marker:
@@ -409,6 +413,7 @@ class MarkerView(QGraphicsView):
                 path.addPolygon(QPolygonF([QPointF(x, y) for x, y in h]))
                 path.closeSubpath()
             item = sc.addPath(path, pen, QBrush(fill))
+            self._items.append(item)
             item.setToolTip(p["name"] + (" (M)" if p["mirrored"] else ""))
             if len(p["grain"]) >= 2:
                 (x1, y1), (x2, y2) = p["grain"][0], p["grain"][-1]
@@ -471,6 +476,8 @@ class MarkerView(QGraphicsView):
         self.zoom(1.18 if e.angleDelta().y() > 0 else 1 / 1.18)
 
     def set_tool(self, tool: str | None):
+        if getattr(self, "selected", None) is not None:
+            self.select_piece(None)
         self.tool = tool
         self.meas = {}
         if tool is None:
@@ -521,6 +528,45 @@ class MarkerView(QGraphicsView):
 
     def _snap(self, p):
         return self.snap(p)[0]
+
+    def select_at(self, p):
+        """Select tool: the piece under p (scene mm) is highlighted and its name and size shown; elsewhere the
+        selection goes."""
+        hit = None
+        for i, item in enumerate(getattr(self, "_items", [])):
+            if item.path().contains(QPointF(*p)):
+                hit = i
+        self.select_piece(hit)
+
+    def select_piece(self, i: int | None):
+        c = themes.colours()
+        if self.selected is not None and self.selected < len(self._items):
+            it = self._items[self.selected]
+            it.setPen(self._piece_pen)
+            it.setBrush(self._piece_brush)
+        self.selected = i
+        if i is None:
+            self.box.hide()
+            self.measured.emit("")
+            return
+        it = self._items[i]
+        self._piece_pen, self._piece_brush = it.pen(), it.brush()
+        pen = QPen(c["warn"], 0)
+        pen.setCosmetic(True)
+        pen.setWidthF(2.4)
+        fill = QColor(c["warn"])
+        fill.setAlpha(60)
+        it.setPen(pen)
+        it.setBrush(QBrush(fill))
+        pc = self.marker["pieces"][i]
+        xs, ys = [x for x, _ in pc["cut"]], [y for _, y in pc["cut"]]
+        pts = pc["cut"]
+        area = abs(sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(pts, pts[1:] + pts[:1]))) / 2 / 1e6
+        self.box.moved = False
+        self.box.show_value(pc["name"] + (" (M)" if pc.get("mirrored") else ""),
+                            f"{(max(xs) - min(xs)) / 10:.1f} × {(max(ys) - min(ys)) / 10:.1f} cm · {area:.3f} m²",
+                            self.mapFromScene(QPointF((min(xs) + max(xs)) / 2, min(ys))))
+        self.measured.emit(pc["name"])
 
     def set_adding(self, on: bool):
         """Add up several measurements (lines and curves, also on different pieces): each one finished is kept
@@ -659,6 +705,9 @@ class MarkerView(QGraphicsView):
                 self.zooming = True
                 self._cursor_shape()
             return
+        if e.key() == Qt.Key_Escape and self.selected is not None:
+            self.select_piece(None)
+            return
         if e.key() == Qt.Key_Escape and self.tool:
             if self.meas:                                     # the one being measured, then the parts added up
                 self.meas = {}
@@ -682,6 +731,10 @@ class MarkerView(QGraphicsView):
         if e.button() == Qt.LeftButton and self.tool:
             p = self.mapToScene(e.position().toPoint())
             self.measure_click((p.x(), p.y()))
+            return
+        if e.button() == Qt.LeftButton and self.marker and self.dragMode() == QGraphicsView.NoDrag:
+            p = self.mapToScene(e.position().toPoint())       # select tool: the piece clicked
+            self.select_at((p.x(), p.y()))
             return
         super().mousePressEvent(e)
 
@@ -743,7 +796,7 @@ class MarkerView(QGraphicsView):
 
     def _draw_measure(self, p: QPainter, c):
         m = self.meas
-        if not self.marker or (not m.get("text") and not self.parts):
+        if not self.marker or (not m.get("text") and not self.parts and self.selected is None):
             self.box.hide()
         if not self.marker or (not m and not self.parts):
             return

@@ -439,6 +439,8 @@ class OrderPage(Page):
             b = QPushButton(tr(text))
             b.clicked.connect(fn)
             bar.addWidget(b)
+            if text == "Calculate":
+                self.b_calc = b
         bar.addStretch()
         lay.addLayout(bar)
 
@@ -447,6 +449,10 @@ class OrderPage(Page):
         if rid is None:
             return
         r = self.ws.revision(rid)
+        done = r["status"] in ("cancelled", "superseded", "approved", "sent_to_nesting", "completed")
+        self.b_calc.setEnabled(not done)                 # a finished order is not calculated again
+        self.b_calc.setToolTip(tr("This order is {s}: its pattern is not calculated again").format(s=tr(r["status"]))
+                               if done else "")
         raw = r["raw_line"]
         self.head.setText(f"<b>{r['line_number']}</b> — {tr('Status')}: {tr(r['status'])} — {tr('Quantity')}: "
                           f"{r['quantity']} — Fabric {raw.get('fabric_number')} / {raw.get('fabric_width_mm')} mm — "
