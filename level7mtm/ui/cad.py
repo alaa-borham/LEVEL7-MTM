@@ -379,7 +379,7 @@ class MarkerView(QGraphicsView):
                     p.save()
                     p.translate(11, vy - 3)
                     p.rotate(-90)
-                    p.drawText(QPointF(0, 0), f"{y:g}")
+                    p.drawText(QPointF(0, 0), ltr(f"{y:g}"))
                     p.restore()
             y += step
         p.fillRect(0, 0, R, R, c["sidebar"])
@@ -445,13 +445,25 @@ def panel_head(title: str) -> tuple[QFrame, QLabel]:
 
 
 class Ribbon(QFrame):
-    """Tool groups in the order of the work: order → model → nesting → output → system."""
+    """Tool groups in the order of the work: order → model → nesting → output → system. Never squeezes its
+    buttons: with less room the labels go (icons only, label in the tooltip), with still less it scrolls."""
 
     def __init__(self, groups):
         super().__init__()
         self.setObjectName("ribbon")
         self.setFixedHeight(84)
-        lay = QHBoxLayout(self)
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.scroll = QScrollArea()
+        self.scroll.setFrameShape(QFrame.NoFrame)
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }")
+        outer.addWidget(self.scroll)
+        inner = QWidget()
+        self.scroll.setWidget(inner)
+        lay = QHBoxLayout(inner)
         lay.setContentsMargins(6, 4, 6, 2)
         lay.setSpacing(0)
         self.buttons: dict[str, QToolButton] = {}
@@ -465,7 +477,9 @@ class Ribbon(QFrame):
         mark.setFixedSize(38, 38)
         mark.setAlignment(Qt.AlignCenter)
         bl.addWidget(mark)
-        col = QVBoxLayout()
+        self.brand_text = QWidget()
+        col = QVBoxLayout(self.brand_text)
+        col.setContentsMargins(0, 0, 0, 0)
         col.setSpacing(0)
         name = QLabel("LEVEL7")
         name.setObjectName("brand")
@@ -475,7 +489,7 @@ class Ribbon(QFrame):
         col.addWidget(name)
         col.addWidget(sub)
         col.addStretch()
-        bl.addLayout(col)
+        bl.addWidget(self.brand_text)
         lay.addWidget(brand)
         for title, items in groups:
             g = QFrame()
@@ -492,7 +506,8 @@ class Ribbon(QFrame):
                 b.setIcon(icon(ic, acc if i == 0 else None))
                 b.setIconSize(QSize(24, 24))
                 b.setText(text)
-                b.setMinimumWidth(62)
+                b.setToolTip(text)
+                b.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)   # never squeezed (no overlapping)
                 b.clicked.connect(fn)
                 self.buttons[key] = b
                 row.addWidget(b)
@@ -503,6 +518,22 @@ class Ribbon(QFrame):
             gl.addWidget(t)
             lay.addWidget(g)
         lay.addStretch()
+        self.inner = inner
+        self.compact = False
+        self.full_width = inner.sizeHint().width()
+
+    def set_compact(self, on: bool):
+        if on == self.compact:
+            return
+        self.compact = on
+        for b in self.buttons.values():
+            b.setToolButtonStyle(Qt.ToolButtonIconOnly if on else Qt.ToolButtonTextUnderIcon)
+            b.setMinimumWidth(36 if on else 0)
+        self.brand_text.setVisible(not on)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self.set_compact(self.width() < self.full_width)
 
 
 class OrderBrowser(QWidget):

@@ -65,6 +65,7 @@ def test_window_shows_the_selected_marker(ws, tmp_path):
     import os
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from PySide6.QtCore import Qt
     from level7mtm.storage.db import now
     from level7mtm.ui.main_window import MainWindow
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
@@ -87,6 +88,12 @@ def test_window_shows_the_selected_marker(ws, tmp_path):
     assert win.sel_row["rid"] == rev["id"] and win.marker.view.marker["length"] == 300
     assert item.childCount() == 1 and item.child(0).text(1) == "2×"                 # front1 twice
     assert win.marker.hud_values["pieces"].text() == "2"
+    win.resize(700, 600)                                                           # narrow window: icons only
+    app.processEvents()
+    assert win.ribbon.compact and all(b.toolButtonStyle() == Qt.ToolButtonIconOnly for b in win.ribbon.buttons.values())
+    win.resize(1900, 900)
+    app.processEvents()
+    assert not win.ribbon.compact or win.ribbon.width() < win.ribbon.full_width
     win.goto("GRAFIS markers")
     assert win.current_page() is win.pages["GRAFIS markers"]
     win.tabs.setCurrentIndex(0)
