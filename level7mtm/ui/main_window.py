@@ -2877,8 +2877,6 @@ class MainWindow(QMainWindow):
                 msg += "\n\n⚠ " + tr("Folder watch is off: the robot and the saved GRAFIS files wait. "
                                         "Click «Folder watch» in the status bar to switch it on.")
         self.marker.set_marker(marker, row, msg)
-        if row is not None:
-            self.browser.add_pieces(row["rid"], marker)
 
     def _need_row(self):
         if self.sel_row is None:

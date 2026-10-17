@@ -1168,28 +1168,6 @@ class OrderBrowser(QWidget):
                 lab.setText(f"{text} {int(b['progress'] * 100)}%")
         self._bars = bars
 
-    def add_pieces(self, rid, marker):
-        """Show the pieces of the line's marker under it."""
-        for it in self._order_items():
-            if it.data(0, Qt.UserRole) != rid:
-                continue
-            bar = getattr(self, "_bars", {}).get(rid)
-            for k in reversed(range(it.childCount())):     # the pieces again (a progress bar stays)
-                if bar is None or it.child(k) is not bar[0]:
-                    it.removeChild(it.child(k))
-            if marker:
-                counts: dict[str, int] = {}
-                for p in marker["pieces"]:
-                    counts[p["name"]] = counts.get(p["name"], 0) + 1
-                pm = QPixmap(12, 9)
-                pm.fill(themes.colour("piece"))
-                for name, n in counts.items():
-                    ch = QTreeWidgetItem([name, f"{n}×"])
-                    ch.setIcon(0, QIcon(pm))
-                    ch.setForeground(1, themes.colour("muted"))
-                    it.addChild(ch)
-                it.setExpanded(True)
-
     def _filter(self, text):
         t = text.strip().lower()
         for it in self._order_items():
