@@ -2623,7 +2623,6 @@ class MainWindow(QMainWindow):
         self.tabs.setMovable(True)
         self.tabs.tabCloseRequested.connect(self._close_tab)
         self.marker = cad.MarkerPanel()
-        self.marker.view.cursor_moved.connect(lambda x, y: self.sb_xy.setText(cad.ltr(f"X {x:7.1f}   Y {y:7.1f} mm")))
         self.marker.view.zoom_changed.connect(lambda k: self.sb_zoom.setText(cad.ltr(f"1:{3.78 / k:.0f}" if k else "—")))
         self.tabs.addTab(self.marker, cad.icon("marker", themes.colour("accent"), 16), tr("Marker"))
         self.tabs.tabBar().setTabButton(0, QTabBar.ButtonPosition.RightSide, None)
@@ -2793,10 +2792,8 @@ class MainWindow(QMainWindow):
             self.sb_items[key] = w
             sb.addPermanentWidget(w)
             self._sb_widgets.append(w)
-        from .cad import ltr
-        self.sb_xy = QLabel(ltr("X —   Y — mm"))
         self.sb_zoom = QLabel("—")
-        for w in (self.sb_xy, self.sb_zoom):
+        for w in (self.sb_zoom,):
             w.setStyleSheet("font-family: Consolas, 'DejaVu Sans Mono', monospace;")
             sb.addPermanentWidget(w)
             self._sb_widgets.append(w)
