@@ -351,6 +351,9 @@ class MarkerView(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self.setMouseTracking(True)
         self.setFrameShape(QFrame.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)   # moved with the pan tool / middle button
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._content = QRectF(-100, -100, 3000, 1700)             # what "whole marker" shows
         self.marker: dict | None = None
         self.message = ""
         self._cursor: QPointF | None = None
@@ -378,7 +381,7 @@ class MarkerView(QGraphicsView):
         if hasattr(self, "box"):
             self.box.hide()
         if not marker:
-            sc.setSceneRect(QRectF(-100, -100, 3000, 1700))
+            self._set_content(QRectF(-100, -100, 3000, 1700))
             self.resetTransform()
             self.fit()
             return
@@ -435,11 +438,18 @@ class MarkerView(QGraphicsView):
         lab.setFlag(QGraphicsSimpleTextItem.ItemIgnoresTransformations)
         lab.setPos(length / 2, y + 8)
         sc.addItem(lab)
-        sc.setSceneRect(QRectF(-150, -150, length + 300, w + 400))
+        self._set_content(QRectF(-150, -150, length + 300, w + 400))
         self.fit()
 
+    def _set_content(self, r: QRectF):
+        """The marker and a margin; the scene is much larger so the view can be moved past the edges (also
+        when the whole marker is shown)."""
+        self._content = r
+        m = max(r.width(), r.height())
+        self.scene().setSceneRect(r.adjusted(-m, -m, m, m))
+
     def fit(self):
-        r = self.scene().sceneRect()
+        r = self._content
         if r.width() > 0:
             self.fitInView(r, Qt.KeepAspectRatio)
             self.zoom_changed.emit(self.transform().m11())

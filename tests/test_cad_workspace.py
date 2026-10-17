@@ -301,3 +301,29 @@ def test_measurements_added_together(tmp_path):
     assert abs(v.total() - 100) < 1e-6
     panel.tool_buttons["sum"].setChecked(False)
     assert not v.adding and v.parts == []
+
+
+def test_pan_tool_moves_the_whole_marker_view(tmp_path):
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+    from level7mtm.ui.cad import MarkerPanel, load_marker
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    p = tmp_path / "m.l7n"
+    _l7n(p)
+    panel = MarkerPanel()
+    panel.resize(900, 600)
+    panel.show()
+    panel.set_marker(load_marker(str(p)))
+    app.processEvents()
+    v = panel.view
+    panel.use_tool("pan")                                            # whole marker shown: it still moves
+    before = v.mapToScene(v.viewport().rect().center())
+    vp = v.viewport()
+    QTest.mousePress(vp, Qt.LeftButton, Qt.NoModifier, QPoint(400, 300))
+    QTest.mouseMove(vp, QPoint(300, 250))
+    QTest.mouseRelease(vp, Qt.LeftButton, Qt.NoModifier, QPoint(300, 250))
+    after = v.mapToScene(v.viewport().rect().center())
+    assert after.x() > before.x() and after.y() > before.y()
