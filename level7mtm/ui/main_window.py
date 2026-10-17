@@ -63,6 +63,19 @@ class Worker(QRunnable):
             self.signals.failed.emit(f"{e}\n\n{traceback.format_exc()}")
 
 
+def remnant_note(r: dict) -> str:
+    """What "small pieces together" did, for the message after nesting."""
+    rm = r.get("remnant")
+    if not rm:
+        return ""
+    if rm.get("done"):
+        return (f"\n\n{tr('Small pieces together')}: {tr('largest free piece')} {rm.get('before_m2', 0):.2f} → "
+                f"{rm.get('after_m2', 0):.2f} m²")
+    if rm.get("why") == "old LEVEL7 Nesting":
+        return f"\n\n{tr('Small pieces together')}: {tr('update LEVEL7 Nesting (Help → Check for updates) to use it')}"
+    return f"\n\n{tr('Small pieces together')}: {tr('no better arrangement for this marker')}"
+
+
 def seconds_box() -> QSpinBox:
     """Seconds between checks: left-to-right so the number is always visible, wide enough for 86400."""
     b = QSpinBox()
@@ -1371,10 +1384,10 @@ class GrafisPage(Page):
             if not chk.ok or not chk.lines:
                 return {"status": "failed", "message": "; ".join(m for s_, m in chk.issues if s_ != "info")}
             return auto_cut(self.ws, chk, p, force=True)
-        self.win.run(work, lambda r: (self.refresh(), self.win.refresh_cad(), QMessageBox.information(
+        self.win.run(work, lambda r: (self.refresh(), self.win.refresh_cad(force=True), QMessageBox.information(
             self, "LEVEL7 Nesting", f"{tr(r['status'])}: "
             + (f"L {r['length_mm'] / 1000:.2f} m, E {r['efficiency_pct']:.1f} %" if r.get("length_mm") and
-               r.get("efficiency_pct") else r.get("message", "")))))
+               r.get("efficiency_pct") else r.get("message", "")) + remnant_note(r))))
 
     def show_marker(self, path=None):
         """Open the marker of the selected row (or ``path``) in LEVEL7 Nesting (the .l7n saved next to the PLT /

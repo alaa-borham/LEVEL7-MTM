@@ -121,11 +121,18 @@ def auto_cut(ws, chk, scb_path: str, force: bool = False) -> dict:
             nest += ["--remnant"]                       # small pieces together: one large piece of fabric left
         else:
             log.append("LEVEL7 Nesting too old for --remnant (update it): marker as nested")
+            result["remnant"] = {"done": False, "why": "old LEVEL7 Nesting"}
     rc = _run(nest, env, log)
     out_text = "\n".join(log)
     m = re.search(r'"length_mm":\s*([\d.]+)', out_text)
     e = re.search(r'"efficiency_total_width_pct":\s*([\d.]+)', out_text)
     placed = re.search(r'"placed":\s*(\d+)', out_text)
+    rm = re.search(r"^remnant:\s*(\{.*\})\s*$", out_text, re.M)
+    if rm:
+        try:
+            result["remnant"] = json.loads(rm.group(1))
+        except ValueError:
+            pass
     result.update({"width_mm": width, "garments": qty, "length_mm": float(m.group(1)) if m else None,
                    "efficiency_pct": float(e.group(1)) if e else None,
                    "placed": int(placed.group(1)) if placed else None, "l7n": stem + ".l7n"})

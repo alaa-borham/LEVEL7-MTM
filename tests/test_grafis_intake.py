@@ -119,6 +119,7 @@ def test_fully_automatic_chain_to_plt_and_iso(ws, tmp_path, monkeypatch):
     assert sorted(os.path.basename(p) for p in cut["outputs"]) == ["Order-9-53-1_2.iso", "Order-9-53-1_2.plt"]
     assert open(cut["outputs"][0], "rb").read(2) in (b"IN", b"H\r", b"H\n") or os.path.getsize(cut["outputs"][0]) > 1000
     assert all(ws.revision(r["id"])["status"] == "completed" for r in ws.list_revisions())
+    assert "remnant" in cut and "done" in cut["remnant"]                     # "small pieces together" was run
     again = register_scb(ws, str(scb), nesting_dir=str(tmp_path / "nest"))
     assert again["status"] == "duplicate"                                               # no second cut job
 

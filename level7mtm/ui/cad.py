@@ -182,7 +182,7 @@ def order_rows(ws, limit: int = 300) -> list[dict]:
             if cj:
                 ci = json.loads(cj["info"])
                 row.update(l7n=ci.get("l7n"), length_mm=ci.get("length_mm"), efficiency_pct=ci.get("efficiency_pct"),
-                           placed=ci.get("placed"))
+                           placed=ci.get("placed"), job=cj["id"])          # a new nesting: the canvas reloads
                 if cj["status"] == "done":
                     row["stage"] = "cut"
                     row["outputs"] = json.loads(cj["outputs"])

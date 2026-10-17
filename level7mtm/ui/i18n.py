@@ -424,6 +424,10 @@ AR = {
     "After nesting, LEVEL7 Nesting packs the small pieces next to each other so the fabric left over is one large piece; the marker length does not change": "بعد التعشيق يجمع LEVEL7 Nesting القطع الصغيرة بجانب بعضها لتبقى بقية القماش قطعة واحدة كبيرة؛ طول الماركر لا يتغير",
     "Not one curve": "ليست منحنى واحدًا",
     "Pick two points on the same curve (between two corners)": "اختر نقطتين على نفس المنحنى (بين زاويتين) — وللمسافة المستقيمة استخدم «قياس الأطوال»",
+    "Small pieces together": "تجميع القطع الصغيرة",
+    "largest free piece": "أكبر بقية قماش",
+    "update LEVEL7 Nesting (Help → Check for updates) to use it": "لم يُطبَّق — حدّث LEVEL7 Nesting (مساعدة ← البحث عن تحديثات) ليعمل",
+    "no better arrangement for this marker": "لا يوجد ترتيب أفضل لهذا الماركر (بقي كما هو)",
 }
 
 
