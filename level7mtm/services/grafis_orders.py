@@ -39,6 +39,9 @@ def settings(ws) -> dict:
 def mdl_name(ws, rev) -> str:
     f = ws.db.one("SELECT file_name FROM import_files WHERE id=?", (rev["import_file"],))
     stem = os.path.splitext(f["file_name"])[0] if f else f"Order-{rev['line_number']}"
+    # no spaces: "Order-9-50-1_0 - .xml" gave "Order-9-50-1_0 - __9-50-1_0.mdl", which GRAFIS did not show
+    # under that name, so the robot waited in vain
+    stem = re.sub(r"\s+", "_", stem.strip(" -_.\t")) or f"Order-{rev['line_number']}"
     n = ws.db.one("SELECT count(*) AS n FROM revisions WHERE import_file=?", (rev["import_file"],))["n"]
     if n > 1 or not re.search(re.escape(rev["line_number"]) + r"$", stem):
         stem = f"{stem}__{rev['line_number']}"        # several lines in one XML: one model per line

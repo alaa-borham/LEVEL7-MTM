@@ -228,3 +228,16 @@ def test_x_value_table_editor(ws, tmp_path):
     assert read_xvalues(g["path"], 2)[8].default == 385
     with pytest.raises(ValueError, match="valid XML code"):
         save_x_table(ws, MDL, 2, [{"x": 8, "codes": ["9bad"], "formula": "{M}", "confirmed": True}])
+
+
+def test_order_model_names_have_no_spaces(ws, tmp_path):
+    """'Order-9-50-1_0 - .xml' (as received) must give a model name GRAFIS shows unchanged: no spaces."""
+    import shutil
+    from conftest import XML_53
+    from level7mtm.services.grafis_orders import mdl_name
+    odd = tmp_path / "Order-9-53-1_2 - .xml"
+    shutil.copy(XML_53, odd)
+    ws.import_file(str(odd))
+    names = sorted(mdl_name(ws, ws.revision(r["id"])) for r in ws.list_revisions())
+    assert names == ["Order-9-53-1_2__9-53-1_2.mdl", "Order-9-53-1_2__9-53-2_2.mdl"]
+    assert not any(" " in n for n in names)

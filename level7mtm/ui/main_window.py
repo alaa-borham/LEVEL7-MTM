@@ -2680,6 +2680,9 @@ class MainWindow(QMainWindow):
         r = self._need_row()
         if r is None or not r.get("mdl"):
             return
+        if " " in os.path.basename(r["mdl"]):          # written before names lost their spaces: write it anew
+            self.write_model(True)
+            return
         with self.ws.db.tx() as c:
             c.execute("DELETE FROM robot_jobs WHERE path=? AND status<>'done'", (r["mdl"],))
             self.ws.db.audit(c, self.ws.actor, "robot.retry", "file", os.path.basename(r["mdl"]))
