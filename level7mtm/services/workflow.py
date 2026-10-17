@@ -194,7 +194,6 @@ class Workspace:
         from .customers import customer_for_xml
         cid, why = customer_for_xml(self, data)
         if cid is None:                    # the XML names a customer that has no settings
-            res = None
             status, msg = "failed", why
             with self.db.tx() as c:
                 if dup:

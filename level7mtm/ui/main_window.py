@@ -11,7 +11,7 @@ import traceback
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFrame,
-                               QGridLayout, QListWidgetItem, QSizePolicy, QToolButton,
+                               QGridLayout, QSizePolicy,
                                QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
                                QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QSplitter,
                                QStackedWidget, QTabBar, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
 from .. import ENGINE_VERSION, __version__
 from ..services.watcher import FolderWatcher
 from ..services.workflow import WorkflowError, Workspace
-from .i18n import label, language, set_language, tr, tr_msg
+from .i18n import label, set_language, tr, tr_msg
 from .pattern_view import PatternView
 
 STATUS_COLORS = {"needs_review": "#fde68a", "validation_failed": "#fecaca", "ready_for_review": "#bfdbfe",

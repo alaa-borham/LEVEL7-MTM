@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import zipfile
 
 from PySide6.QtCore import QByteArray, QPointF, QRectF, QSize, Qt, QTimer, Signal
