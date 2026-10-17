@@ -63,12 +63,23 @@ def _next_version(ws, kind, key, ver: str) -> str:
 def save_x_table(ws, mdl_path: str, part: int, rows: list[dict], note: str = "X values edited") -> dict:
     """``rows``: [{x, codes: [..], formula, confirmed}] for the part. Returns {catalog_version, mapping_version,
     new_codes}. Raises ValueError for an invalid code or formula."""
+    return save_x_tables(ws, mdl_path, {part: rows}, note)
+
+
+def save_x_tables(ws, mdl_path: str, parts: dict[int, list[dict]], note: str = "X values edited") -> dict:
+    """Several parts at once (the main parts side by side): one new rules version for all of them."""
     _, cat = ws.active("catalog")
     cat = copy.deepcopy(cat)
     st = _style(cat)
+    new_codes: list[str] = []
+    for part, rows in sorted(parts.items()):
+        _apply_part(cat, st, mdl_path, part, rows, new_codes)
+    return _save_tables(ws, cat, st, new_codes, note)
+
+
+def _apply_part(cat, st, mdl_path, part, rows, new_codes):
     piece = f"{part:03d}"
     table = read_xvalues(mdl_path, part)
-    new_codes = []
     for row in rows:
         for c in row["codes"]:
             if not CODE_RE.fullmatch(c):
@@ -97,6 +108,9 @@ def save_x_table(ws, mdl_path: str, part: int, rows: list[dict], note: str = "X 
                       "note": (prev or {}).get("note") or f"X value table: {c} → {piece}/{var} '{name}'"})
             added.append(r)
     st["rules"] = kept + added
+
+
+def _save_tables(ws, cat, st, new_codes, note) -> dict:
     for c in new_codes:
         cat["measurements"][c] = {"name": {"ar": c, "en": c}, "unit": "mm", "kind": "other",
                                   "method": {"ar": "", "en": "XML code added in the X value table"},

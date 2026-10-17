@@ -1713,7 +1713,7 @@ class OptionsPage(Page):
     """Design option groups (collar, sleeve …), their values and the Variation name(s) in the XML that select them."""
     title = "Design options"
     GCOLS = ["Group code", "Name (ar)", "Name (en)", "Required", "Default value"]
-    VCOLS = ["Value code", "Name (ar)", "Name (en)", "Name in the XML (Variation)"]
+    VCOLS = ["Value code", "Name (ar)", "Name (en)", "Name in the XML (Variation)", "Part numbers"]
 
     def __init__(self, win):
         super().__init__(win)
@@ -1792,7 +1792,7 @@ class OptionsPage(Page):
         if r < 0:
             QMessageBox.information(self, tr("Design options"), tr("Choose a value first (lower table)"))
             return
-        col = len(self.VCOLS) - 1
+        col = 3                                           # "Name in the XML (Variation)"
         cell = self.v.item(r, col)
         names = [n.strip() for n in (cell.text() if cell else "").split(";") if n.strip()]
         if item.text() not in names:
@@ -1836,6 +1836,20 @@ class OptionsPage(Page):
                          "erp_names": [n.strip() for n in re.split(r"[;\n]", t(3)) if n.strip()]})
         self.groups[self.cur]["values"] = vals
 
+    def _parts_of_values(self) -> dict[str, str]:
+        """{"group=value": "007 front1, 012 pocket"} — the GRAFIS part numbers each value produces."""
+        from ..services.gparts import parts_table
+        try:
+            names = {n: v[0] for n, v in _grafis_model_parts(self.ws).items()}
+        except Exception:  # noqa: BLE001 - names are a help only
+            names = {}
+        out: dict[str, list[str]] = {}
+        for r in parts_table(self.ws):
+            n = int(r.get("part") or 0)
+            label = f"{n:03d} {str(names.get(n, '')).strip()}".strip()
+            out.setdefault(r.get("option") or "*", []).append(label)
+        return {k: ", ".join(v) for k, v in out.items()}
+
     def _switch(self, prev, row):
         if 0 <= self.cur < len(self.groups):
             self._read_values()
@@ -1846,10 +1860,16 @@ class OptionsPage(Page):
         gr = self.groups[row]
         self.vlabel.setText(f"{tr('Values of')} {gr['label'].get('ar') or gr['group']} ({gr['group']})")
         self.v.setRowCount(len(gr["values"]))
+        parts = self._parts_of_values()
         for i, val in enumerate(gr["values"]):
+            made = parts.get(f"{gr['group']}={val['value']}", "")
             for j, x in enumerate([val["value"], val["label"].get("ar", ""), val["label"].get("en", ""),
-                                   "; ".join(val["erp_names"])]):
-                self.v.setItem(i, j, QTableWidgetItem(x))
+                                   "; ".join(val["erp_names"]), made]):
+                it = QTableWidgetItem(x)
+                if j == 4:                                # from «Fixed pieces»: shown, changed there
+                    it.setFlags(it.flags() & ~Qt.ItemIsEditable)
+                    it.setToolTip(tr("The GRAFIS parts this value produces (set in Fixed pieces)"))
+                self.v.setItem(i, j, it)
         self.v.resizeColumnsToContents()
 
     def add_group(self):
@@ -2026,10 +2046,12 @@ class XValuesPage(Page):
     """Every X value of a GRAFIS part next to the XML code(s) that fill it. Saved as a new rules version."""
     title = "X values for GRAFIS"
     COLS = ["X", "Name in GRAFIS", "GRAFIS default", "XML codes", "Value / formula", "Confirmed"]
+    ALL = "all"                                       # every main part with X values, in one table
 
     def __init__(self, win):
         super().__init__(win)
         lay = QVBoxLayout(self)
+        self.part_names: dict[int, str] = {}
         lay.addWidget(customer_bar(self))
         self.info = QLabel()
         self.info.setWordWrap(True)
@@ -2083,11 +2105,15 @@ class XValuesPage(Page):
             try:
                 from ..grafis.textsections import read_text
                 names = {p.number: p.name for p in read_text(mdl).parts}
-                for num, n in sorted(x_parts(mdl).items()):
+                parts = sorted(x_parts(mdl).items())
+                self.part_names = {num: names.get(num, "") for num, _ in parts}
+                if len(parts) > 1:
+                    self.part.addItem(f"{tr('All main parts')} ({sum(n for _, n in parts)} X)", self.ALL)
+                for num, n in parts:
                     self.part.addItem(f"{num:03d} {names.get(num, '')} ({n} X)", num)
             except Exception as e:  # noqa: BLE001
                 self.info.setText(f"{tr('Error')}: {e}")
-        i = self.part.findData(cur if cur is not None else 2)
+        i = self.part.findData(cur if cur is not None else self.ALL)
         self.part.setCurrentIndex(max(i, 0))
         self.part.blockSignals(False)
         self.load()
@@ -2098,16 +2124,21 @@ class XValuesPage(Page):
         self.t.setRowCount(0)
         if num is None or not mdl:
             return
-        rows = x_table(self.ws, mdl, num)
+        nums = sorted(self.part_names) if num == self.ALL else [num]
+        rows = [(p, r) for p in nums for r in x_table(self.ws, mdl, p)]
         self._loading = True
         self.t.setRowCount(len(rows))
-        for i, r in enumerate(rows):
-            vals = [f"X{r['x']}", r["name"], f"{r['default']:g}" if r["default"] is not None else "",
+        for i, (p, r) in enumerate(rows):
+            x = f"X{r['x']}" if num != self.ALL else f"{p:03d}/X{r['x']}"   # which part, in one table
+            name = r["name"] if num != self.ALL else f"{r['name']}  —  {self.part_names.get(p, '').strip()}"
+            vals = [x, name, f"{r['default']:g}" if r["default"] is not None else "",
                     ",".join(r["codes"]), r["formula"]]
             for j, v in enumerate(vals):
                 it = QTableWidgetItem(v)
                 if j < 3:
                     it.setFlags(it.flags() & ~Qt.ItemIsEditable)
+                if j == 0:
+                    it.setData(Qt.UserRole, (p, r["x"]))
                 self.t.setItem(i, j, it)
             ck = QTableWidgetItem()
             ck.setFlags((ck.flags() | Qt.ItemIsUserCheckable) & ~Qt.ItemIsEditable)
@@ -2146,19 +2177,23 @@ class XValuesPage(Page):
         out = []
         for i in range(self.t.rowCount()):
             codes = [c.strip() for c in re.split(r"[,،;\s]+", self.t.item(i, 3).text()) if c.strip()]
-            out.append({"x": int(self.t.item(i, 0).text()[1:]), "codes": codes,
+            part, x = self.t.item(i, 0).data(Qt.UserRole)
+            out.append({"part": part, "x": x, "codes": codes,
                         "formula": self.t.item(i, 4).text().strip() or "{M}",
                         "confirmed": self.t.item(i, 5).data(Qt.CheckStateRole) is None   # code typed in now
                         or self.t.item(i, 5).checkState() == Qt.Checked})
         return out
 
     def save(self):
-        from ..services.xtable import save_x_table
+        from ..services.xtable import save_x_tables
         num, mdl = self.part.currentData(), self._mdl()
         if num is None or not mdl:
             return
+        by_part: dict[int, list] = {}
+        for r in self.rows():
+            by_part.setdefault(r.pop("part"), []).append(r)
         try:
-            out = save_x_table(self.ws, mdl, num, self.rows())
+            out = save_x_tables(self.ws, mdl, by_part)
         except Exception as e:  # noqa: BLE001
             QMessageBox.warning(self, tr("Error"), str(e))
             return

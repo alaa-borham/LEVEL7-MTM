@@ -105,12 +105,13 @@ def test_x_value_row_turns_active_when_a_code_is_typed(ws):
     win = MainWindow(ws)
     page = win.pages["X values for GRAFIS"]
     page.refresh()
+    page.part.setCurrentIndex(page.part.findData(2))                       # one part (not "all main parts")
     row = next(i for i in range(page.t.rowCount()) if page.t.item(i, 0).text() == "X10")
     assert page.t.item(row, 5).data(Qt.CheckStateRole) is None              # inactive
     page.t.item(row, 3).setText("FW")
     assert page.t.item(row, 5).checkState() == Qt.Checked                   # active, confirmed
-    assert next(r for r in page.rows() if r["x"] == 10) == {"x": 10, "codes": ["FW"], "formula": "{M}",
-                                                           "confirmed": True}
+    assert next(r for r in page.rows() if r["x"] == 10) == {"part": 2, "x": 10, "codes": ["FW"],
+                                                           "formula": "{M}", "confirmed": True}
     page.t.item(row, 3).setText("")
     assert page.t.item(row, 5).data(Qt.CheckStateRole) is None              # inactive again
     win.close()

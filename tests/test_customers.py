@@ -164,3 +164,29 @@ def test_options_page_shows_the_customer_and_his_unlinked_variations(ws, xml53):
     rev = ws.revision(outs[0].lines[0]["revision_id"])
     assert not any("'Sada'" in p["message"] for p in rev["normalized"]["problems"])
     ws.db.set_setting("ui.customer", None)
+
+
+def test_x_values_of_all_main_parts_in_one_table(ws, tmp_path, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from conftest import MDL
+    if not os.path.isfile(MDL):
+        pytest.skip("customer MDL not in the checkout")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ws.set_grafis_mdl(MDL)
+    win = MainWindow(ws)
+    win.show()
+    win.goto("X values for GRAFIS")
+    app.processEvents()
+    page = win.pages["Customers"].inner_pages["X values for GRAFIS"]
+    assert page.part.currentData() == page.ALL                      # all main parts first
+    parts = {page.t.item(i, 0).data(0x0100)[0] for i in range(page.t.rowCount())}
+    assert len(parts) > 1 and page.t.item(0, 0).text().startswith(f"{min(parts):03d}/X")
+    k = next(i for i in range(page.t.rowCount()) if page.t.item(i, 0).data(0x0100)[0] == max(parts))
+    page.t.item(k, 3).setText("FL")                                 # an X of another part, saved with the rest
+    monkeypatch.setattr("level7mtm.ui.main_window.reread_held_question", lambda *a: None)
+    page.save()
+    rules = ws.active("catalog")[1]["products"]
+    st = next(iter(next(iter(rules.values()))["styles"].values()))
+    assert any(r["target"]["piece"] == f"{max(parts):03d}" and r["source"].get("code") == "FL" for r in st["rules"])
