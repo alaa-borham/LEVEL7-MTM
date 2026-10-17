@@ -926,11 +926,25 @@ class GrafisPage(Page):
         self.settings_card.setVisible(False)
         self.busy = False
         self.watcher = None
+        self.mdl_watcher = None
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll)
+        self.auto_start()
+
+    def auto_start(self):
+        """The chain runs by itself as soon as the program is open — nobody presses the robot: the robot takes
+        each order model written on import, the models GRAFIS saves are checked and nested, cutting files are
+        written. Watches the GRAFIS output folder chosen before (or the SCB folder next to the MDL folder); the
+        MDL folder is always watched."""
+        from ..services.grafis_orders import settings as gsettings
         folder = self.ws.db.get_setting("grafis.watch.folder")
-        if folder and self.ws.db.get_setting("grafis.watch.enabled", False) and os.path.isdir(folder):
+        if not (folder and os.path.isdir(folder)):
+            scb = os.path.join(os.path.dirname(os.path.abspath(gsettings(self.ws)["out"])), "SCB")
+            folder = scb if os.path.isdir(scb) else None
+        if folder:
             self.start(folder)
+        else:
+            self._start_mdl()
 
     def _nesting_dir(self):
         return self.ws.db.get_setting("nesting.inbox") or os.path.join(self.ws.folder, "nesting")
@@ -999,7 +1013,7 @@ class GrafisPage(Page):
         cli_ok = not cli.startswith("⚠")
         mdl_ok = bool(mdl and os.path.isfile(mdl))
         self._chips([(mdl_ok, tr("GRAFIS model (MDL)")),
-                     (self.watcher is not None, tr("watching") if self.watcher else tr("not watching")),
+                     (self.running(), tr("watching") if self.running() else tr("not watching")),
                      (robot_on, f"{tr('GRAFIS robot')}: {tr('on') if robot_on else tr('off')}"),
                      (cli_ok, "LEVEL7 Nesting"),
                      (bool(st["formats"]), f"{tr('Cutting files')}: {', '.join(st['formats']).upper()}")])
@@ -1010,8 +1024,8 @@ class GrafisPage(Page):
                 "nesting": (cli_ok, cli),
                 "robot": ("test_run" in rb, " · ".join(f"{k}: {'✓' if k in rb else '—'}"
                                                        for k in ("test_run", "save", "close"))),
-                "auto": (robot_on and self.watcher is not None,
-                         f"{tr('watching') if self.watcher else tr('not watching')} — "
+                "auto": (robot_on and self.running(),
+                         f"{tr('watching') if self.running() else tr('not watching')} — "
                          f"{', '.join(st['formats']).upper()}, {st['time']:g} s")}
         for key, (badge, label_, n) in self.steps.items():
             ok, text = done[key]
@@ -1021,7 +1035,7 @@ class GrafisPage(Page):
             badge.style().polish(badge)
             label_.setText(("✓ " if ok else "⚠ ") + text)
         if self._settings_auto:                         # open the settings while the chain is not set up
-            need = not (mdl_ok and cli_ok and self.watcher is not None and "test_run" in rb)
+            need = not (mdl_ok and cli_ok and self.running() and "test_run" in rb)
             self.settings_btn.blockSignals(True)
             self.settings_btn.setChecked(need)
             self.settings_btn.blockSignals(False)
@@ -1149,6 +1163,8 @@ class GrafisPage(Page):
             self.ws.db.set_setting("grafis.input", d)
             if self.watcher:                          # watch the new MDL folder too
                 self.start(self.watcher.folder)
+            else:
+                self._start_mdl()
             self.refresh()
 
     def write_mdl(self):
@@ -1316,7 +1332,7 @@ class GrafisPage(Page):
     def toggle(self):
         if self.watcher:
             self.timer.stop()
-            self.watcher = None
+            self.watcher = self.mdl_watcher = None    # stopped for now; it starts again with the program
             self.ws.db.set_setting("grafis.watch.enabled", False)
         else:
             d = QFileDialog.getExistingDirectory(self, tr("Watch GRAFIS output folder"),
@@ -1337,20 +1353,30 @@ class GrafisPage(Page):
             self.toggle()
 
     def start(self, folder):
-        from ..services.grafis_orders import settings as gsettings
-        from ..services.mdl_intake import register_mdl
         self.watcher = FolderWatcher(self.ws, folder, settle_seconds=3, extensions=(".scb",), handler=self._register)
-        mdl_dir = gsettings(self.ws)["out"]           # the MDL folder: models saved back by GRAFIS
-        os.makedirs(mdl_dir, exist_ok=True)
-        self.mdl_watcher = FolderWatcher(self.ws, mdl_dir, settle_seconds=3, extensions=(".mdl",),
-                                         handler=lambda p: register_mdl(self.ws, p))
         self.ws.db.set_setting("grafis.watch.folder", folder)
         self.ws.db.set_setting("grafis.watch.enabled", True)
+        self._start_mdl()
+
+    def _start_mdl(self):
+        """The MDL folder (models saved back by GRAFIS) and the robot run on the same timer."""
+        from ..services.grafis_orders import settings as gsettings
+        from ..services.mdl_intake import register_mdl
+        mdl_dir = gsettings(self.ws)["out"]
+        try:
+            os.makedirs(mdl_dir, exist_ok=True)
+        except OSError:
+            return                                    # folder not reachable (network drive): set it up first
+        self.mdl_watcher = FolderWatcher(self.ws, mdl_dir, settle_seconds=3, extensions=(".mdl",),
+                                         handler=lambda p: register_mdl(self.ws, p))
         self.timer.start(2000)
+
+    def running(self) -> bool:
+        return self.timer.isActive() and self.mdl_watcher is not None
 
     def poll(self):
         """Runs in a worker thread: nesting can take a minute and must not freeze the window."""
-        if not self.watcher or self.busy:
+        if not (self.watcher or self.mdl_watcher) or self.busy:
             return
         self.busy = True
 
@@ -1363,7 +1389,7 @@ class GrafisPage(Page):
 
         def work():
             from ..services.grafis_robot import step
-            out = self.watcher.poll() + (mw.poll() if mw else [])
+            out = (self.watcher.poll() if self.watcher else []) + (mw.poll() if mw else [])
             r = step(self.ws)                         # robot: one pending model (if switched on)
             return out + ([r] if r else [])
         w = Worker(work)
@@ -2559,10 +2585,10 @@ class MainWindow(QMainWindow):
 
     def _light_clicked(self, key):
         gp = self.pages["GRAFIS markers"]
-        if key == "watch" and gp.watcher is None:
+        if key == "watch" and not gp.running():
             gp.start_saved()
             self.refresh_cad(force=True)
-            if gp.watcher is not None:
+            if gp.running():
                 self.status(f"{tr('Folder watch')}: {tr('watching')} {self.ws.db.get_setting('grafis.watch.folder')}")
             return
         self.open_setup()
@@ -2580,7 +2606,7 @@ class MainWindow(QMainWindow):
         gp = self.pages.get("GRAFIS markers")
         states = {"grafis": bool(mdl and os.path.isfile(mdl)), "nesting": cli is not None,
                   "robot": bool(db.get_setting("robot.enabled", False)) and "test_run" in rb,
-                  "watch": bool(gp is not None and gp.watcher is not None)}
+                  "watch": bool(gp is not None and gp.running())}
         for k, w in self.sb_items.items():
             col = themes.colour("ok" if states[k] else "bad").name()
             w.setText(f"<span style='color:{col}'>●</span> {w.property('label')}")
@@ -2615,7 +2641,7 @@ class MainWindow(QMainWindow):
         if row is not None and marker is None:
             msg = (tr("No marker yet") + " — " + tr(cad.STAGE_TEXT[row["stage"]])
                    + ("\n" + row["problems"][0] if row["problems"] else ""))
-            if row["stage"] in ("grafis", "nest") and self.pages["GRAFIS markers"].watcher is None:
+            if row["stage"] in ("grafis", "nest") and not self.pages["GRAFIS markers"].running():
                 msg += "\n\n⚠ " + tr("Folder watch is off: the robot and the saved GRAFIS files wait. "
                                         "Click «Folder watch» in the status bar to switch it on.")
         self.marker.set_marker(marker, row, msg)

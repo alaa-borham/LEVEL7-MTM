@@ -112,9 +112,12 @@ def test_window_shows_the_selected_marker(ws, tmp_path):
     scb.mkdir()
     ws.db.set_setting("grafis.watch.folder", str(scb))
     gp = win.pages["GRAFIS markers"]
-    assert gp.watcher is None
-    win._light_clicked("watch")                                                    # red light clicked: watch on
-    assert gp.watcher is not None and ws.db.get_setting("grafis.watch.enabled")
+    assert gp.running()                                  # automatic from the start: robot + MDL folder, no click
+    gp.timer.stop()
+    gp.mdl_watcher = None
+    assert not gp.running()
+    win._light_clicked("watch")                                                    # red light clicked: on again
+    assert gp.running() and gp.watcher is not None and ws.db.get_setting("grafis.watch.enabled")
     gp.timer.stop()
     win.toggle_theme()                                                             # rebuild keeps working
     win.close()
