@@ -663,6 +663,14 @@ class Inspector(QScrollArea):
         hr.addStretch()
         hr.addWidget(self.pill)
         self.lay.addLayout(hr)
+        self.problems = QLabel()                          # first thing under the title: why it needs attention
+        self.problems.setWordWrap(True)
+        self.problems.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        bad = themes.colour("bad")
+        self.problems.setStyleSheet(f"color: {bad.name()}; border: 1px solid {bad.name()}; padding: 6px; "
+                                    f"background: rgba({bad.red()},{bad.green()},{bad.blue()},0.10);")
+        self.problems.hide()
+        self.lay.addWidget(self.problems)
         self.kv: dict[str, QLabel] = {}
         self._section(tr("The order"), [("fabric", "Fabric"), ("width", "Width"), ("quantity", "Quantity"),
                                     ("imported", "Imported")])
@@ -690,10 +698,6 @@ class Inspector(QScrollArea):
         self.stages = QGridLayout()
         self.stages.setVerticalSpacing(2)
         self.lay.addLayout(self.stages)
-        self.problems = QLabel()
-        self.problems.setWordWrap(True)
-        self.problems.setStyleSheet(f"color: {themes.colour('bad').name()};")
-        self.lay.addWidget(self.problems)
         self.lay.addSpacing(6)
         self.buttons = {}
         for key, text, primary in actions:
@@ -747,6 +751,7 @@ class Inspector(QScrollArea):
                 v.setText("—")
             self.ring.set_value(None)
             self.problems.setText("")
+            self.problems.hide()
             return
         self.title.setText(ltr(r["line"]))
         col = c[STAGE_COLOUR[r["stage"]]]
@@ -792,6 +797,7 @@ class Inspector(QScrollArea):
             self.stages.addWidget(t, i, 1)
             self.stages.addWidget(tm, i, 2)
         self.problems.setText("\n".join("⚠ " + p for p in r["problems"][:6]))
+        self.problems.setVisible(bool(r["problems"]))
         self.buttons.get("open_cut") and self.buttons["open_cut"].setEnabled(bool(r["outputs"]))
         self.buttons.get("renest") and self.buttons["renest"].setEnabled(bool(r["result"]))
         self.buttons.get("nesting") and self.buttons["nesting"].setEnabled(bool(r["l7n"]))
