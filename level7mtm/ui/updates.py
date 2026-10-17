@@ -17,7 +17,12 @@ class CheckThread(QThread):
 
     def run(self):
         try:
-            self.done.emit(updater.check_latest(), "")
+            info = updater.check_latest()
+            if info is not None:                 # what changed in every version since the installed one
+                from .i18n import language
+                info.notes = updater.notes_since(lang=language()) or \
+                    "\n".join(updater.note_of(info.notes, language()))
+            self.done.emit(info, "")
         except Exception as exc:  # noqa: BLE001 - offline etc., reported to the caller
             self.done.emit(None, str(exc))
 
@@ -92,10 +97,13 @@ class UpdateManager(QObject):
         box.setIcon(QMessageBox.Information)
         box.setWindowTitle(tr("Updates"))
         box.setText(f"{tr('New version available')}: {info.version}\n{tr('Installed version')}: {__version__}")
-        box.setInformativeText(tr("The update is downloaded, checked and installed; LEVEL7 MTM then starts again. "
-                                  "Orders, settings and rules are kept."))
-        if info.notes:
-            box.setDetailedText(info.notes[:1500] + ("…" if len(info.notes) > 1500 else ""))
+        lines = info.notes.splitlines()
+        shown = "\n".join(lines[:14]) + ("\n…" if len(lines) > 14 else "")
+        box.setInformativeText((tr("What is new") + ":\n" + shown + "\n\n" if info.notes else "")
+                               + tr("The update is downloaded, checked and installed; LEVEL7 MTM then starts again. "
+                                    "Orders, settings and rules are kept."))
+        if len(lines) > 14:                      # the whole list under "Show details"
+            box.setDetailedText(info.notes[:6000])
         install = box.addButton(tr("Install now"), QMessageBox.AcceptRole)
         box.addButton(tr("Later"), QMessageBox.RejectRole)
         skip = box.addButton(tr("Skip this version"), QMessageBox.DestructiveRole)

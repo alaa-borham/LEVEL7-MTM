@@ -22,6 +22,7 @@ from . import __version__
 
 REPO = "alaa-borham/LEVEL7-MTM"
 LATEST_API = f"https://api.github.com/repos/{REPO}/releases/latest"
+RELEASES_API = f"https://api.github.com/repos/{REPO}/releases?per_page=60"
 ALLOWED_HOSTS = ("github.com", "api.github.com")
 USER_AGENT = f"LEVEL7-MTM/{__version__}"
 
@@ -136,6 +137,37 @@ def check_latest(timeout: float = 10.0, current: str = __version__) -> UpdateInf
         return info if is_newer(info.version, current) else None
     except ValueError:
         return None
+
+
+def note_of(body: str, lang: str = "ar") -> list[str]:
+    """What one release changed, for the update window: its "ar:" lines in Arabic, else its first line."""
+    lines = [ln.strip() for ln in (body or "").splitlines() if ln.strip()]
+    lines = [ln for ln in lines if not re.match(r"^(Co-Authored-By|Claude-Session):", ln)]
+    if lang == "ar":
+        ar = [ln[3:].strip() for ln in lines if ln.lower().startswith("ar:")]
+        if ar:
+            return ar
+    return [ln for ln in lines if not ln.lower().startswith("ar:")][:1]
+
+
+def notes_since(current: str = __version__, lang: str = "ar", timeout: float = 10.0) -> str:
+    """Every change between the installed version and the newest one, newest first:
+    "0.1.76  — …" lines. Empty when the list cannot be read (the window still works)."""
+    try:
+        rels = _fetch_json(RELEASES_API, timeout, ALLOWED_HOSTS, "application/vnd.github+json")
+    except UpdateError:
+        return ""
+    out = []
+    for r in rels if isinstance(rels, list) else []:
+        v = (r.get("tag_name") or "").lstrip("vV")
+        try:
+            newer = is_newer(v, current)
+        except ValueError:
+            continue
+        if newer and not r.get("draft") and not r.get("prerelease"):
+            out.append((parse_version(v), v, note_of(r.get("body") or "", lang)))
+    out.sort(reverse=True)
+    return "\n".join(f"• {v}:  " + "\n     ".join(n) for _, v, n in out if n)
 
 
 def expected_sha256(sums_text: str, name: str) -> str | None:

@@ -130,3 +130,18 @@ def test_version_has_build_number():
     import level7mtm
     assert re.fullmatch(r"0\.1\.\d+", level7mtm.__version__)
 
+
+
+def test_notes_since_lists_every_newer_version_in_arabic(monkeypatch):
+    rels = [{"tag_name": "v0.1.77", "body": "Pan tool\n\nar: تحريك العرض يعمل\nCo-Authored-By: x"},
+            {"tag_name": "v0.1.76", "body": "Select tool picks a piece"},
+            {"tag_name": "v0.1.75", "body": "old"}]
+    monkeypatch.setattr(updater, "_fetch_json", lambda *a, **k: rels)
+    text = updater.notes_since("0.1.75", "ar")
+    assert text.splitlines() == ["• 0.1.77:  تحريك العرض يعمل", "• 0.1.76:  Select tool picks a piece"]
+    assert updater.notes_since("0.1.75", "en").splitlines()[0] == "• 0.1.77:  Pan tool"
+
+    def offline(*a, **k):
+        raise updater.UpdateError("offline")
+    monkeypatch.setattr(updater, "_fetch_json", offline)
+    assert updater.notes_since("0.1.75") == ""
