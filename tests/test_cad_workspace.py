@@ -491,8 +491,8 @@ def test_pieces_button_is_a_drop_down_of_both_pages(ws):
     app.processEvents()
     b = win.ribbon.buttons["options"]
     acts = b.menu().actions()
-    assert len(acts) == 2 and "parts" not in win.ribbon.buttons
-    acts[1].trigger()                                             # Fixed pieces
+    assert len(acts) == 3 and "parts" not in win.ribbon.buttons and "xvalues" not in win.ribbon.buttons
+    acts[2].trigger()                                             # Fixed pieces
     assert win.current_page().title == "GRAFIS parts"
 
 
