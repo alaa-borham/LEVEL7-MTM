@@ -201,6 +201,7 @@ def test_measure_tools_on_the_marker(tmp_path):
     v.measure_click((0.3, 0.2))                                      # snaps to the corner (0, 0)
     v.measure_click((100, 50))
     assert v.meas["text"] == "11.2 cm" and panel.hud_measure[0].isVisible()      # in centimetres
+    assert v.meas["extra"] == ""                                     # no ΔX / ΔY
     panel.use_tool("curve")
     v.measure_click((30, 0))                                         # on the edge of front1 (first copy)
     v.measure_click((100, 20))                                       # past the corner (100, 0): not one curve
@@ -238,6 +239,18 @@ def test_measure_tools_on_the_marker(tmp_path):
     assert abs(v.transform().m11() - k) < 1e-6
     QTest.keyRelease(v, Qt.Key_Space)
     assert not v.zooming
+    # the space bar while a button has the keyboard focus (the owner: "zoom with the space bar still does
+    # not work"): with the mouse over the marker it zooms and never presses that button
+    btn = QtWidgets.QPushButton("x", panel)
+    pressed = []
+    btn.clicked.connect(lambda: pressed.append(1))
+    btn.show()
+    btn.setFocus()
+    v._mouse_over = lambda: True
+    QTest.keyPress(btn, Qt.Key_Space)
+    assert v.zooming
+    QTest.keyRelease(btn, Qt.Key_Space)
+    assert not v.zooming and not pressed
     panel.use_tool("select")
     assert v.tool is None and not v.meas
     panel.close()

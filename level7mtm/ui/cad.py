@@ -361,6 +361,9 @@ class MarkerView(QGraphicsView):
         self._snapped = None
         self.zooming = False                     # space bar held: left click = zoom out, right click = zoom in
         self.setFocusPolicy(Qt.StrongFocus)
+        from PySide6.QtWidgets import QApplication
+        if QApplication.instance() is not None:   # the space bar wherever the keyboard focus is (a button
+            QApplication.instance().installEventFilter(self)   # would otherwise be "pressed" by it)
 
     # -- content
     def show_marker(self, marker: dict | None, message: str = ""):
@@ -513,8 +516,7 @@ class MarkerView(QGraphicsView):
             self.meas = {"kind": "line", "pts": pts}
             if len(pts) == 2:
                 d = math.dist(*pts)
-                dx, dy = abs(pts[1][0] - pts[0][0]), abs(pts[1][1] - pts[0][1])
-                self.meas.update(value=d, text=f"{d / 10:.1f} cm", extra=f"ΔX {dx / 10:.1f}  ΔY {dy / 10:.1f} cm")
+                self.meas.update(value=d, text=f"{d / 10:.1f} cm", extra="")
                 self.measured.emit(self.meas["text"])
         else:
             near = None
@@ -555,6 +557,28 @@ class MarkerView(QGraphicsView):
                          "extra": f"{pc['name']} — {tr('straight')} {math.dist(first[2], c) / 10:.1f} cm"}
             self.measured.emit(self.meas["text"])
         self.viewport().update()
+
+    def _mouse_over(self) -> bool:
+        from PySide6.QtGui import QCursor
+        return self.isVisible() and self.viewport().rect().contains(self.viewport().mapFromGlobal(QCursor.pos()))
+
+    def eventFilter(self, obj, e):
+        from PySide6.QtCore import QEvent
+        t = e.type()
+        if t in (QEvent.KeyPress, QEvent.KeyRelease) and e.key() == Qt.Key_Space:
+            from PySide6.QtWidgets import QAbstractSpinBox, QApplication, QLineEdit, QPlainTextEdit, QTextEdit
+            typing = isinstance(QApplication.focusWidget(), (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox))
+            if t == QEvent.KeyRelease and self.zooming:
+                if not e.isAutoRepeat():
+                    self.zooming = False
+                    self._cursor_shape()
+                return True
+            if t == QEvent.KeyPress and self.marker and self._mouse_over() and not typing:
+                if not e.isAutoRepeat() and not self.zooming:
+                    self.zooming = True
+                    self._cursor_shape()
+                return True                                   # never "presses" a focused button
+        return False
 
     def enterEvent(self, e):
         self.setFocus()                          # the space bar works as soon as the mouse is over the marker
