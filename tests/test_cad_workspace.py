@@ -269,3 +269,35 @@ def test_renest_reason_is_never_empty():
     assert renest_why(SimpleNamespace(info={"waiting": True}, issues=[]))
     assert renest_why(SimpleNamespace(info={}, issues=[]))
     assert "x" in renest_why(SimpleNamespace(info={}, issues=[("info", "x")]))
+
+
+def test_measurements_added_together(tmp_path):
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.ui.cad import MarkerPanel, load_marker
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    p = tmp_path / "m.l7n"
+    _l7n(p)
+    panel = MarkerPanel()
+    panel.resize(900, 600)
+    panel.show()
+    panel.set_marker(load_marker(str(p)))
+    app.processEvents()
+    v = panel.view
+    panel.tool_buttons["sum"].setChecked(True)                      # add up: the length tool comes on
+    assert v.adding and v.tool == "line"
+    v.zoom(6)
+    v.measure_click((0, 0))
+    v.measure_click((100, 0))                                       # 10 cm
+    panel.use_tool("curve")                                         # a curve too: the total stays
+    v.measure_click((30, 0))
+    v.measure_click((80, 0))                                        # 5 cm along the edge
+    assert len(v.parts) == 2 and abs(v.total() - 150) < 1e-6
+    assert panel.hud_measure[0].text().strip("⁦⁩") == "Σ 15.0 cm"
+    v.viewport().repaint()
+    assert v.box.isVisible() and "15.0" in v.box.value.text() and "10.0 + 5.0" in v.box.extra.text()
+    v.undo_part()                                                   # Backspace: the last part out
+    assert abs(v.total() - 100) < 1e-6
+    panel.tool_buttons["sum"].setChecked(False)
+    assert not v.adding and v.parts == []

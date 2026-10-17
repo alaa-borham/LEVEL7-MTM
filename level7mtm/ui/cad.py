@@ -43,6 +43,7 @@ ICONS = {
     "fit": "M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5",
     "theme": "M12 3a9 9 0 100 18 7 7 0 010-18z",
     "curve": "M3 19C5 9 10 5 21 5M3 19h.01M21 5h.01",
+    "sum": "M18 5V4H6l7 8-7 8h12v-1",
 }
 
 
@@ -356,6 +357,8 @@ class MarkerView(QGraphicsView):
         self._pan = None
         self.tool: str | None = None            # None, "line" (straight length) or "curve" (along a piece edge)
         self.meas: dict = {}
+        self.adding = False                     # "add up": each finished measurement is kept and summed
+        self.parts: list[dict] = []
         self.box = MeasureBox(self.viewport())
         self._near = None
         self._snapped = None
@@ -371,6 +374,7 @@ class MarkerView(QGraphicsView):
         sc.clear()
         self.marker, self.message = marker, message
         self.meas = {}
+        self.parts = []
         if hasattr(self, "box"):
             self.box.hide()
         if not marker:
@@ -459,6 +463,8 @@ class MarkerView(QGraphicsView):
     def set_tool(self, tool: str | None):
         self.tool = tool
         self.meas = {}
+        if tool is None:
+            self.parts = []
         self.setCursor(Qt.CrossCursor if tool else Qt.ArrowCursor)
         self._cursor_shape()
         self.box.moved = False
@@ -506,6 +512,40 @@ class MarkerView(QGraphicsView):
     def _snap(self, p):
         return self.snap(p)[0]
 
+    def set_adding(self, on: bool):
+        """Add up several measurements (lines and curves, also on different pieces): each one finished is kept
+        on the canvas and the box shows the total."""
+        self.adding = on
+        self.parts = []
+        self.meas = {}
+        self.box.moved = False
+        self.measured.emit("")
+        self.viewport().update()
+
+    def total(self) -> float:
+        return sum(m["value"] for m in self.parts)
+
+    def _finished(self):
+        """A measurement is complete: shown alone, or (adding up) kept as one more part of the total."""
+        if self.adding:
+            m = self.meas
+            self.parts.append({"way": m.get("way") or m["pts"], "pts": m["pts"], "value": m["value"]})
+            self.meas = {}
+            self.measured.emit(self._sum_text()[0])
+        else:
+            self.measured.emit(self.meas["text"])
+
+    def _sum_text(self) -> tuple[str, str]:
+        vals = [f"{m['value'] / 10:.1f}" for m in self.parts]
+        extra = " + ".join(vals) if len(vals) <= 6 else " + ".join(vals[:5]) + f" + … ({len(vals)})"
+        return f"Σ {self.total() / 10:.1f} cm", extra
+
+    def undo_part(self):
+        if self.parts:
+            self.parts.pop()
+            self.measured.emit(self._sum_text()[0] if self.parts else "")
+            self.viewport().update()
+
     def measure_click(self, p):
         """One click of the measuring tools at scene point p (millimetres)."""
         if not self.marker or not self.tool:
@@ -517,7 +557,7 @@ class MarkerView(QGraphicsView):
             if len(pts) == 2:
                 d = math.dist(*pts)
                 self.meas.update(value=d, text=f"{d / 10:.1f} cm", extra="")
-                self.measured.emit(self.meas["text"])
+                self._finished()
         else:
             near = None
             prev = self.meas.get("first") if self.meas.get("kind") == "curve" and not self.meas.get("way") else None
@@ -555,7 +595,7 @@ class MarkerView(QGraphicsView):
             self.meas = {"kind": "curve", "first": first, "pts": [first[2], c], "way": way, "value": length,
                          "text": f"{length / 10:.1f} cm",
                          "extra": f"{pc['name']} — {tr('straight')} {math.dist(first[2], c) / 10:.1f} cm"}
-            self.measured.emit(self.meas["text"])
+            self._finished()
         self.viewport().update()
 
     def _mouse_over(self) -> bool:
@@ -610,9 +650,15 @@ class MarkerView(QGraphicsView):
                 self._cursor_shape()
             return
         if e.key() == Qt.Key_Escape and self.tool:
-            self.meas = {}
-            self.measured.emit("")
+            if self.meas:                                     # the one being measured, then the parts added up
+                self.meas = {}
+            else:
+                self.parts = []
+            self.measured.emit(self._sum_text()[0] if self.parts else "")
             self.viewport().update()
+            return
+        if e.key() == Qt.Key_Backspace and self.parts:        # the last part added out of the total
+            self.undo_part()
             return
         super().keyPressEvent(e)
 
@@ -701,13 +747,26 @@ class MarkerView(QGraphicsView):
 
     def _draw_measure(self, p: QPainter, c):
         m = self.meas
-        if not m or not self.marker or not m.get("text"):
+        if not self.marker or (not m.get("text") and not self.parts):
             self.box.hide()
-        if not m or not self.marker:
+        if not self.marker or (not m and not self.parts):
             return
         v = lambda q: self.mapFromScene(QPointF(*q))
         pen = QPen(c["warn"], 2.2)
         p.setPen(pen)
+        for part in self.parts:                                  # added up so far
+            w = part["way"]
+            for a, b in zip(w, w[1:]):
+                p.drawLine(v(a), v(b))
+            p.setBrush(c["warn"])
+            for q in part["pts"]:
+                p.drawEllipse(v(q), 3, 3)
+            p.setBrush(Qt.NoBrush)
+        if self.parts and not m.get("text"):
+            last = self.parts[-1]["way"]
+            self.box.show_value(*self._sum_text(), v(last[len(last) // 2]))
+        if not m:
+            return
         way = m.get("way") or m.get("pts", [])
         if m.get("kind") == "line" and len(m["pts"]) == 1 and self._cursor is not None:
             end = self._snapped[0] if self._snapped else (self._cursor.x(), self._cursor.y())
@@ -1364,6 +1423,7 @@ class MarkerPanel(QWidget):
         self.tool_buttons = {}
         for key, ic, tip in (("select", "select", "Select"), ("pan", "pan", "Move the view"),
                              ("line", "ruler", "Measure lengths"), ("curve", "curve", "Measure curves"),
+                             ("sum", "sum", "Add measurements together (Backspace: remove the last, Esc: clear)"),
                              ("zoomin", "zoomin", "Zoom in"), ("zoomout", "zoomout", "Zoom out"),
                              ("fit", "fit", "Whole marker")):
             b = QToolButton()
@@ -1371,13 +1431,14 @@ class MarkerPanel(QWidget):
             b.setIcon(icon(ic))
             b.setIconSize(QSize(18, 18))
             b.setToolTip(tr(tip))
-            b.setCheckable(key in ("select", "pan", "line", "curve"))
+            b.setCheckable(key in ("select", "pan", "line", "curve", "sum"))
             self.tool_buttons[key] = b
             tl.addWidget(b)
         tb = self.tool_buttons
         tb["select"].setChecked(True)
         for key in ("select", "pan", "line", "curve"):
             tb[key].clicked.connect(lambda _=False, k=key: self.use_tool(k))
+        tb["sum"].toggled.connect(self._adding)
         tb["zoomin"].clicked.connect(lambda: self.view.zoom(1.25))
         tb["zoomout"].clicked.connect(lambda: self.view.zoom(0.8))
         tb["fit"].clicked.connect(self.view.fit)
@@ -1411,6 +1472,15 @@ class MarkerPanel(QWidget):
             self.tool_buttons[k].setChecked(k == key)
         self.view.set_pan(key == "pan")
         self.view.set_tool(key if key in ("line", "curve") else None)
+        if key not in ("line", "curve"):
+            self.tool_buttons["sum"].setChecked(False)
+
+    def _adding(self, on: bool):
+        """Add up: lines and curves measured one after the other are summed (switching tool keeps the total)."""
+        self.view.set_adding(on)
+        if on and self.view.tool is None:
+            self.use_tool("line")
+            self.tool_buttons["sum"].setChecked(True)
 
     def _measured(self, text: str):
         v, lab = self.hud_measure

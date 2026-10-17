@@ -12,6 +12,8 @@ AR = {
     "Size table setup": "ضبط جدول المقاسات",
     "Piece options setup": "ضبط اختيارات القطع",
     "Fixed pieces": "القطع الثابتة",
+    "Add measurements together (Backspace: remove the last, Esc: clear)":
+        "جمع القياسات (Backspace: حذف آخر جزء، Esc: مسح الكل)",
     "The model was written again and GRAFIS has not saved it yet: the robot runs it, then it is nested":
         "الموديل كُتب من جديد ولم يحفظه GRAFIS بعد: الروبوت يشغّله ثم يُعشَّق تلقائياً",
     "No order line matches this model": "لا يوجد سطر طلب مطابق لهذا الموديل",
