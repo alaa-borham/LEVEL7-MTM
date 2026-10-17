@@ -66,3 +66,10 @@ format `level7-nesting-project` v1) read only and uses `markers[-1].fabric.width
 (`piece_uid`, `size`, `x`, `y`, `rotation`, `mirrored`, `sx`, `sy`, `placed`) and `pieces[].sizes[size].cut` /
 `.grain.points` / `.holes`, transformed exactly like LEVEL7 Nesting (mirror x → −x, rotate CCW, shrinkage scale,
 translate). It never writes the file; editing the marker stays in LEVEL7 Nesting ("Show marker in LEVEL7 Nesting").
+
+## Remnant (small pieces together)
+
+Setting `cutting.remnant` (setup step 5, on by default): LEVEL7 MTM adds `--remnant` to `nest` when
+`info --json` lists `"remnant"` in `features` (newer LEVEL7 Nesting); with an older LEVEL7 Nesting the marker
+is nested as before and the log says so. LEVEL7 Nesting then packs the small pieces together so the fabric
+left over is one large piece; the marker length never grows and the result passes its own check.

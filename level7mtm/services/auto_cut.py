@@ -54,7 +54,8 @@ def settings(ws) -> dict:
             "iso_preset": ws.db.get_setting("cutting.iso_preset", "bullmer_grafis"),
             "time": float(ws.db.get_setting("cutting.time_s", 60)),
             "out": ws.db.get_setting("cutting.output") or os.path.join(ws.folder, "cutting"),
-            "enabled": bool(ws.db.get_setting("cutting.auto", True))}
+            "enabled": bool(ws.db.get_setting("cutting.auto", True)),
+            "remnant": bool(ws.db.get_setting("cutting.remnant", True))}
 
 
 def _run(cmd, env, log) -> int:
@@ -67,15 +68,20 @@ def _run(cmd, env, log) -> int:
     return p.returncode
 
 
-def _size_key(cmd, env, path, guess, log) -> str:
-    """The size key LEVEL7 Nesting uses for this file (``info --json``, newer LEVEL7 Nesting); else our guess."""
+def _info(cmd, env, path) -> dict:
+    """``level7-cli info --json`` (newer LEVEL7 Nesting): size names, features; {} for an older one."""
     try:
         p = subprocess.run(cmd + ["info", "--json", path], env=env, capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=300,
                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        names = json.loads(p.stdout).get("size_names", []) if p.returncode == 0 else []
+        return json.loads(p.stdout) if p.returncode == 0 else {}
     except (ValueError, OSError, subprocess.TimeoutExpired):
-        names = []                                  # older LEVEL7 Nesting: no --json
+        return {}                                   # older LEVEL7 Nesting: no --json
+
+
+def _size_key(cmd, env, path, guess, log, info=None) -> str:
+    """The size key LEVEL7 Nesting uses for this file (``info --json``, newer LEVEL7 Nesting); else our guess."""
+    names = (info if info is not None else _info(cmd, env, path)).get("size_names", [])
     key = guess if not names or guess in names else (names[0] if len(names) == 1 else guess)
     if names:
         log.append(f"LEVEL7 Nesting sizes: {names} -> {key}")
@@ -106,9 +112,15 @@ def auto_cut(ws, chk, scb_path: str, force: bool = False) -> dict:
     os.makedirs(st["out"], exist_ok=True)
     stem = os.path.join(st["out"], os.path.splitext(os.path.basename(scb_path))[0])
     nest = cmd + ["nest", scb_path, "--width", f"{width:g}", "--time", f"{st['time']:g}", "-o", stem + ".l7n"]
+    finfo = _info(cmd, env, scb_path)
     if len(sizes) == 1:
-        key = _size_key(cmd, env, scb_path, sizes[0], log)
+        key = _size_key(cmd, env, scb_path, sizes[0], log, finfo)
         nest += ["--sizes", f"{key}={qty}"]              # garments from the order, not from the GRAFIS marker
+    if st["remnant"]:
+        if "remnant" in finfo.get("features", []):
+            nest += ["--remnant"]                       # small pieces together: one large piece of fabric left
+        else:
+            log.append("LEVEL7 Nesting too old for --remnant (update it): marker as nested")
     rc = _run(nest, env, log)
     out_text = "\n".join(log)
     m = re.search(r'"length_mm":\s*([\d.]+)', out_text)

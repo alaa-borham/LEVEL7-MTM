@@ -926,6 +926,13 @@ class GrafisPage(Page):
         self.nest_time.setValue(int(float(self.ws.db.get_setting("cutting.time_s", 60))))
         self.nest_time.valueChanged.connect(lambda v: self.ws.db.set_setting("cutting.time_s", int(v)))
         frow.addWidget(self.nest_time)
+        frow.addSpacing(16)
+        self.remnant = QCheckBox(tr("Small pieces together (one large piece of fabric left)"))
+        self.remnant.setToolTip(tr("After nesting, LEVEL7 Nesting packs the small pieces next to each other so "
+                                   "the fabric left over is one large piece; the marker length does not change"))
+        self.remnant.setChecked(bool(self.ws.db.get_setting("cutting.remnant", True)))
+        self.remnant.toggled.connect(lambda on: self.ws.db.set_setting("cutting.remnant", on))
+        frow.addWidget(self.remnant)
         frow.addStretch()
         al.addLayout(frow)
         step("auto", 5, "Switch on", "What runs by itself for each new order, and the cutting files it writes.",
