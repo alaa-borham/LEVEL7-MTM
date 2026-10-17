@@ -12,6 +12,9 @@ AR = {
     "Size table setup": "ضبط جدول المقاسات",
     "Piece options setup": "ضبط اختيارات القطع",
     "Fixed pieces": "القطع الثابتة",
+    "The pieces of the order as GRAFIS made them (one of each)": "قطع الطلب كما صنعها GRAFIS (قطعة من كل نوع)",
+    "The pattern of this order is made in GRAFIS: its pieces are shown here once GRAFIS has saved the model and it was nested":
+        "بترون هذا الطلب يُصنع في GRAFIS: تظهر قطعه هنا بعد أن يحفظ GRAFIS الموديل ويتم التعشيق",
     "Marker name": "اسم الماركر",
     "What is new": "الجديد في هذا التحديث",
     "This order is {s}: its measurements are not changed": "هذا الطلب {s}: لا تُعدَّل قياساته",

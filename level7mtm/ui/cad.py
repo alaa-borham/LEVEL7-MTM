@@ -107,6 +107,29 @@ def load_marker(path: str) -> dict | None:
             "time": m.get("compute_time")}
 
 
+def pattern_sheet(marker: dict | None) -> dict | None:
+    """The order's pattern as GRAFIS made it: one of each piece of the marker (a mirrored copy only when there
+    is no other), side by side in a row as they lie in the marker. Shown like a marker, without fabric."""
+    if not marker or not marker.get("pieces"):
+        return None
+    first: dict[str, dict] = {}
+    for p in marker["pieces"]:
+        if p["name"] not in first or (first[p["name"]]["mirrored"] and not p["mirrored"]):
+            first[p["name"]] = p
+    out, x, height = [], 0.0, 0.0
+    gap = 60.0
+    for p in first.values():
+        xs, ys = [q[0] for q in p["cut"]], [q[1] for q in p["cut"]]
+        dx, dy = x - min(xs), -min(ys)
+        mv = lambda pts: [(a + dx, b + dy) for a, b in pts]
+        out.append({**p, "cut": mv(p["cut"]), "grain": mv(p["grain"]), "holes": [mv(h) for h in p["holes"]],
+                    "corners": mv(p.get("corners") or [])})
+        out[-1].pop("_bb", None)                          # the box of the piece where it lay in the marker
+        x += max(xs) - min(xs) + gap
+        height = max(height, max(ys) - min(ys))
+    return {"width": height, "length": max(x - gap, 0.0), "pieces": out, "stats": {}, "sheet": True}
+
+
 def sharp_corners(pts, min_turn: float = 25.0) -> list:
     """The corners and end points of a cut line: vertices where it turns by more than ``min_turn`` degrees (the
     many small steps of a curve are not corners)."""
@@ -395,7 +418,8 @@ class MarkerView(QGraphicsView):
             return
         c = themes.colours()
         w, length = marker["width"], marker["length"]
-        sc.addRect(QRectF(0, 0, length, w), QPen(c["selvedge"], 0), QBrush(c["fabric"]))
+        if not marker.get("sheet"):                          # a pattern sheet has no fabric
+            sc.addRect(QRectF(0, 0, length, w), QPen(c["selvedge"], 0), QBrush(c["fabric"]))
         dash = QPen(c["selvedge"], 0, Qt.DashLine)
         for y in (-12, w + 12):
             sc.addLine(0, y, length, y, dash)
@@ -435,6 +459,10 @@ class MarkerView(QGraphicsView):
             t.setTransform(QTransform.fromTranslate(-tb.width() / 2, -tb.height() / 2))   # centred in pixels
             t.setPos(br.center())
             sc.addItem(t)
+        if marker.get("sheet"):
+            self._set_content(QRectF(-150, -150, length + 300, w + 300))
+            self.fit()
+            return
         dpen = QPen(c["accent"], 0)
         dpen.setCosmetic(True)
         y = w + 70
@@ -1575,8 +1603,9 @@ class MarkerPanel(QWidget):
 
     def set_marker(self, marker, row=None, message=""):
         self.view.show_marker(marker, message)
-        length = (marker or {}).get("length") or (row or {}).get("length_mm")
-        eff = (row or {}).get("efficiency_pct")
+        sheet = bool((marker or {}).get("sheet"))
+        length = None if sheet else (marker or {}).get("length") or (row or {}).get("length_mm")
+        eff = None if sheet else (row or {}).get("efficiency_pct")
         self.hud_values["length"].setText(f"{length / 1000:.2f} m" if length else "—")
         self.hud_values["eff"].setText(f"{eff:.1f}%" if eff else "—")
         self.hud_values["pieces"].setText(str(len(marker["pieces"])) if marker else "—")

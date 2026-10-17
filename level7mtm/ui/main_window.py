@@ -627,7 +627,16 @@ class PreviewPage(Page):
 
     def __init__(self, win):
         super().__init__(win)
-        lay = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        from . import cad
+        self.sheet = cad.MarkerPanel()               # the order's pattern from GRAFIS (the pieces of its marker)
+        self.sheet.setMinimumHeight(420)
+        outer.addWidget(self.sheet, 1)
+        self.engine = QWidget()                      # the program's own engine (test model): developer only
+        outer.addWidget(self.engine, 1)
+        lay = QVBoxLayout(self.engine)
+        lay.setContentsMargins(0, 0, 0, 0)
         bar = QHBoxLayout()
         self.cbs = {}
         for key, text in (("cut", "Cut line"), ("seam", "Seam line"), ("notches", "Notches"), ("grain", "Grain"),
@@ -661,7 +670,19 @@ class PreviewPage(Page):
         self.result = None
 
     def refresh(self):
+        from . import cad
         rid = self.win.current_rid
+        row = next((r for r in cad.order_rows(self.ws) if r["rid"] == rid), None) if rid is not None else None
+        sheet = cad.pattern_sheet(cad.load_marker(row["l7n"])) if row and row.get("l7n") else None
+        use_engine = sheet is None and self.win.developer
+        self.sheet.setVisible(not use_engine)
+        self.engine.setVisible(use_engine)
+        if not use_engine:
+            msg = "" if sheet else (tr("No order selected") if rid is None else
+                                    tr("The pattern of this order is made in GRAFIS: its pieces are shown here once "
+                                       "GRAFIS has saved the model and it was nested"))
+            self.sheet.set_marker(sheet, None, msg)
+            return
         g = self.ws.latest_generation(rid) if rid is not None else None
         self.cmp.blockSignals(True)
         self.cmp.clear()
@@ -2559,7 +2580,7 @@ SUBTITLES = {
     "Design options": "Option groups, their values and their names in the XML",
     "GRAFIS parts": "Which GRAFIS parts each design option produces",
     "Model & design": "Pattern engine: model and design of the order",
-    "Pattern preview": "Pattern engine: the calculated pieces",
+    "Pattern preview": "The pieces of the order as GRAFIS made them (one of each)",
     "Validation": "Pattern engine: checks before approval",
     "Approve & send": "Pattern engine: approval and nesting hand-over",
     "Model library": "Versions of models, rules and mappings",

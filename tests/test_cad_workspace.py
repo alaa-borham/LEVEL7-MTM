@@ -95,6 +95,12 @@ def test_window_shows_the_selected_marker(ws, tmp_path):
     win.browser.tree.setCurrentItem(item)
     app.processEvents()
     assert win.sel_row["rid"] == rev["id"] and win.marker.view.marker["length"] == 300
+    win.current_rid = rev["id"]                                                    # pattern preview: the
+    win.goto("Pattern preview")                                                    # GRAFIS pieces, not the
+    pv = win.pages["Pattern preview"]                                              # engine's test model
+    app.processEvents()
+    assert pv.sheet.isVisibleTo(pv) and not pv.engine.isVisibleTo(pv) and pv.sheet.view.marker["sheet"]
+    win.tabs.setCurrentIndex(0)
     assert item.childCount() == 0                                              # no pieces listed under the order
     assert win.marker.hud_values["pieces"].text() == "2"
     from level7mtm.services.activity import working                               # a step running on the line
@@ -425,3 +431,17 @@ def test_problem_messages_follow_the_language():
     finally:
         set_language("en")
     assert [tr_msg(m) for m in msgs] == msgs                       # English: as it is
+
+
+def test_pattern_sheet_one_of_each_piece_side_by_side(tmp_path):
+    from level7mtm.ui.cad import load_marker, pattern_sheet
+    p = tmp_path / "m.l7n"
+    _l7n(p)
+    m = load_marker(str(p))
+    sh = pattern_sheet(m)
+    names = [pc["name"] for pc in m["pieces"]]
+    assert sh["sheet"] and [pc["name"] for pc in sh["pieces"]] == list(dict.fromkeys(names))
+    xs = [(min(q[0] for q in pc["cut"]), max(q[0] for q in pc["cut"])) for pc in sh["pieces"]]
+    assert all(a[1] < b[0] for a, b in zip(xs, xs[1:]))                  # in a row, not on top of each other
+    assert min(q[1] for pc in sh["pieces"] for q in pc["cut"]) == 0
+    assert pattern_sheet(None) is None
