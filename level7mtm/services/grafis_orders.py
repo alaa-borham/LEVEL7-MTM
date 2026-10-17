@@ -191,6 +191,8 @@ def import_and_prepare(ws, path: str):
     stem = os.path.splitext(os.path.basename(path))[0]
     if out.status == "failed":
         errors_folder.report(ws, stem, [out.message], "XML import failed", copy_file=path)
+        from .done_folder import move_xml_to_er
+        move_xml_to_er(ws, path, [out.message], "XML import failed")
     if settings(ws)["enabled"] and out.status == "imported":
         for ln in out.lines:
             if ln["action"] in ("new", "new_revision"):
@@ -207,6 +209,11 @@ def import_and_prepare(ws, path: str):
             errors_folder.report(ws, f"{stem}__{g['line_number']}", g["problems"],
                                  f"order line {g['line_number']}: no GRAFIS model written",
                                  copy_file=path if k == 0 else None)
+        if bad:
+            from .done_folder import move_failed
+            move_failed(ws, [g["revision_id"] for g in bad],
+                        [f"{g['line_number']}: {p}" for g in bad for p in g["problems"]],
+                        "order line: no GRAFIS model written")
     return out
 
 

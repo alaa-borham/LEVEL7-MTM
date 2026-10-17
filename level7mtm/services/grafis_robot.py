@@ -431,6 +431,9 @@ def run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) -> 
         res["message"] = str(e)
         errors_folder.report(ws, os.path.splitext(os.path.basename(job["path"]))[0], [res["message"]],
                              "GRAFIS robot")
+        from .done_folder import move_failed
+        move_failed(ws, [r["revision_id"] for r in ws.db.q("SELECT revision_id FROM grafis_orders WHERE path=?",
+                                                           (job["path"],))], [res["message"]], "GRAFIS robot")
     with ws.db.tx() as c:
         c.execute("INSERT INTO robot_jobs(sha256, path, at, status, message) VALUES (?,?,?,?,?)",
                   (job["sha256"], job["path"], now(), res["status"], res["message"]))

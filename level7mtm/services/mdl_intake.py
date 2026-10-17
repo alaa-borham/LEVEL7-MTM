@@ -136,4 +136,7 @@ def register_mdl(ws, path: str, cut: bool | None = None) -> dict:
             ([out["cutting"].get("message", "")] if out.get("cutting") else [])
         errors_folder.report(ws, os.path.splitext(os.path.basename(path))[0], problems,
                              f"order model saved by GRAFIS not processed ({out['status']})")
+        from .done_folder import move_failed
+        move_failed(ws, [ln["revision_id"] for ln in chk.lines], problems,
+                    f"order model saved by GRAFIS not processed ({out['status']})")
     return out

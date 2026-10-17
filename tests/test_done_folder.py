@@ -42,3 +42,24 @@ def test_only_files_of_the_erp_folder_move(ws, tmp_path):
     with ws.db.tx() as c:
         c.execute("UPDATE revisions SET status='completed'")
     assert move_finished(ws, [r["id"] for r in ws.list_revisions()]) == [] and src.exists()
+
+
+def test_xml_with_an_error_goes_to_er_then_to_done_once_finished(ws, tmp_path):
+    from level7mtm.services.done_folder import move_failed, move_finished
+    erp = tmp_path / "ERP XML"
+    erp.mkdir()
+    (erp / "ER").mkdir()
+    src = erp / "Order-9-53-1_2.xml"
+    shutil.copy(XML_53, src)
+    ws.db.set_setting("watch.folder", str(erp))
+    ws.import_file(str(src))
+    rid = ws.list_revisions()[0]["id"]
+    assert move_failed(ws, [rid], ["GRAFIS did not show it within 120 s"], "GRAFIS robot") == \
+        [str(erp / "ER" / "Order-9-53-1_2.xml")]
+    reason = erp / "ER" / "Order-9-53-1_2.txt"
+    assert "within 120 s" in reason.read_text(encoding="utf-8-sig") and not src.exists()
+    assert move_failed(ws, [rid], ["again"], "GRAFIS robot") == [str(erp / "ER" / "Order-9-53-1_2.xml")]
+    with ws.db.tx() as c:                                         # retried, every line finished
+        c.execute("UPDATE revisions SET status='completed'")
+    assert move_finished(ws, [rid]) == [str(erp / "done" / "Order-9-53-1_2.xml")]
+    assert not reason.exists() and not (erp / "ER" / "Order-9-53-1_2.xml").exists()
