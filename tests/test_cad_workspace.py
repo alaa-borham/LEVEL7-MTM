@@ -406,3 +406,22 @@ def test_tool_shortcuts_over_the_marker(tmp_path, monkeypatch):
     assert press(Qt.Key_V) and v.dragMode() == v.DragMode.NoDrag
     assert not press(Qt.Key_Q)                                   # not a tool key: left alone
     assert "[L]" in panel.tool_buttons["line"].toolTip()
+
+
+def test_problem_messages_follow_the_language():
+    from level7mtm.ui.i18n import set_language, tr_msg
+    msgs = ["order line needs review (import problems) — resolve them first",
+            "design option 'pocket_chest' not set",
+            "R003: measurement DSR not in the order — X4 would keep the GRAFIS placeholder",
+            "nesting did not produce a valid marker (see log)"]
+    set_language("ar")
+    try:
+        ar = [tr_msg(m) for m in msgs]
+        assert ar[0] == "سطر الطلب يحتاج مراجعة (مشاكل في الاستيراد) — عالجها أولاً"
+        assert ar[1] == "خيار التصميم 'pocket_chest' غير محدد"
+        assert ar[2] == "R003: القياس DSR غير موجود في الطلب — X4 سيبقى على قيمة موديل GRAFIS الأصلية"
+        assert ar[3].startswith("التعشيق")
+        assert tr_msg("something new nobody translated") == "something new nobody translated"
+    finally:
+        set_language("en")
+    assert [tr_msg(m) for m in msgs] == msgs                       # English: as it is

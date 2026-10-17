@@ -466,3 +466,60 @@ def label(d: dict | str | None) -> str:
     if isinstance(d, str):
         return d
     return d.get(_LANG[0]) or d.get("en") or d.get("ar") or next(iter(d.values()), "")
+
+
+# Messages made by the services carry names and numbers ("measurement DSR not in the order"): they are
+# translated when shown, piece by piece ("A — B", "R003: A"), with these patterns.
+MSG_AR = [
+    (r"order line needs review \(import problems\)", "سطر الطلب يحتاج مراجعة (مشاكل في الاستيراد)"),
+    (r"resolve them first", "عالجها أولاً"),
+    (r"design option '(.+)' not set", "خيار التصميم '{0}' غير محدد"),
+    (r"design option '(.+)' not in the order: default (.+)", "خيار التصميم '{0}' غير موجود في الطلب: الافتراضي {1}"),
+    (r"measurement (\S+) not in the order", "القياس {0} غير موجود في الطلب"),
+    (r"measurement (\S+) of the style table is missing", "القياس {0} غير موجود في جدول المقاسات"),
+    (r"(X\d+) would keep the GRAFIS placeholder", "{0} سيبقى على قيمة موديل GRAFIS الأصلية"),
+    (r"(\S+) \((.+) → (X\d+)\) is not confirmed", "القاعدة {0} ({1} ← {2}) غير مؤكدة"),
+    (r"no GRAFIS part selected for this order", "لم يُحدَّد أي جزء GRAFIS لهذا الطلب"),
+    (r"GRAFIS did not show (\S+) within ([\d.]+) s", "لم يُظهر GRAFIS الملف {0} خلال {1} ث"),
+    (r"GRAFIS did not save (\S+) within ([\d.]+) s", "لم يحفظ GRAFIS الملف {0} خلال {1} ث"),
+    (r"no GRAFIS window open", "لا توجد نافذة GRAFIS مفتوحة"),
+    (r"the '(.+)' button was not taught yet \(GRAFIS screen → Robot\)",
+     "لم يتم تعليم زر '{0}' بعد (شاشة GRAFIS ← الروبوت)"),
+    (r"the window of the '(.+)' button was not found \(teach it again\)", "لم يُعثر على نافذة زر '{0}' (علّمه من جديد)"),
+    (r"nesting did not produce a valid marker \(see log\)", "التعشيق لم ينتج ماركر صالحاً (انظر السجل)"),
+    (r"nesting did not produce a valid marker", "التعشيق لم ينتج ماركر صالحاً"),
+    (r"nesting did not produce a valid marker: (.+)", "التعشيق لم ينتج ماركر صالحاً: {0}"),
+    (r"(\d+) piece\(s\) not placed", "{0} قطعة لم توضع"),
+    (r"LEVEL7 Nesting stopped with exit code (-?\d+)", "توقف LEVEL7 Nesting برمز خروج {0}"),
+    (r"no marker file was written", "لم يُكتب ملف الماركر"),
+    (r"export (\w+) failed", "فشل تصدير {0}"),
+    (r"order lines have no single fabric width: (.+)", "أسطر الطلب ليس لها عرض قماش واحد: {0}"),
+    (r"order line (\S+) is (\w+)", "سطر الطلب {0}: {1}"),
+    (r"damaged GRAFIS file: (.+)", "ملف GRAFIS تالف: {0}"),
+    (r"the saved model has no production part", "الموديل المحفوظ ليس فيه جزء إنتاج"),
+    (r"the pieces are still those of the base model: run 'Test Run All Parts' in GRAFIS, then save",
+     "القطع ما زالت قطع الموديل الأساسي: شغّل 'Test Run All Parts' في GRAFIS ثم احفظ"),
+    (r"this model was not written by LEVEL7 MTM for an order line", "هذا الموديل لم يكتبه LEVEL7 MTM لسطر طلب"),
+    (r"(\S+) is not in the X table of part (\d+) of (.+)", "{0} غير موجود في جدول X للجزء {1} في {2}"),
+    (r"GRAFIS part (\d+) \((.*)\) is not in (.+)", "جزء GRAFIS {0} ({1}) غير موجود في {2}"),
+]
+
+
+def tr_msg(text: str) -> str:
+    """A message from the services in the language of the screen (English stays as it is)."""
+    import re
+    if _LANG[0] != "ar" or not text:
+        return text
+    if text in AR:
+        return AR[text]
+    parts = text.split(" — ")
+    if len(parts) > 1:
+        return " — ".join(tr_msg(p) for p in parts)
+    for pat, ar in MSG_AR:
+        m = re.fullmatch(pat, text.strip())
+        if m:
+            return ar.format(*(tr_msg(g) for g in m.groups()))
+    m = re.fullmatch(r"([A-Za-z]*\d+[\w-]*|[\w ]{1,24}):\s+(.+)", text)     # "R003: …", "GRAFIS robot: …"
+    if m and m.group(2) != tr_msg(m.group(2)):
+        return f"{tr(m.group(1))}: {tr_msg(m.group(2))}"
+    return text

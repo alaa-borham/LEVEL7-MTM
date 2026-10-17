@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (QFrame, QGraphicsScene, QGraphicsSimpleTextItem, 
                                QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from . import themes
-from .i18n import tr
+from .i18n import tr, tr_msg
 
 # ---------------------------------------------------------------- icons (24 x 24, stroked)
 
@@ -1232,7 +1232,7 @@ class OrderBrowser(QWidget):
                 f2 = it.font(1)
                 f2.setBold(True)
                 it.setFont(1, f2)
-                it.setToolTip(0, "\n".join([r["line"]] + r["problems"][:5]))
+                it.setToolTip(0, "\n".join([r["line"]] + [tr_msg(m) for m in r["problems"][:5]]))
                 grp.addChild(it)
                 first = first or it
                 if r["rid"] == keep:
@@ -1470,7 +1470,7 @@ class Inspector(QScrollArea):
             self.stages.addWidget(d, i, 0)
             self.stages.addWidget(t, i, 1)
             self.stages.addWidget(tm, i, 2)
-        self.problems.setText("\n".join("⚠ " + p for p in r["problems"][:6]))
+        self.problems.setText("\n".join("⚠ " + tr_msg(p) for p in r["problems"][:6]))
         self.problems.setVisible(bool(r["problems"]))
         self.buttons.get("open_cut") and self.buttons["open_cut"].setEnabled(bool(r["outputs"]))
         self.buttons.get("renest") and self.buttons["renest"].setEnabled(bool(r["result"]))

@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
 from .. import ENGINE_VERSION, __version__
 from ..services.watcher import FolderWatcher
 from ..services.workflow import WorkflowError, Workspace
-from .i18n import label, language, set_language, tr
+from .i18n import label, language, set_language, tr, tr_msg
 from .pattern_view import PatternView
 
 STATUS_COLORS = {"needs_review": "#fde68a", "validation_failed": "#fecaca", "ready_for_review": "#bfdbfe",
@@ -67,7 +67,7 @@ def renest_why(chk) -> str:
     """Why a model cannot be nested again: never an empty reason."""
     if chk.info.get("waiting"):
         return tr("The model was written again and GRAFIS has not saved it yet: the robot runs it, then it is nested")
-    why = "; ".join(tr(m) for s_, m in chk.issues if s_ != "info") or "; ".join(tr(m) for _, m in chk.issues)
+    why = "; ".join(tr_msg(m) for s_, m in chk.issues if s_ != "info") or "; ".join(tr_msg(m) for _, m in chk.issues)
     return why or tr("No order line matches this model")
 
 
@@ -2916,7 +2916,7 @@ class MainWindow(QMainWindow):
         msg = ""
         if row is not None and marker is None:
             msg = (tr("No marker yet") + " — " + tr(cad.STAGE_TEXT[row["stage"]])
-                   + ("\n" + row["problems"][0] if row["problems"] else ""))
+                   + ("\n" + tr_msg(row["problems"][0]) if row["problems"] else ""))
             if row["stage"] in ("grafis", "nest") and not self.pages["GRAFIS markers"].running():
                 msg += "\n\n⚠ " + tr("Folder watch is off: the robot and the saved GRAFIS files wait. "
                                         "Click «Folder watch» in the status bar to switch it on.")
