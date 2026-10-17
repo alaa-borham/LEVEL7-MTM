@@ -441,7 +441,14 @@ def test_pattern_sheet_one_of_each_piece_side_by_side(tmp_path):
     sh = pattern_sheet(m)
     names = [pc["name"] for pc in m["pieces"]]
     assert sh["sheet"] and [pc["name"] for pc in sh["pieces"]] == list(dict.fromkeys(names))
-    xs = [(min(q[0] for q in pc["cut"]), max(q[0] for q in pc["cut"])) for pc in sh["pieces"]]
-    assert all(a[1] < b[0] for a, b in zip(xs, xs[1:]))                  # in a row, not on top of each other
-    assert min(q[1] for pc in sh["pieces"] for q in pc["cut"]) == 0
+    import math
+    from PySide6.QtCore import QRectF
+    boxes = [QRectF(min(q[0] for q in pc["cut"]), min(q[1] for q in pc["cut"]),
+                    max(q[0] for q in pc["cut"]) - min(q[0] for q in pc["cut"]),
+                    max(q[1] for q in pc["cut"]) - min(q[1] for q in pc["cut"])) for pc in sh["pieces"]]
+    assert not any(a.intersects(b) for i, a in enumerate(boxes) for b in boxes[i + 1:])     # never on each other
+    for pc in sh["pieces"]:
+        if len(pc["grain"]) >= 2:                                         # standing: grain line vertical
+            (x1, y1), (x2, y2) = pc["grain"][0], pc["grain"][-1]
+            assert abs(x2 - x1) < 1e-6 * max(1, abs(y2 - y1)) + 1e-6
     assert pattern_sheet(None) is None

@@ -109,25 +109,44 @@ def load_marker(path: str) -> dict | None:
 
 def pattern_sheet(marker: dict | None) -> dict | None:
     """The order's pattern as GRAFIS made it: one of each piece of the marker (a mirrored copy only when there
-    is no other), side by side in a row as they lie in the marker. Shown like a marker, without fabric."""
+    is no other), standing upright (grain line vertical) in rows that fill a screen. Shown without fabric."""
     if not marker or not marker.get("pieces"):
         return None
     first: dict[str, dict] = {}
     for p in marker["pieces"]:
         if p["name"] not in first or (first[p["name"]]["mirrored"] and not p["mirrored"]):
             first[p["name"]] = p
-    out, x, height = [], 0.0, 0.0
-    gap = 60.0
+    upright = []
     for p in first.values():
-        xs, ys = [q[0] for q in p["cut"]], [q[1] for q in p["cut"]]
-        dx, dy = x - min(xs), -min(ys)
+        if len(p["grain"]) >= 2:
+            (x1, y1), (x2, y2) = p["grain"][0], p["grain"][-1]
+            a = math.atan2(y2 - y1, x2 - x1)
+        else:                                            # no grain line: the long side upright
+            xs, ys = [q[0] for q in p["cut"]], [q[1] for q in p["cut"]]
+            a = 0.0 if max(xs) - min(xs) >= max(ys) - min(ys) else math.pi / 2
+        t = math.pi / 2 - a
+        ct, st = math.cos(t), math.sin(t)
+        rot = lambda pts: [(x * ct - y * st, x * st + y * ct) for x, y in pts]
+        q = {**p, "cut": rot(p["cut"]), "grain": rot(p["grain"]), "holes": [rot(h) for h in p["holes"]],
+             "corners": rot(p.get("corners") or [])}
+        q.pop("_bb", None)
+        xs, ys = [v[0] for v in q["cut"]], [v[1] for v in q["cut"]]
+        upright.append((q, min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)))
+    gap = 80.0
+    area = sum((w + gap) * (h + gap) for _, _, _, w, h in upright)
+    row_w = max(max(w for *_, w, _ in upright), math.sqrt(area * 2.6))      # about the shape of the view
+    out, x, y, row_h, length = [], 0.0, 0.0, 0.0, 0.0
+    for q, x0, y0, w, h in sorted(upright, key=lambda u: -u[4]):            # tall pieces first
+        if x > 0 and x + w > row_w:
+            x, y, row_h = 0.0, y + row_h + gap, 0.0
+        dx, dy = x - x0, y - y0
         mv = lambda pts: [(a + dx, b + dy) for a, b in pts]
-        out.append({**p, "cut": mv(p["cut"]), "grain": mv(p["grain"]), "holes": [mv(h) for h in p["holes"]],
-                    "corners": mv(p.get("corners") or [])})
-        out[-1].pop("_bb", None)                          # the box of the piece where it lay in the marker
-        x += max(xs) - min(xs) + gap
-        height = max(height, max(ys) - min(ys))
-    return {"width": height, "length": max(x - gap, 0.0), "pieces": out, "stats": {}, "sheet": True}
+        out.append({**q, "cut": mv(q["cut"]), "grain": mv(q["grain"]), "holes": [mv(hh) for hh in q["holes"]],
+                    "corners": mv(q["corners"])})
+        x += w + gap
+        row_h = max(row_h, h)
+        length = max(length, x - gap)
+    return {"width": y + row_h, "length": length, "pieces": out, "stats": {}, "sheet": True}
 
 
 def sharp_corners(pts, min_turn: float = 25.0) -> list:
@@ -421,7 +440,7 @@ class MarkerView(QGraphicsView):
         if not marker.get("sheet"):                          # a pattern sheet has no fabric
             sc.addRect(QRectF(0, 0, length, w), QPen(c["selvedge"], 0), QBrush(c["fabric"]))
         dash = QPen(c["selvedge"], 0, Qt.DashLine)
-        for y in (-12, w + 12):
+        for y in (() if marker.get("sheet") else (-12, w + 12)):     # selvedges: on a marker only
             sc.addLine(0, y, length, y, dash)
         acc = c["piece"]
         fill = QColor(acc)
@@ -431,7 +450,7 @@ class MarkerView(QGraphicsView):
         pen.setWidthF(1.3)
         gpen = QPen(c["muted"], 0)
         gpen.setCosmetic(True)
-        f = QFont(themes.FAMILY["name"], 8)
+        f = QFont(themes.FAMILY["name"], 10 if marker.get("sheet") else 8)
         f.setBold(True)
         for p in marker["pieces"]:
             path = QPainterPath()
@@ -454,13 +473,20 @@ class MarkerView(QGraphicsView):
             t = QGraphicsSimpleTextItem(p["name"])
             t.setFont(f)
             t.setBrush(c["label"])
+            if marker.get("sheet"):                          # pattern sheet: the name in millimetres, as wide
+                tb = t.boundingRect()                        # as the piece at most, so names never overlap
+                k = min(60 / max(tb.height(), 1), 0.92 * br.width() / max(tb.width(), 1))
+                t.setTransform(QTransform.fromScale(k, k) * QTransform.fromTranslate(
+                    br.center().x() - tb.width() * k / 2, br.center().y() - tb.height() * k / 2))
+                sc.addItem(t)
+                continue
             t.setFlag(QGraphicsSimpleTextItem.ItemIgnoresTransformations)
             tb = t.boundingRect()
             t.setTransform(QTransform.fromTranslate(-tb.width() / 2, -tb.height() / 2))   # centred in pixels
             t.setPos(br.center())
             sc.addItem(t)
         if marker.get("sheet"):
-            self._set_content(QRectF(-150, -150, length + 300, w + 300))
+            self._set_content(QRectF(-60, -60, length + 120, w + 120))
             self.fit()
             return
         dpen = QPen(c["accent"], 0)
