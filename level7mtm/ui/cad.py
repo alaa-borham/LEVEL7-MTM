@@ -455,7 +455,7 @@ class Ribbon(QFrame):
     """Tool groups in the order of the work: order → model → nesting → output → system. Never squeezes its
     buttons: with less room the labels go (icons only, label in the tooltip), with still less it scrolls."""
 
-    def __init__(self, groups):
+    def __init__(self, groups, extra=()):
         super().__init__()
         self.setObjectName("ribbon")
         self.setFixedHeight(84)
@@ -519,6 +519,18 @@ class Ribbon(QFrame):
                 self.buttons[key] = b
                 row.addWidget(b)
             gl.addLayout(row, 1)
+            t = QLabel(title)
+            t.setObjectName("ribbonTitle")
+            t.setAlignment(Qt.AlignCenter)
+            gl.addWidget(t)
+            lay.addWidget(g)
+        for title, widget in extra:                          # custom groups (e.g. the ERP countdown)
+            g = QFrame()
+            g.setObjectName("ribbonGroup")
+            gl = QVBoxLayout(g)
+            gl.setContentsMargins(8, 0, 8, 0)
+            gl.setSpacing(1)
+            gl.addWidget(widget, 1)
             t = QLabel(title)
             t.setObjectName("ribbonTitle")
             t.setAlignment(Qt.AlignCenter)

@@ -127,11 +127,15 @@ def test_window_shows_the_selected_marker(ws, tmp_path):
     gp.timer.stop()
     erp = tmp_path / "ERP"                                                          # owner's timer for ERP orders
     erp.mkdir()
-    win.set_watch_interval(5)
+    assert win.erp_clock.text() == "متوقف" or win.erp_clock.text() == "off"       # countdown: off
+    win.set_watch_interval(45)
     win.start_watch(str(erp))
-    assert win.timer.interval() == 5 * 60000 and win.watch_interval_min() == 5
+    assert win.timer.interval() == 45 * 1000 and win.watch_interval_s() == 45
+    assert win.erp_spin.value() == 45 and win.pages["GRAFIS markers"].erp_every.value() == 45   # both in step
+    win._tick()
+    assert win.erp_clock.text() in ("00:45", "00:44")
     win._status_lights()
-    assert "5" in win.sb_items["erp"].property("label")
+    assert "45" in win.sb_items["erp"].property("label")
     win.timer.stop()
     win.watcher = None
     win.toggle_theme()                                                             # rebuild keeps working

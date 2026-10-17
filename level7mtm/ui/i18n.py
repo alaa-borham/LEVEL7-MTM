@@ -411,6 +411,7 @@ AR = {
     "Open GRAFIS with a model first. If GRAFIS is open and nothing is listed, its menu cannot be read: teach the buttons instead.": "افتح GRAFIS بموديل أولًا. إن كان GRAFIS مفتوحًا ولم يظهر شيء، فقائمته لا تُقرأ: علّم الأزرار بدلًا منها.",
     "✓ This button can be pressed in the background, without the mouse.": "✓ هذا الزر يُضغط في الخلفية بدون الفأرة.",
     "This button needs the mouse; choose its GRAFIS menu command to work without it.": "هذا الزر يحتاج الفأرة؛ اختر أمره من قائمة GRAFIS ليعمل بدونها.",
+    "s": "ث",
 }
 
 

@@ -63,6 +63,18 @@ class Worker(QRunnable):
             self.signals.failed.emit(f"{e}\n\n{traceback.format_exc()}")
 
 
+def seconds_box() -> QSpinBox:
+    """Seconds between checks: left-to-right so the number is always visible, wide enough for 86400."""
+    b = QSpinBox()
+    b.setRange(5, 86400)
+    b.setSingleStep(5)
+    b.setSuffix(" " + tr("s"))
+    b.setLayoutDirection(Qt.LeftToRight)
+    b.setAlignment(Qt.AlignCenter)
+    b.setMinimumWidth(96)
+    return b
+
+
 def table(headers: list[str]) -> QTableWidget:
     t = QTableWidget(0, len(headers))
     t.setHorizontalHeaderLabels([tr(h) for h in headers])
@@ -866,10 +878,8 @@ class GrafisPage(Page):
         el = QHBoxLayout(erp_box)
         el.setContentsMargins(0, 4, 0, 0)
         el.addWidget(QLabel(tr("Check every") + ":"))
-        self.erp_every = QSpinBox()
-        self.erp_every.setRange(1, 1440)
-        self.erp_every.setSuffix(" " + tr("min"))
-        self.erp_every.setValue(int(self.ws.db.get_setting("watch.interval_min", 1) or 1))
+        self.erp_every = seconds_box()
+        self.erp_every.setValue(self.win.watch_interval_s() if hasattr(self.win, "watch_interval_s") else 60)
         self.erp_every.valueChanged.connect(lambda v: (self.win.set_watch_interval(v), self.refresh()))
         el.addWidget(self.erp_every)
         el.addStretch()
@@ -1059,7 +1069,7 @@ class GrafisPage(Page):
                           + (f" — {tr('Without the mouse (in the background)')}" if rmode == "background" else "")),
                 "erp": (self.win.watcher is not None if hasattr(self.win, "watcher") else False,
                         f"{self.ws.db.get_setting('watch.folder') or tr('not set')} — {tr('Check every')} "
-                        f"{self.ws.db.get_setting('watch.interval_min', 1)} {tr('min')} — {tr('last check')}: "
+                        f"{self.win.watch_interval_s()} {tr('s')} — {tr('last check')}: "
                         f"{(self.ws.db.get_setting('watch.last_check') or '—').replace('T', ' ')[:19]}"),
                 "auto": (robot_on and self.running(),
                          f"{tr('watching') if self.running() else tr('not watching')} — "
@@ -2554,7 +2564,7 @@ class MainWindow(QMainWindow):
             (tr("System"), [("setup", "setup", tr("Setup"), self.open_setup),
                             ("home", "home", tr("Today"), lambda: self.goto("Home")),
                             ("log", "log", tr("Log"), lambda: self.goto("Log & backups"))]),
-        ])
+        ], extra=[(tr("ERP orders"), self._erp_timer_widget())])
         lay.addWidget(self.ribbon)
         split = QSplitter(Qt.Horizontal)
         split.setHandleWidth(1)
@@ -2602,7 +2612,64 @@ class MainWindow(QMainWindow):
             old.deleteLater()
         self.apply_role()
         self.refresh_cad(force=True)
+        self._tick()
         self.tabs.currentChanged.connect(self._tab_changed)
+
+    def _erp_timer_widget(self) -> QWidget:
+        """Countdown to the next check of the ERP folder; the seconds are set right here; ▶ checks now."""
+        w = QWidget()
+        h = QHBoxLayout(w)
+        h.setContentsMargins(4, 0, 4, 0)
+        h.setSpacing(6)
+        self.erp_clock = _ClickLabel(self._erp_clock_clicked)
+        self.erp_clock.setObjectName("erpClock")
+        self.erp_clock.setCursor(Qt.PointingHandCursor)
+        self.erp_clock.setAlignment(Qt.AlignCenter)
+        self.erp_clock.setMinimumWidth(78)
+        self.erp_clock.setLayoutDirection(Qt.LeftToRight)
+        col = QVBoxLayout()
+        col.setSpacing(2)
+        self.erp_spin = seconds_box()
+        self.erp_spin.setValue(self.watch_interval_s())
+        self.erp_spin.setToolTip(tr("Check every") + " (" + tr("s") + ")")
+        self.erp_spin.valueChanged.connect(self.set_watch_interval)
+        now_b = QPushButton("▶  " + tr("Check now"))
+        now_b.clicked.connect(self.poll_watch)
+        for x in (self.erp_spin, now_b):
+            x.setFixedHeight(25)
+        now_b.setStyleSheet("padding: 1px 8px;")
+        col.addWidget(self.erp_spin)
+        col.addWidget(now_b)
+        h.addWidget(self.erp_clock)
+        h.addLayout(col)
+        if not hasattr(self, "tick_timer"):
+            self.tick_timer = QTimer(self)
+            self.tick_timer.timeout.connect(self._tick)
+            self.tick_timer.start(1000)
+        return w
+
+    def _erp_clock_clicked(self):
+        if self.watcher is None:
+            self._light_clicked("erp")
+        else:
+            self.poll_watch()
+
+    def _tick(self):
+        lab = getattr(self, "erp_clock", None)
+        if lab is None:
+            return
+        from . import themes
+        if self.watcher is None or not self.timer.isActive():
+            lab.setText(tr("off"))
+            lab.setToolTip(tr("ERP orders") + ": " + tr("not watching") + " — " + tr("Click: switch on / set up"))
+            lab.setStyleSheet(f"color: {themes.colour('bad').name()}; font-size: 15pt; font-weight: 800;")
+            return
+        left = max(0, self.timer.remainingTime() // 1000)
+        lab.setText(f"{left // 60:02d}:{left % 60:02d}")
+        lab.setToolTip(f"{tr('ERP orders')}: {self.ws.db.get_setting('watch.folder')} — {tr('last check')}: "
+                       f"{(self.ws.db.get_setting('watch.last_check') or '—').replace('T', ' ')[:19]}")
+        lab.setStyleSheet(f"color: {themes.colour('accent').name()}; font-size: 15pt; font-weight: 800; "
+                          f"font-family: Consolas, 'DejaVu Sans Mono', monospace;")
 
     def _menus(self):
         from . import themes
@@ -2714,8 +2781,8 @@ class MainWindow(QMainWindow):
                   "watch": bool(gp is not None and gp.running()),
                   "erp": self.watcher is not None}
         if self.watcher is not None:
-            self.sb_items["erp"].setProperty("label", f"{tr('ERP orders')} · {self.watch_interval_min()} "
-                                                      f"{tr('min')}")
+            self.sb_items["erp"].setProperty("label", f"{tr('ERP orders')} · {self.watch_interval_s()} "
+                                                      f"{tr('s')}")
         for k, w in self.sb_items.items():
             col = themes.colour("ok" if states[k] else "bad").name()
             w.setText(f"<span style='color:{col}'>●</span> {w.property('label')}")
@@ -3021,23 +3088,33 @@ class MainWindow(QMainWindow):
                 self.start_watch(folder)
         self.pages["Orders"].refresh()
 
-    def watch_interval_min(self) -> int:
-        """How often the ERP folder is checked for new XML orders (minutes, set by the owner)."""
-        return max(1, int(self.ws.db.get_setting("watch.interval_min", 1) or 1))
+    def watch_interval_s(self) -> int:
+        """How often the ERP folder is checked for new XML orders (seconds, set by the owner)."""
+        v = self.ws.db.get_setting("watch.interval_s")
+        if v is None:                                        # set in minutes by an earlier version
+            v = int(self.ws.db.get_setting("watch.interval_min", 1) or 1) * 60
+        return max(5, int(v))
 
-    def set_watch_interval(self, minutes: int):
-        self.ws.db.set_setting("watch.interval_min", int(minutes))
+    def set_watch_interval(self, seconds: int):
+        self.ws.db.set_setting("watch.interval_s", max(5, int(seconds)))
         if self.watcher:
-            self.timer.start(self.watch_interval_min() * 60000)
+            self.timer.start(self.watch_interval_s() * 1000)
+        for w in (getattr(self, "erp_spin", None), getattr(self.pages.get("GRAFIS markers"), "erp_every", None)):
+            if w is not None and w.value() != self.watch_interval_s():
+                w.blockSignals(True)
+                w.setValue(self.watch_interval_s())
+                w.blockSignals(False)
+        self._tick()
 
     def start_watch(self, folder):
         from ..services.grafis_orders import import_and_prepare
         self.watcher = FolderWatcher(self.ws, folder, settle_seconds=3, handler=lambda p: import_and_prepare(self.ws, p))
         self.ws.db.set_setting("watch.folder", folder)
         self.ws.db.set_setting("watch.enabled", True)
-        self.timer.start(self.watch_interval_min() * 60000)
+        self.timer.start(self.watch_interval_s() * 1000)
         self.status(f"{tr('Watch folder')}: {folder}")
         QTimer.singleShot(500, self.poll_watch)              # look at once, then on the owner's timer
+        self._tick()
 
     def poll_watch(self):
         if not self.watcher:
