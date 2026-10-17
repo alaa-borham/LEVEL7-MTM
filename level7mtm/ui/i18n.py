@@ -25,6 +25,12 @@ AR = {
     "the robot is working on another model": "الروبوت يعمل على موديل آخر الآن",
     "Customers": "العملاء",
     "Patterns": "البترونات",
+    "Read this customer's held XML files again now?": "هل تريد قراءة ملفات XML المتوقفة لهذا العميل من جديد الآن؟",
+    "Click a name: it is added to the selected value": "اضغط على الاسم: يُضاف إلى القيمة المختارة",
+    "Variations in this customer's XML files without a meaning — choose a value below, then click a name":
+        "Variations في ملفات XML لهذا العميل بدون معنى — اختر قيمة في الجدول السفلي ثم اضغط على الاسم",
+    "Every Variation in this customer's XML files has a meaning": "كل Variations ملفات XML لهذا العميل لها معنى",
+    "Choose a value first (lower table)": "اختر قيمة أولاً (الجدول السفلي)",
     "Learn from an XML file…": "تعلّم من ملف XML…",
     "Size table name": "اسم جدول المقاسات",
     "Order numbers like this file's are read": "أرقام الطلبات مثل هذا الملف تُقرأ الآن",

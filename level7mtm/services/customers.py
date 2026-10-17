@@ -311,19 +311,55 @@ def reread_file(ws, path: str):
     name = os.path.basename(path)
     f = ws.db.one("SELECT id FROM import_files WHERE sha256=?", (sha,))
     if f:
-        revs = ws.db.q("SELECT id, order_id, status FROM revisions WHERE import_file=?", (f["id"],))
-        if any(r["status"] not in ("needs_review", "ready", "imported", "validation_failed") for r in revs):
-            raise WorkflowError("this XML has order lines that went further (model written to GRAFIS, nested): "
-                                "it is not read again")
-        with ws.db.tx() as c:
-            for r in revs:
-                for t in ("grafis_orders", "manual_edits", "generations", "nesting_items"):
-                    c.execute(f"DELETE FROM {t} WHERE revision_id=?", (r["id"],))
-                c.execute("DELETE FROM revisions WHERE id=?", (r["id"],))
-                if not c.execute("SELECT id FROM revisions WHERE order_id=?", (r["order_id"],)).fetchone():
-                    c.execute("DELETE FROM orders WHERE id=?", (r["order_id"],))
-            c.execute("UPDATE import_files SET status='failed', message='read again' WHERE id=?", (f["id"],))
-            ws.db.audit(c, ws.actor, "import.reread", "import_file", f["id"], {"file": name,
-                                                                                "lines": [r["id"] for r in revs]})
+        _take_back(ws, f["id"], name)
     from .grafis_orders import import_and_prepare
     return import_and_prepare(ws, path)
+
+
+HELD = ("needs_review", "ready", "imported", "validation_failed")
+
+
+def _take_back(ws, fid: int, name: str) -> None:
+    """The order lines of an imported XML that were held (and went no further) are removed, so it reads anew."""
+    revs = ws.db.q("SELECT id, order_id, status FROM revisions WHERE import_file=?", (fid,))
+    if any(r["status"] not in HELD for r in revs):
+        raise WorkflowError("this XML has order lines that went further (model written to GRAFIS, nested): "
+                            "it is not read again")
+    with ws.db.tx() as c:
+        for r in revs:
+            for t in ("grafis_orders", "manual_edits", "generations", "nesting_items"):
+                c.execute(f"DELETE FROM {t} WHERE revision_id=?", (r["id"],))
+            c.execute("DELETE FROM revisions WHERE id=?", (r["id"],))
+            if not c.execute("SELECT id FROM revisions WHERE order_id=?", (r["order_id"],)).fetchone():
+                c.execute("DELETE FROM orders WHERE id=?", (r["order_id"],))
+        c.execute("UPDATE import_files SET status='failed', message='read again' WHERE id=?", (fid,))
+        ws.db.audit(c, ws.actor, "import.reread", "import_file", fid, {"file": name, "lines": [r["id"] for r in revs]})
+
+
+def held_files(ws, cid: str | None = None) -> list[int]:
+    """Imported XML files of the customer whose order lines all wait for review (nothing went further)."""
+    import json
+    cid = cid or ws.customer()
+    out = []
+    for f in ws.db.q("SELECT DISTINCT import_file AS id FROM revisions WHERE status='needs_review'"):
+        revs = ws.db.q("SELECT status, normalized FROM revisions WHERE import_file=?", (f["id"],))
+        if revs and all(r["status"] in HELD for r in revs) and all(
+                (json.loads(r["normalized"]).get("customer") or DEFAULT_CUSTOMER) == cid for r in revs):
+            out.append(f["id"])
+    return out
+
+
+def reread_held(ws, cid: str | None = None) -> list:
+    """Read the customer's held XML files again with his current settings (models written as on import)."""
+    from .grafis_orders import order_mdl, settings
+    outs = []
+    for fid in held_files(ws, cid):
+        f = ws.db.one("SELECT file_name, source_path, raw FROM import_files WHERE id=?", (fid,))
+        _take_back(ws, fid, f["file_name"])
+        out = ws.import_data(bytes(f["raw"]), f["file_name"], f["source_path"] or "")
+        if settings(ws)["enabled"] and out.status == "imported":
+            for ln in out.lines:
+                if ln["action"] in ("new", "new_revision"):
+                    out.grafis.append(order_mdl(ws, ln["revision_id"]))
+        outs.append(out)
+    return outs

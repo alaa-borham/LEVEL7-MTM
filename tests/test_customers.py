@@ -131,3 +131,34 @@ def test_learn_a_customer_xml_and_read_it_again(ws, xml53, tmp_path):
     msgs = [x["message"] for x in rev["normalized"]["problems"]]
     assert not any("expected pattern" in m or "profile expects" in m or "SHX" in m for m in msgs), msgs
     assert ws.customer_of(rev["id"]) == cid
+
+
+def test_options_page_shows_the_customer_and_his_unlinked_variations(ws, xml53):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.services.customers import held_files, reread_held
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    cid = customers.add_customer(ws, "Richy", "From Richy")
+    data = _xml(xml53, "From Richy").replace(b'Name="Sleeve Saada"', b'Name="Sada"')
+    out = ws.import_data(data, "Order-richy.xml")
+    assert out.lines[0]["status"] == "needs_review" and held_files(ws, cid)
+    ws.db.set_setting("ui.customer", cid)
+    win = MainWindow(ws)
+    win.show()
+    win.goto("Design options")
+    app.processEvents()
+    page = win.pages["Design options"]
+    assert page.customer_box.currentText() == "Richy"                 # whose options these are
+    names = [page.unlinked.item(i).text() for i in range(page.unlinked.count())]
+    assert "Sada" in names and "Collar Square" not in names            # only the ones without a meaning
+    # give "Sada" a meaning (sleeve = saada), then the held file is read again and passes that problem
+    from level7mtm.services.options import option_table, save_options
+    groups = option_table(ws)
+    sleeve = next(g for g in groups if g["group"] == "sleeve")
+    next(v for v in sleeve["values"] if v["value"] == "saada")["erp_names"].append("Sada")
+    save_options(ws, groups)
+    outs = reread_held(ws, cid)
+    rev = ws.revision(outs[0].lines[0]["revision_id"])
+    assert not any("'Sada'" in p["message"] for p in rev["normalized"]["problems"])
+    ws.db.set_setting("ui.customer", None)

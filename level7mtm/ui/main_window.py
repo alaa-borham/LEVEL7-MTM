@@ -205,6 +205,54 @@ def alive(obj) -> bool:
         return True
 
 
+def customer_bar(page) -> QWidget:
+    """"Customer: [..]" at the top of a settings page: whose size table / options / parts are shown and saved."""
+    w = QWidget()
+    h = QHBoxLayout(w)
+    h.setContentsMargins(0, 0, 0, 4)
+    lab = QLabel(tr("Customer") + ":")
+    lab.setStyleSheet("font-weight: 700;")
+    box = QComboBox()
+    box.setMinimumWidth(180)
+    box.setToolTip(tr("The customer whose settings are shown and changed"))
+    h.addWidget(lab)
+    h.addWidget(box)
+    h.addStretch()
+    page.customer_box = box
+
+    def chosen(_i):
+        page.ws.db.set_setting("ui.customer", box.currentData())
+        page.win.customer_changed()
+    box.activated.connect(chosen)
+    return w
+
+
+def fill_customer_box(ws, box) -> None:
+    from ..services.customers import names
+    box.blockSignals(True)
+    box.clear()
+    for cid, n in names(ws).items():
+        box.addItem(n, cid)
+    box.setCurrentIndex(max(box.findData(ws.customer()), 0))
+    box.blockSignals(False)
+
+
+def reread_held_question(page, msg: str) -> None:
+    """After the customer's settings were saved: read his held orders again (they may pass now)."""
+    from ..services.customers import held_files, reread_held
+    n = len(held_files(page.ws))
+    if not n:
+        QMessageBox.information(page, tr("Saved"), msg)
+        return
+    if QMessageBox.question(page, tr("Saved"), msg + "\n\n" + tr("Read this customer's held XML files again "
+                                                                   "now?") + f" ({n})") == QMessageBox.Yes:
+        page.win.run(lambda: reread_held(page.ws), lambda outs: (
+            page.win.refresh_cad(force=True),
+            QMessageBox.information(page, tr("Saved"), "\n".join(
+                f"{o.file_name}: {tr(o.status)} " + ", ".join(f"{x['line_number']} → {tr(x['status'])}"
+                                                            for x in o.lines) for o in outs))))
+
+
 def ask_reason(parent, title) -> str | None:
     text, ok = QInputDialog.getText(parent, title, tr("Reason"))
     return text.strip() if ok and text.strip() else None
@@ -1670,10 +1718,21 @@ class OptionsPage(Page):
     def __init__(self, win):
         super().__init__(win)
         lay = QVBoxLayout(self)
+        lay.addWidget(customer_bar(self))
         self.info = QLabel(tr("Groups such as collar or sleeve; each value has the name(s) it has in the XML "
                               "(Variation Name). An XML name that is not here makes the order 'needs review'."))
         self.info.setWordWrap(True)
         lay.addWidget(self.info)
+        self.unlinked_label = QLabel()                   # Variations of this customer's XML files with no meaning
+        self.unlinked_label.setWordWrap(True)
+        lay.addWidget(self.unlinked_label)
+        self.unlinked = QListWidget()
+        self.unlinked.setFlow(QListWidget.LeftToRight)
+        self.unlinked.setWrapping(True)
+        self.unlinked.setMaximumHeight(64)
+        self.unlinked.setToolTip(tr("Click a name: it is added to the selected value"))
+        self.unlinked.itemClicked.connect(self._link)
+        lay.addWidget(self.unlinked)
         lay.addWidget(QLabel(tr("Option groups")))
         self.g = QTableWidget(0, len(self.GCOLS))
         self.g.setHorizontalHeaderLabels([tr(c) for c in self.GCOLS])
@@ -1706,12 +1765,40 @@ class OptionsPage(Page):
 
     def refresh(self):
         from ..services.options import option_table
+        fill_customer_box(self.ws, self.customer_box)
         self.groups = option_table(self.ws)
+        self._fill_unlinked()
         self.cur = -1
         self._fill_groups()
         if self.groups:
             self.g.setCurrentCell(0, 0)
             self._switch(-1, 0)
+
+    def _fill_unlinked(self):
+        """The Variation names that came in this customer's XML files and no value has yet."""
+        from ..services.customers import _plain, patterns, variations_seen
+        linked = {_plain(n) for gr in self.groups for v in gr.get("values", []) for n in v.get("erp_names", [])}
+        linked |= {_plain(p["variation"]) for p in patterns(self.ws)}
+        free = [v for v in variations_seen(self.ws) if _plain(v) not in linked]
+        self.unlinked.clear()
+        self.unlinked.addItems(free)
+        self.unlinked.setVisible(bool(free))
+        self.unlinked_label.setText(
+            (tr("Variations in this customer's XML files without a meaning — choose a value below, then click a name")
+             + ":") if free else tr("Every Variation in this customer's XML files has a meaning"))
+
+    def _link(self, item):
+        r = self.v.currentRow()
+        if r < 0:
+            QMessageBox.information(self, tr("Design options"), tr("Choose a value first (lower table)"))
+            return
+        col = len(self.VCOLS) - 1
+        cell = self.v.item(r, col)
+        names = [n.strip() for n in (cell.text() if cell else "").split(";") if n.strip()]
+        if item.text() not in names:
+            names.append(item.text())
+        self.v.setItem(r, col, QTableWidgetItem("; ".join(names)))
+        self.unlinked.takeItem(self.unlinked.row(item))
 
     def _fill_groups(self):
         self.g.blockSignals(True)
@@ -1815,7 +1902,7 @@ class OptionsPage(Page):
         msg = f"{tr('Saved')}: {tr('Rules')} {out['catalog_version']}"
         if out["mapping_version"]:
             msg += f"\n{tr('ERP mapping profile')} {out['mapping_version']}"
-        QMessageBox.information(self, tr("Design options"), msg)
+        reread_held_question(self, msg)
         self.refresh()
 
 
@@ -1828,6 +1915,7 @@ class GrafisPartsPage(Page):
     def __init__(self, win):
         super().__init__(win)
         lay = QVBoxLayout(self)
+        lay.addWidget(customer_bar(self))
         self.info = QLabel()
         self.info.setWordWrap(True)
         lay.addWidget(self.info)
@@ -1851,6 +1939,7 @@ class GrafisPartsPage(Page):
         return m if m and os.path.isfile(m) else None
 
     def refresh(self):
+        fill_customer_box(self.ws, self.customer_box)
         from ..services.gparts import model_parts, option_choices, parts_table
         mdl = self._mdl()
         self.info.setText(tr("Choose for each design option the GRAFIS parts it needs (* = every order). Exactly "
@@ -1929,7 +2018,7 @@ class GrafisPartsPage(Page):
         except Exception as e:  # noqa: BLE001
             QMessageBox.warning(self, tr("Error"), str(e))
             return
-        QMessageBox.information(self, tr("GRAFIS parts"), f"{tr('Saved')}: {tr('Rules')} {ver}")
+        reread_held_question(self, f"{tr('Saved')}: {tr('Rules')} {ver}")
         self.refresh()
 
 
@@ -1941,6 +2030,7 @@ class XValuesPage(Page):
     def __init__(self, win):
         super().__init__(win)
         lay = QVBoxLayout(self)
+        lay.addWidget(customer_bar(self))
         self.info = QLabel()
         self.info.setWordWrap(True)
         lay.addWidget(self.info)
@@ -1977,6 +2067,7 @@ class XValuesPage(Page):
             self.refresh()
 
     def refresh(self):
+        fill_customer_box(self.ws, self.customer_box)
         from ..services.xtable import x_parts
         mdl = self._mdl()
         _, cat = self.ws.active("catalog")
@@ -2075,7 +2166,7 @@ class XValuesPage(Page):
         if out["new_codes"]:
             msg += f"\n{tr('New XML codes')}: {', '.join(out['new_codes'])} ({tr('ERP mapping profile')} " \
                    f"{out['mapping_version']})"
-        QMessageBox.information(self, tr("X values for GRAFIS"), msg)
+        reread_held_question(self, msg)
         self.refresh()
 
 
@@ -3096,14 +3187,10 @@ class MainWindow(QMainWindow):
         return self.customer_box
 
     def _fill_customers(self):
-        from ..services.customers import names
-        box = self.customer_box
-        box.blockSignals(True)
-        box.clear()
-        for cid, n in names(self.ws).items():
-            box.addItem(n, cid)
-        box.setCurrentIndex(max(box.findData(self.ws.customer()), 0))
-        box.blockSignals(False)
+        fill_customer_box(self.ws, self.customer_box)
+        for p in self.pages.values():                     # the boxes at the top of the settings pages too
+            if getattr(p, "customer_box", None) is not None:
+                fill_customer_box(self.ws, p.customer_box)
 
     def customer_changed(self):
         """Another customer chosen (or one added / changed): the open settings pages show his settings."""
