@@ -192,9 +192,32 @@ def import_and_prepare(ws, path: str):
         for ln in out.lines:
             if ln["action"] in ("new", "new_revision"):
                 out.grafis.append(order_mdl(ws, ln["revision_id"]))
+    elif settings(ws)["enabled"] and out.status == "duplicate":
+        again = _prepare_cleaned(ws, path)               # the same XML again after its lines were cleaned
+        if again:
+            out.grafis += again
+            out.message = "the same file was already imported; its order lines had been cleaned from the list — " \
+                          "their GRAFIS models are written again"
+    if settings(ws)["enabled"]:
         bad = [g for g in out.grafis if g["status"] in ("blocked", "not_configured")]
         for k, g in enumerate(bad):
             errors_folder.report(ws, f"{stem}__{g['line_number']}", g["problems"],
                                  f"order line {g['line_number']}: no GRAFIS model written",
                                  copy_file=path if k == 0 else None)
+    return out
+
+
+def _prepare_cleaned(ws, path: str) -> list[dict]:
+    """Order lines of an XML imported before whose GRAFIS rows were all cleaned from the list (or never written):
+    write their models again, so importing the file once more runs the whole chain again."""
+    with open(path, "rb") as fh:
+        sha = hashlib.sha256(fh.read()).hexdigest()
+    f = ws.db.one("SELECT id FROM import_files WHERE sha256=? AND status='imported'", (sha,))
+    if not f:
+        return []
+    out = []
+    for r in ws.db.q("SELECT id FROM revisions WHERE import_file=? AND status NOT IN ('superseded','cancelled') "
+                     "ORDER BY id", (f["id"],)):
+        if not ws.db.one("SELECT 1 FROM grafis_orders WHERE revision_id=? AND archived=0", (r["id"],)):
+            out.append(order_mdl(ws, r["id"]))
     return out

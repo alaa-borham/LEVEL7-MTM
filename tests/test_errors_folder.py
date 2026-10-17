@@ -78,3 +78,20 @@ def test_clean_list_hides_rows_and_can_delete_files(ws, tmp_path):
     assert len(pending(ws)) == 2                               # … and the robot takes it again
     r = clean(ws, delete_files=True)
     assert len(r["deleted"]) == 2 and not any(os.path.exists(p) for p in paths)
+
+
+@needs_mdl
+def test_importing_a_cleaned_xml_again_runs_the_chain_again(ws, tmp_path):
+    """The owner cleans the list and imports the same XML again: its models are written again (robot takes them)."""
+    from level7mtm.services.cleanup import clean
+    from level7mtm.services.grafis_robot import pending
+    ws.db.set_setting("grafis.mdl", MDL)
+    ws.db.set_setting("grafis.input", str(tmp_path / "MDL"))
+    assert len(import_and_prepare(ws, XML_53).grafis) == 2
+    again = import_and_prepare(ws, XML_53)
+    assert again.status == "duplicate" and again.grafis == []          # not cleaned: nothing to do
+    clean(ws)
+    assert pending(ws) == []
+    again = import_and_prepare(ws, XML_53)
+    assert again.status == "duplicate" and [g["status"] for g in again.grafis] == ["written", "written"]
+    assert "written again" in again.message and len(pending(ws)) == 2
