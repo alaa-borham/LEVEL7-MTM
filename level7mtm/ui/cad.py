@@ -671,6 +671,13 @@ class Inspector(QScrollArea):
                                     f"background: rgba({bad.red()},{bad.green()},{bad.blue()},0.10);")
         self.problems.hide()
         self.lay.addWidget(self.problems)
+        self.buttons = {}                                 # the actions right under it, never scrolled away
+        for key, text, primary in actions:
+            b = QPushButton(text)
+            if primary:
+                b.setObjectName("primary")
+            self.buttons[key] = b
+            self.lay.addWidget(b)
         self.kv: dict[str, QLabel] = {}
         self._section(tr("The order"), [("fabric", "Fabric"), ("width", "Width"), ("quantity", "Quantity"),
                                     ("imported", "Imported")])
@@ -698,14 +705,6 @@ class Inspector(QScrollArea):
         self.stages = QGridLayout()
         self.stages.setVerticalSpacing(2)
         self.lay.addLayout(self.stages)
-        self.lay.addSpacing(6)
-        self.buttons = {}
-        for key, text, primary in actions:
-            b = QPushButton(text)
-            if primary:
-                b.setObjectName("primary")
-            self.buttons[key] = b
-            self.lay.addWidget(b)
         self.lay.addStretch()
         self.show_row(None)
 
