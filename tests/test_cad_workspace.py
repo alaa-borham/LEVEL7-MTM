@@ -178,7 +178,8 @@ def test_measure_tools_on_the_marker(tmp_path):
     panel.use_tool("curve")
     v.measure_click((30, 0))                                         # on the edge of front1 (first copy)
     v.measure_click((100, 20))
-    assert v.meas["text"] == "9.0 cm" and v.meas["extra"] == "front1"     # 7 + 2 along the edge, no perimeter
+    assert v.meas["text"] == "9.0 cm" and v.meas["extra"].startswith("front1")   # 7 + 2 along the edge
+    assert "7.3 cm" in v.meas["extra"]                               # and the straight distance (√(70²+20²))
     app.processEvents()
     v.viewport().repaint()
     assert v.box.isVisible() and "9.0 cm" in v.box.value.text()
@@ -193,6 +194,13 @@ def test_measure_tools_on_the_marker(tmp_path):
     assert abs(v.transform().m11() - k * 1.35) < 1e-9
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QMouseEvent
+    at = QPointF(v.mapFromScene(50, 1))                              # near front1's edge: the magnifier
+    app.sendEvent(v.viewport(), QMouseEvent(QEvent.MouseMove, at, v.viewport().mapToGlobal(at), Qt.NoButton,
+                                            Qt.NoButton, Qt.NoModifier))
+    assert v._near is not None and v._near[0] < 2
+    v.viewport().repaint()
     k = v.transform().m11()
     QTest.keyPress(v, Qt.Key_Space)                                  # space held: zoom mode
     assert v.zooming

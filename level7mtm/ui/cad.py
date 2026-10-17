@@ -316,6 +316,7 @@ class MarkerView(QGraphicsView):
         self.tool: str | None = None            # None, "line" (straight length) or "curve" (along a piece edge)
         self.meas: dict = {}
         self.box = MeasureBox(self.viewport())
+        self._near = None
         self.zooming = False                     # space bar held: left click = zoom out, right click = zoom in
         self.setFocusPolicy(Qt.StrongFocus)
 
@@ -422,6 +423,22 @@ class MarkerView(QGraphicsView):
     def _tol(self) -> float:
         return 12 / (self.transform().m11() or 1.0)          # 12 screen pixels in millimetres
 
+    def _near_edge(self, p):
+        """The nearest point on a piece edge to p (scene mm): (distance, piece index, arc position, point)."""
+        tol = self._tol() * 3
+        near = None
+        for i, pc in enumerate((self.marker or {}).get("pieces", [])):
+            bb = pc.get("_bb")
+            if bb is None:
+                xs, ys = [x for x, _ in pc["cut"]], [y for _, y in pc["cut"]]
+                bb = pc["_bb"] = (min(xs), min(ys), max(xs), max(ys))
+            if not (bb[0] - tol <= p[0] <= bb[2] + tol and bb[1] - tol <= p[1] <= bb[3] + tol):
+                continue
+            d, s_, c = nearest_on_contour(pc["cut"], p)
+            if near is None or d < near[0]:
+                near = (d, i, s_, c)
+        return near
+
     def _snap(self, p):
         """Snap to the nearest piece corner within a few pixels."""
         best = None
@@ -461,7 +478,8 @@ class MarkerView(QGraphicsView):
             pc = self.marker["pieces"][i]
             length, way = arc_between(pc["cut"], first[1], s_)
             self.meas = {"kind": "curve", "first": first, "pts": [first[2], c], "way": way, "value": length,
-                         "text": f"{length / 10:.1f} cm", "extra": pc["name"]}
+                         "text": f"{length / 10:.1f} cm",
+                         "extra": f"{pc['name']} — {tr('straight')} {math.dist(first[2], c) / 10:.1f} cm"}
             self.measured.emit(self.meas["text"])
         self.viewport().update()
 
@@ -522,6 +540,11 @@ class MarkerView(QGraphicsView):
             self.verticalScrollBar().setValue(self.verticalScrollBar().value() - int(d.y()))
         p = self.mapToScene(e.position().toPoint())
         self._cursor = p
+        self._near = None
+        if self.tool and self.marker:                     # magnifier near a piece line
+            n = self._near_edge((p.x(), p.y()))
+            if n and n[0] <= self._tol() * 3:
+                self._near = n
         self.cursor_moved.emit(p.x(), p.y())
         self.viewport().update()
         super().mouseMoveEvent(e)
@@ -585,6 +608,42 @@ class MarkerView(QGraphicsView):
             self.box.show_value(m["text"], m.get("extra", ""), mid)
         p.setBrush(Qt.NoBrush)
 
+    LOUPE, LOUPE_ZOOM = 150, 5.0
+
+    def _draw_loupe(self, p: QPainter, c):
+        """A round magnifier near the cursor while measuring close to a piece line: the spot 5x larger, a cross
+        and the exact point the click will take."""
+        if not (self.tool and self.marker and self._cursor is not None and self._near):
+            return
+        cur = self.mapFromScene(self._cursor)
+        D = self.LOUPE
+        vp = self.viewport().rect()
+        x = cur.x() + 24 if cur.x() + 24 + D < vp.width() else cur.x() - 24 - D
+        y = cur.y() - 24 - D if cur.y() - 24 - D > self.RULER else cur.y() + 24
+        target = QRectF(x, y, D, D)
+        k = self.transform().m11() * self.LOUPE_ZOOM              # loupe pixels per mm
+        half = D / 2 / k
+        src = QRectF(self._cursor.x() - half, self._cursor.y() - half, 2 * half, 2 * half)
+        clip = QPainterPath()
+        clip.addEllipse(target)
+        p.save()
+        p.setClipPath(clip)
+        p.fillRect(target, c["canvas"])
+        self.scene().render(p, target, src, Qt.IgnoreAspectRatio)
+        to = lambda q: QPointF(target.center().x() + (q[0] - self._cursor.x()) * k,
+                               target.center().y() + (q[1] - self._cursor.y()) * k)
+        snap = self._snap((self._cursor.x(), self._cursor.y())) if self.tool == "line" else self._near[3]
+        p.setPen(QPen(c["warn"], 2))
+        p.setBrush(Qt.NoBrush)
+        p.drawEllipse(to(snap), 5, 5)
+        p.setPen(QPen(c["text"], 1))
+        ctr = target.center()
+        p.drawLine(QPointF(ctr.x() - 9, ctr.y()), QPointF(ctr.x() + 9, ctr.y()))
+        p.drawLine(QPointF(ctr.x(), ctr.y() - 9), QPointF(ctr.x(), ctr.y() + 9))
+        p.restore()
+        p.setPen(QPen(c["accent"], 2))
+        p.drawEllipse(target)
+
     def drawForeground(self, p: QPainter, rect: QRectF):
         """In viewport pixels: the empty-state text, the cursor cross and the rulers (top and left edge)."""
         c = themes.colours()
@@ -596,6 +655,7 @@ class MarkerView(QGraphicsView):
             p.setFont(QFont(themes.FAMILY["name"], 11))
             p.drawText(vp, Qt.AlignCenter, self.message or tr("Choose an order line in the browser"))
         self._draw_measure(p, c)
+        self._draw_loupe(p, c)
         cur = self.mapFromScene(self._cursor) if self._cursor is not None and self.marker else None
         if cur is not None:
             p.setPen(QPen(c["accent"], 1))

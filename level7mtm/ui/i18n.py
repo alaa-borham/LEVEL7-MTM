@@ -419,6 +419,7 @@ AR = {
     "Measure curves": "قياس المنحنيات",
     "Measured": "القياس",
     "edge": "المحيط",
+    "straight": "مستقيم",
 }
 
 
