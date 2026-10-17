@@ -9,10 +9,10 @@ import sys
 import traceback
 import threading
 
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
+from PySide6.QtCore import QObject, QRunnable, QSize, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFrame,
-                               QGridLayout, QSizePolicy,
+                               QGridLayout, QSizePolicy, QToolButton,
                                QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
                                QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QSplitter,
                                QStackedWidget, QTabBar, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
@@ -1918,12 +1918,13 @@ class OptionsPage(Page):
             out = save_options(self.ws, self.collect())
         except Exception as e:  # noqa: BLE001
             QMessageBox.warning(self, tr("Error"), str(e))
-            return
+            return False
         msg = f"{tr('Saved')}: {tr('Rules')} {out['catalog_version']}"
         if out["mapping_version"]:
             msg += f"\n{tr('ERP mapping profile')} {out['mapping_version']}"
         reread_held_question(self, msg)
         self.refresh()
+        return True
 
 
 class GrafisPartsPage(Page):
@@ -2037,9 +2038,10 @@ class GrafisPartsPage(Page):
             ver = save_parts(self.ws, self.rows(), self._mdl())
         except Exception as e:  # noqa: BLE001
             QMessageBox.warning(self, tr("Error"), str(e))
-            return
+            return False
         reread_held_question(self, f"{tr('Saved')}: {tr('Rules')} {ver}")
         self.refresh()
+        return True
 
 
 class XValuesPage(Page):
@@ -2188,7 +2190,7 @@ class XValuesPage(Page):
         from ..services.xtable import save_x_tables
         num, mdl = self.part.currentData(), self._mdl()
         if num is None or not mdl:
-            return
+            return False
         by_part: dict[int, list] = {}
         for r in self.rows():
             by_part.setdefault(r.pop("part"), []).append(r)
@@ -2196,13 +2198,14 @@ class XValuesPage(Page):
             out = save_x_tables(self.ws, mdl, by_part)
         except Exception as e:  # noqa: BLE001
             QMessageBox.warning(self, tr("Error"), str(e))
-            return
+            return False
         msg = f"{tr('Saved')}: {tr('Rules')} {out['catalog_version']}"
         if out["new_codes"]:
             msg += f"\n{tr('New XML codes')}: {', '.join(out['new_codes'])} ({tr('ERP mapping profile')} " \
                    f"{out['mapping_version']})"
         reread_held_question(self, msg)
         self.refresh()
+        return True
 
 
 class PatternsPanel(QWidget):
@@ -2279,9 +2282,9 @@ class PatternsPanel(QWidget):
             set_patterns(self.ws, self.rows())
         except Exception as e:  # noqa: BLE001 - shown, nothing saved
             QMessageBox.warning(self, tr("Error"), tr_msg(str(e)))
-            return
+            return False
         reread_held_question(self.page, tr("Saved"))
-        self.page.refresh()
+        return True
 
 
 class CustomersPage(Page):
@@ -2314,28 +2317,70 @@ class CustomersPage(Page):
         self.head.setObjectName("pageTitle")
         self.head.setStyleSheet("font-size: 13pt; font-weight: 800; padding-top: 6px;")
         lay.addWidget(self.head)
-        self.inner = QTabWidget()                    # the chosen customer's settings, side by side
-        self.patterns = PatternsPanel(self)
-        self.inner_pages = {"patterns": self.patterns, "X values for GRAFIS": XValuesPage(win),
-                            "Design options": OptionsPage(win), "GRAFIS parts": GrafisPartsPage(win)}
-        for key, label_ in (("patterns", "Patterns"), ("X values for GRAFIS", "Size table setup"),
-                            ("Design options", "Piece options setup"), ("GRAFIS parts", "Fixed pieces")):
-            pg = self.inner_pages[key]
-            box = getattr(pg, "customer_box", None)
-            if box is not None:
-                box.parentWidget().hide()             # the customer is chosen in the list above
-            self.inner.addTab(pg, tr(label_))
-        self.inner.currentChanged.connect(lambda _i: self._refresh_inner())
-        lay.addWidget(self.inner, 1)
+        tiles = QHBoxLayout()                        # each setting opens in its own window: save and close
+        self.tile_buttons = {}
+        for key, ic, label_ in (("patterns", "nest", "Patterns"), ("X values for GRAFIS", "xvalues", "Size table setup"),
+                                ("Design options", "options", "Piece options setup"),
+                                ("GRAFIS parts", "parts", "Fixed pieces")):
+            from . import cad
+            b = QToolButton()
+            b.setObjectName("ribbonButton")
+            b.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+            from . import themes as _th
+            b.setIcon(cad.icon(ic, _th.colour("accent")))
+            b.setIconSize(QSize(30, 30))
+            b.setText(tr(label_))
+            b.setMinimumSize(150, 84)
+            b.clicked.connect(lambda _=False, k=key: self.open_editor(k))
+            self.tile_buttons[key] = b
+            tiles.addWidget(b)
+        tiles.addStretch()
+        lay.addLayout(tiles)
+        lay.addStretch()
+        self.editor_dialog = None
+        self.editor_page = None
+        self.editor_key = None
+
+    LABELS = {"patterns": "Patterns", "X values for GRAFIS": "Size table setup",
+              "Design options": "Piece options setup", "GRAFIS parts": "Fixed pieces"}
 
     def show_tab(self, key: str):
-        self.inner.setCurrentIndex(self.INNER.get(key, 0))
-        self._refresh_inner()
+        self.open_editor(key)
 
-    def _refresh_inner(self):
-        pg = self.inner.currentWidget()
-        if pg is not None:
-            self.win.guard(pg.refresh)
+    def open_editor(self, key: str):
+        """One of the customer's settings in its own window: change it, then Save and close (or Cancel)."""
+        from ..services.customers import names
+        if self.editor_dialog is not None and self.editor_dialog.isVisible():
+            self.editor_dialog.close()
+        page = PatternsPanel(self) if key == "patterns" else \
+            {"X values for GRAFIS": XValuesPage, "Design options": OptionsPage, "GRAFIS parts": GrafisPartsPage}[key](
+                self.win)
+        box = getattr(page, "customer_box", None)
+        if box is not None:
+            box.parentWidget().hide()                 # the customer is the one chosen on the Customers page
+        for b in page.findChildren(QPushButton):      # one Save: the window's own
+            if b.text() == tr("Save"):
+                b.hide()
+        d = QDialog(self)
+        d.setWindowTitle(f"{tr(self.LABELS[key])} — {names(self.ws).get(self.ws.customer(), '')}")
+        d.resize(1150, 720)
+        v = QVBoxLayout(d)
+        v.addWidget(page, 1)
+        bb = QDialogButtonBox()
+        ok = bb.addButton(tr("Save and close"), QDialogButtonBox.AcceptRole)
+        bb.addButton(tr("Cancel"), QDialogButtonBox.RejectRole)
+        ok.setObjectName("primary")
+
+        def save_close():
+            if page.save() is not False:              # an error keeps the window open to correct it
+                d.accept()
+                self.refresh()
+        ok.clicked.connect(save_close)
+        bb.rejected.connect(d.reject)
+        v.addWidget(bb)
+        self.editor_dialog, self.editor_page, self.editor_key = d, page, key
+        self.win.guard(page.refresh)
+        d.open()                                      # modal to the window, without blocking the program
 
     def _picked(self):
         cid = self._cid()
@@ -2360,7 +2405,6 @@ class CustomersPage(Page):
         self.t.blockSignals(False)
         name = next((c["name"] for c in cs if c["id"] == cur), "")
         self.head.setText(f"{tr('Settings of')} {name}")
-        self._refresh_inner()
 
     def _cid(self):
         ids = selected_data(self.t)

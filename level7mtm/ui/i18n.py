@@ -25,6 +25,7 @@ AR = {
     "the robot is working on another model": "الروبوت يعمل على موديل آخر الآن",
     "Customers": "العملاء",
     "Patterns": "البترونات",
+    "Save and close": "حفظ وإغلاق",
     "The GRAFIS parts this value produces (set in Fixed pieces)": "بارتات GRAFIS التي تُنتجها هذه القيمة (تُضبط في «القطع الثابتة»)",
     "All main parts": "كل البارتات الرئيسية",
     "Part numbers": "أرقام البارتات",

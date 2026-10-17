@@ -149,9 +149,9 @@ def test_options_page_shows_the_customer_and_his_unlinked_variations(ws, xml53):
     win.goto("Design options")                                        # opens with the customer, in one place
     app.processEvents()
     cp = win.pages["Customers"]
-    assert win.current_page() is cp and cp.inner.currentIndex() == 2
-    assert "Richy" in cp.head.text()                                  # whose settings these are
-    page = cp.inner_pages["Design options"]
+    assert win.current_page() is cp and cp.editor_key == "Design options" and cp.editor_dialog.isVisible()
+    assert "Richy" in cp.head.text() and "Richy" in cp.editor_dialog.windowTitle()   # whose settings these are
+    page = cp.editor_page
     names = [page.unlinked.item(i).text() for i in range(page.unlinked.count())]
     assert "Sada" in names and "Collar Square" not in names            # only the ones without a meaning
     # give "Sada" a meaning (sleeve = saada), then the held file is read again and passes that problem
@@ -179,7 +179,7 @@ def test_x_values_of_all_main_parts_in_one_table(ws, tmp_path, monkeypatch):
     win.show()
     win.goto("X values for GRAFIS")
     app.processEvents()
-    page = win.pages["Customers"].inner_pages["X values for GRAFIS"]
+    page = win.pages["Customers"].editor_page
     assert page.part.currentData() == page.ALL                      # all main parts first
     parts = {page.t.item(i, 0).data(0x0100)[0] for i in range(page.t.rowCount())}
     assert len(parts) > 1 and page.t.item(0, 0).text().startswith(f"{min(parts):03d}/X")
@@ -190,3 +190,33 @@ def test_x_values_of_all_main_parts_in_one_table(ws, tmp_path, monkeypatch):
     rules = ws.active("catalog")[1]["products"]
     st = next(iter(next(iter(rules.values()))["styles"].values()))
     assert any(r["target"]["piece"] == f"{max(parts):03d}" and r["source"].get("code") == "FL" for r in st["rules"])
+
+
+def test_each_setting_opens_in_its_own_window_save_and_close(ws, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.services.customers import patterns
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    monkeypatch.setattr("level7mtm.ui.main_window.reread_held_question", lambda *a: None)
+    win = MainWindow(ws)
+    win.show()
+    win.goto("Customers")
+    cp = win.pages["Customers"]
+    cp.tile_buttons["patterns"].click()
+    app.processEvents()
+    d, page = cp.editor_dialog, cp.editor_page
+    assert d.isVisible()
+    page._add("Big Size", "C:/x/big.mdl")
+    save = next(b for b in d.findChildren(QtWidgets.QPushButton) if b.text() in ("Save and close", "حفظ وإغلاق"))
+    save.click()
+    app.processEvents()
+    assert not d.isVisible() and patterns(ws) == [{"variation": "Big Size", "mdl": "C:/x/big.mdl"}]
+    monkeypatch.setattr(QtWidgets.QMessageBox, "warning", lambda *a, **k: None)
+    cp.tile_buttons["patterns"].click()                              # an error keeps the window open
+    cp.editor_page._add("", "C:/x/only-model.mdl")
+    next(b for b in cp.editor_dialog.findChildren(QtWidgets.QPushButton)
+         if b.text() in ("Save and close", "حفظ وإغلاق")).click()
+    app.processEvents()
+    assert cp.editor_dialog.isVisible()
+    cp.editor_dialog.reject()
