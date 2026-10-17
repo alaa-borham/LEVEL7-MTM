@@ -51,8 +51,10 @@ def test_new_customer_copy_reads_his_xml_and_has_his_own_rules(ws, xml53, tmp_pa
         ws.set_active("catalog", ws.save_document("catalog", cat, "test"))
     with ws.for_customer(DEFAULT_CUSTOMER):                       # … leaves LEVEL7 as it is
         assert ws.active("catalog")[0] == pk_l
-    ok = ws.import_data(open(xml53, "rb").read(), "Order-l7.xml")  # LEVEL7's XML: still LEVEL7
-    assert ok.status in ("imported", "duplicate")
+    ok = ws.import_data(open(xml53, "rb").read(), "Order-l7.xml")  # LEVEL7's XML, same line numbers:
+    assert ok.status == "imported"                                # his own order lines, not Richy's
+    l7 = ok.lines[0]["revision_id"]
+    assert l7 != rid and ws.customer_of(l7) == DEFAULT_CUSTOMER
     with pytest.raises(WorkflowError):
         customers.add_customer(ws, "Other", "From Richy")
     customers.update_customer(ws, cid, name="Richy Co", reference="From Richy2")

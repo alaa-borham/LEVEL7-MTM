@@ -67,10 +67,14 @@ class FolderWatcher:
                 continue
             if t - prev[2] < self.settle or st.st_size == 0:
                 continue
-            out = self.handler(p)
-            results.append(out)
             self.state.done[p] = sig
             self.state.seen.pop(p, None)
+            try:
+                out = self.handler(p)
+            except Exception as e:  # noqa: BLE001 - one bad file never stops the files after it
+                self.state.failed[p] = f"{type(e).__name__}: {e}"
+                continue
+            results.append(out)
             if _failed(out):
                 self.state.failed[p] = _message(out)
             else:
@@ -79,8 +83,17 @@ class FolderWatcher:
 
     def retry(self, path: str):
         self.state.done.pop(path, None)
+        self.state.failed.pop(path, None)
+        if not os.path.isfile(path):                   # a failed ERP file was moved to the ER folder
+            moved = os.path.join(os.path.dirname(path), "ER", os.path.basename(path))
+            if not os.path.isfile(moved):
+                return None                            # gone (deleted or moved by hand): nothing to retry
+            path = moved
         out = self.handler(path)
-        st = os.stat(path)
+        try:
+            st = os.stat(path)
+        except OSError:                                # moved again by the handler (to done / ER)
+            return out
         self.state.done[path] = (st.st_size, st.st_mtime)
         if _failed(out):
             self.state.failed[path] = _message(out)

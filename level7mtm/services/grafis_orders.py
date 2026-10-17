@@ -153,7 +153,7 @@ def _order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = 
         return _save(ws, res, None)
     with open(template, "rb") as fh:
         tsha = hashlib.sha256(fh.read()).hexdigest()
-    tsha += f":catalog{ws.db.get_setting('active.catalog')}"        # a new rules / parts version writes again
+    tsha += f":catalog{ws.active('catalog')[0]}"           # a new rules / parts version (this customer's) writes again
     path = os.path.join(out_dir, mdl_name(ws, rev))
     dup = ws.db.one("SELECT * FROM grafis_orders WHERE revision_id=? AND status='written' AND template_sha256=? "
                     "AND archived=0 ORDER BY id DESC", (rid, tsha))

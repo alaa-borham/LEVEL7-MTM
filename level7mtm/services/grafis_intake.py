@@ -204,7 +204,9 @@ def register_scb(ws, path: str, handover: bool = True, nesting_dir: str | None =
             ws.db.audit(c, ws.actor, "grafis.scb.review_accepted", "file", os.path.basename(path),
                         {"accepted": accepted, "reason": confirm_reason})
     nesting_dir = nesting_dir or ws.db.get_setting("nesting.inbox") or os.path.join(ws.folder, "nesting")
-    dup = ws.db.one("SELECT id, handed_over FROM grafis_results WHERE sha256=?", (chk.sha256,))
+    dup = ws.db.one("SELECT id, handed_over, archived FROM grafis_results WHERE sha256=?", (chk.sha256,))
+    if dup and dup["archived"]:                        # cleaned from the list: it may be processed again
+        dup = {"id": dup["id"], "handed_over": 0}
     target = None
     status = "checked" if chk.ok else "needs_review"
     if not chk.lines:

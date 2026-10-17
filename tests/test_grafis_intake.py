@@ -131,3 +131,16 @@ def test_nesting_not_configured_is_reported(ws, tmp_path, monkeypatch):
     scb = _single_line_order(ws, tmp_path)
     r = register_scb(ws, scb, nesting_dir=str(tmp_path / "nest"))
     assert r["status"] == "cutting_not_configured" and "level7-cli" in r["cutting"]["message"]
+
+
+def test_nesting_that_cannot_start_is_a_failure_with_its_reason(ws, tmp_path, monkeypatch):
+    import level7mtm.services.auto_cut as ac
+    scb = _single_line_order(ws, tmp_path)
+
+    def broken(*a, **k):
+        raise PermissionError(13, "Access is denied")
+    monkeypatch.setattr(ac, "nesting_command", lambda ws: (["level7-cli"], {}))
+    monkeypatch.setattr(ac.subprocess, "run", broken)
+    r = register_scb(ws, scb, nesting_dir=str(tmp_path / "nest"))
+    assert r["status"] == "cutting_failed" and "could not run" in r["cutting"]["message"]
+    assert ws.db.one("SELECT status FROM cutting_jobs ORDER BY id DESC")["status"] == "failed"   # never stuck

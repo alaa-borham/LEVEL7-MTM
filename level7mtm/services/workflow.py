@@ -250,12 +250,16 @@ class Workspace:
                 "customer": getattr(res, "customer", None) or DEFAULT_CUSTOMER}
         dsha = _sha({"m": {k: v["value_mm"] for k, v in norm["measurements"].items()}, "o": ln.options,
                      "q": ln.quantity, "w": ln.fabric_width_mm})
+        cid = getattr(res, "customer", None) or DEFAULT_CUSTOMER
         line_ref = ln.line_ref or ln.number
+        if cid != DEFAULT_CUSTOMER:                    # the same order number of two customers: two orders
+            line_ref = f"{cid}:{line_ref}"
         rev = ln.revision or "0"
         order = c.execute("SELECT * FROM orders WHERE line_ref=?", (line_ref,)).fetchone()
         if order is None:
-            oid = c.execute("INSERT INTO orders(source, line_ref, order_no, reseller, created_at) VALUES (?,?,?,?,?)",
-                            ("ERP", line_ref, ln.order_no, ln.reseller, now())).lastrowid
+            oid = c.execute("INSERT INTO orders(source, line_ref, order_no, reseller, customer_id, created_at) "
+                            "VALUES (?,?,?,?,?,?)",
+                            ("ERP", line_ref, ln.order_no, ln.reseller, cid, now())).lastrowid
         else:
             oid = order["id"]
             if order["cancelled_at"]:

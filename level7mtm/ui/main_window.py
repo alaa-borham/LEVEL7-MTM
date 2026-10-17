@@ -3370,8 +3370,15 @@ class MainWindow(QMainWindow):
         self._tick()
 
     def poll_watch(self):
-        if not self.watcher:
-            return
+        if not self.watcher or getattr(self, "_polling", False):
+            return                                            # never twice at once (e.g. under an error box)
+        self._polling = True
+        try:
+            self._poll_watch()
+        finally:
+            self._polling = False
+
+    def _poll_watch(self):
         from .. storage.db import now
         outs = self.guard(self.watcher.poll) or []
         self.ws.db.set_setting("watch.last_check", now())

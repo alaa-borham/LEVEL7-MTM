@@ -107,7 +107,10 @@ def register_mdl(ws, path: str, cut: bool | None = None) -> dict:
     status = "checked" if chk.ok else ("unmatched" if row is None else "needs_review")
     dup = ws.db.one("SELECT id, handed_over, archived FROM grafis_results WHERE sha256=?", (chk.sha256,))
     if dup and dup["handed_over"] and not dup["archived"]:
-        return {"status": "duplicate", "check": chk, "cutting": None}
+        tried = ws.db.one("SELECT id FROM cutting_jobs WHERE sha256=?", (chk.sha256,))
+        if tried or not (settings(ws)["enabled"] if cut is None else cut):
+            return {"status": "duplicate", "check": chk, "cutting": None}
+        # handed over but nesting never finished (the program stopped in between): nest it now
     ok = chk.ok
     with ws.db.tx() as c:
         values = (now(), json.dumps(chk.info, ensure_ascii=False), json.dumps(chk.pieces, ensure_ascii=False),

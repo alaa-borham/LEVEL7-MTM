@@ -97,6 +97,15 @@ def auto_cut(ws, chk, scb_path: str, force: bool = False) -> dict:
 
 
 def _auto_cut(ws, chk, scb_path: str, force: bool = False) -> dict:
+    try:
+        return _auto_cut_inner(ws, chk, scb_path, force)
+    except (OSError, subprocess.SubprocessError) as e:   # LEVEL7 Nesting could not be started / ran too long
+        result = {"status": "failed", "outputs": [], "log": [],
+                  "message": f"LEVEL7 Nesting could not run: {e or type(e).__name__}"}
+        return _save(ws, chk, scb_path, result)
+
+
+def _auto_cut_inner(ws, chk, scb_path: str, force: bool = False) -> dict:
     st = settings(ws)
     dup = ws.db.one("SELECT * FROM cutting_jobs WHERE sha256=? AND status='done'", (chk.sha256,))
     if dup and not force and all(os.path.isfile(p) for p in json.loads(dup["outputs"])):
