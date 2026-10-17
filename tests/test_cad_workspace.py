@@ -103,7 +103,7 @@ def test_window_shows_the_selected_marker(ws, tmp_path):
         bar = win.browser._bars[rev["id"]]
         assert bar[0].parent() is item and bar[1].maximum() == 100 and "%" in bar[2].text()
     win._tick()
-    assert rev["id"] not in win.browser._bars and item.childCount() == 1           # gone when it is done
+    assert rev["id"] not in win.browser._bars and item.childCount() == 0           # gone when it is done
     win.resize(700, 600)                                                           # narrow window: icons only
     app.processEvents()
     assert win.ribbon.compact and all(b.toolButtonStyle() == Qt.ToolButtonIconOnly for b in win.ribbon.buttons.values())

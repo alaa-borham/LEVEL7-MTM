@@ -2638,17 +2638,13 @@ class MainWindow(QMainWindow):
                                         ("open_cut", tr("Open cutting file") + "  PLT / ISO", True),
                                         ("nesting", tr("Show marker in LEVEL7 Nesting"), False),
                                         ("renest", tr("Nest again"), False),
-                                        ("details", tr("Order info"), False),
-                                        ("m_line", "📏  " + tr("Measure lengths"), False),
-                                        ("m_curve", "〰  " + tr("Measure curves"), False)])
+                                        ("details", tr("Order info"), False)])
         b = self.inspector.buttons
         b["open_cut"].clicked.connect(self.open_cutting)
         b["robot"].clicked.connect(self.robot_retry_selected)
         b["nesting"].clicked.connect(self.nesting_selected)
         b["renest"].clicked.connect(self.renest_selected)
         b["details"].clicked.connect(self.open_details)
-        b["m_line"].clicked.connect(lambda: (self.tabs.setCurrentIndex(0), self.marker.use_tool("line")))
-        b["m_curve"].clicked.connect(lambda: (self.tabs.setCurrentIndex(0), self.marker.use_tool("curve")))
         sl.addWidget(self.inspector, 1)
         side.setMinimumWidth(240)
         for w in (self.browser, self.tabs, side):

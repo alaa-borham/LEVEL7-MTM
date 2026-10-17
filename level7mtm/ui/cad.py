@@ -1343,9 +1343,6 @@ class Inspector(QScrollArea):
         self.buttons.get("open_cut") and self.buttons["open_cut"].setEnabled(bool(r["outputs"]))
         self.buttons.get("renest") and self.buttons["renest"].setEnabled(bool(r["result"]))
         self.buttons.get("nesting") and self.buttons["nesting"].setEnabled(bool(r["l7n"]))
-        for k in ("m_line", "m_curve"):
-            if k in self.buttons:
-                self.buttons[k].setEnabled(bool(r["l7n"]))
         if "robot" in self.buttons:
             self.buttons["robot"].setVisible(bool(r.get("robot_failed")))
 
