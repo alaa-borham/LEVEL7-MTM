@@ -21,6 +21,7 @@ import hashlib
 import json
 import os
 import re
+import unicodedata
 
 from ..grafis.container import read_container
 from ..grafis.parts import PartSpec, production
@@ -41,6 +42,10 @@ def mdl_name(ws, rev) -> str:
     stem = os.path.splitext(f["file_name"])[0] if f else f"Order-{rev['line_number']}"
     # no spaces: "Order-9-50-1_0 - .xml" gave "Order-9-50-1_0 - __9-50-1_0.mdl", which GRAFIS did not show
     # under that name, so the robot waited in vain
+    # only plain characters: Windows may add invisible right-to-left marks (U+200F) to a name typed in Arabic,
+    # and GRAFIS (an older program) does not open such a file ("no GRAFIS window open")
+    stem = "".join(ch for ch in stem if unicodedata.category(ch) != "Cf")
+    stem = re.sub(r"[^A-Za-z0-9._\-\s]", "_", stem)
     stem = re.sub(r"\s+", "_", stem.strip(" -_.\t")) or f"Order-{rev['line_number']}"
     n = ws.db.one("SELECT count(*) AS n FROM revisions WHERE import_file=?", (rev["import_file"],))["n"]
     if n > 1 or not re.search(re.escape(rev["line_number"]) + r"$", stem):

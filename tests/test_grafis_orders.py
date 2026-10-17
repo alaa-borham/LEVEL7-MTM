@@ -241,3 +241,17 @@ def test_order_model_names_have_no_spaces(ws, tmp_path):
     names = sorted(mdl_name(ws, ws.revision(r["id"])) for r in ws.list_revisions())
     assert names == ["Order-9-53-1_2__9-53-1_2.mdl", "Order-9-53-1_2__9-53-2_2.mdl"]
     assert not any(" " in n for n in names)
+
+
+
+def test_order_model_names_drop_invisible_marks(ws, tmp_path):
+    """A name typed in Arabic Windows can carry U+200F marks; GRAFIS does not open such a file."""
+    import shutil
+    from conftest import XML_53
+    from level7mtm.services.grafis_orders import mdl_name
+    odd = tmp_path / "\u200f\u200fOrder-9-53-1_2\u200e.xml"
+    shutil.copy(XML_53, odd)
+    ws.import_file(str(odd))
+    names = sorted(mdl_name(ws, ws.revision(r["id"])) for r in ws.list_revisions())
+    assert names == ["Order-9-53-1_2__9-53-1_2.mdl", "Order-9-53-1_2__9-53-2_2.mdl"]
+    assert all(n.isascii() for n in names)
