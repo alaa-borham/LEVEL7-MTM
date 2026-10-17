@@ -26,6 +26,8 @@ AR = {
     "Customers": "العملاء",
     "Patterns": "البترونات",
     "Save and close": "حفظ وإغلاق",
+    "The GRAFIS part numbers this value produces, e.g. 36 or 36, 37 (kept in Fixed pieces)":
+        "أرقام بارتات GRAFIS التي تختارها هذه القيمة، مثل 36 أو 36, 37 (تُحفظ أيضاً في «القطع الثابتة»)",
     "The GRAFIS parts this value produces (set in Fixed pieces)": "بارتات GRAFIS التي تُنتجها هذه القيمة (تُضبط في «القطع الثابتة»)",
     "All main parts": "كل البارتات الرئيسية",
     "Part numbers": "أرقام البارتات",
@@ -546,6 +548,7 @@ MSG_AR = [
     (r"GRAFIS did not show (\S+) within ([\d.]+) s", "لم يُظهر GRAFIS الملف {0} خلال {1} ث"),
     (r"GRAFIS did not save (\S+) within ([\d.]+) s", "لم يحفظ GRAFIS الملف {0} خلال {1} ث"),
     (r"no GRAFIS window open", "لا توجد نافذة GRAFIS مفتوحة"),
+    (r"part (\d+) is not in the GRAFIS model", "البارت {0} غير موجود في موديل GRAFIS"),
     (r"design code '(.+)' is not mapped to a model option", "الـ Variation '{0}' ليس لها معنى في اختيارات القطع"),
     (r"measurement (\S+) \((.+)\) = (.+) is not defined in the mapping profile", "القياس {0} ({1}) = {2} غير معرَّف"),
     (r"required measurement (\S+) \((.+)\) is missing", "القياس المطلوب {0} ({1}) غير موجود"),

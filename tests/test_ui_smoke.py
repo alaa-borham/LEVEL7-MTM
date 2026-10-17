@@ -53,6 +53,9 @@ def test_all_screens(ws, lang):
     app.processEvents()
     prev = win.pages["Pattern preview"]
     assert prev.result is not None and len(prev.view.scene().items()) > 10
+    win.current_rid = rid
+    win.goto("Validation")
+    app.processEvents()
     val = win.pages["Validation"]
     assert not val.b_ok.isEnabled()                            # engine-test model: approval impossible
     assert val.block.count() > 0

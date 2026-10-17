@@ -253,6 +253,11 @@ def reread_held_question(page, msg: str) -> None:
                                                             for x in o.lines) for o in outs))))
 
 
+def _mdl_or_none(ws):
+    m = ws.grafis_mdl()
+    return m if m and os.path.isfile(m) else None
+
+
 def ask_reason(parent, title) -> str | None:
     text, ok = QInputDialog.getText(parent, title, tr("Reason"))
     return text.strip() if ok and text.strip() else None
@@ -1833,7 +1838,8 @@ class OptionsPage(Page):
             if not t(0) and not t(3):
                 continue
             vals.append({"value": code(t(0) or t(3)), "label": {"ar": t(1) or t(0), "en": t(2) or t(0)},
-                         "erp_names": [n.strip() for n in re.split(r"[;\n]", t(3)) if n.strip()]})
+                         "erp_names": [n.strip() for n in re.split(r"[;\n]", t(3)) if n.strip()],
+                         "parts_text": t(4)})
         self.groups[self.cur]["values"] = vals
 
     def _parts_of_values(self) -> dict[str, str]:
@@ -1862,13 +1868,13 @@ class OptionsPage(Page):
         self.v.setRowCount(len(gr["values"]))
         parts = self._parts_of_values()
         for i, val in enumerate(gr["values"]):
-            made = parts.get(f"{gr['group']}={val['value']}", "")
+            made = val.get("parts_text", parts.get(f"{gr['group']}={val['value']}", ""))
             for j, x in enumerate([val["value"], val["label"].get("ar", ""), val["label"].get("en", ""),
                                    "; ".join(val["erp_names"]), made]):
                 it = QTableWidgetItem(x)
-                if j == 4:                                # from «Fixed pieces»: shown, changed there
-                    it.setFlags(it.flags() & ~Qt.ItemIsEditable)
-                    it.setToolTip(tr("The GRAFIS parts this value produces (set in Fixed pieces)"))
+                if j == 4:                                # the parts of the MDL this Variation chooses
+                    it.setToolTip(tr("The GRAFIS part numbers this value produces, e.g. 36 or 36, 37 "
+                                     "(kept in Fixed pieces)"))
                 self.v.setItem(i, j, it)
         self.v.resizeColumnsToContents()
 
@@ -1910,16 +1916,27 @@ class OptionsPage(Page):
         self._read_values()
         for i in range(len(self.groups)):
             self._read_group_row(i)
-        return self.groups
+        return [{**g, "values": [{k: x for k, x in v.items() if k != "parts_text"} for v in g.get("values", [])]}
+                for g in self.groups]
 
     def save(self):
+        from ..services.gparts import set_option_parts
         from ..services.options import save_options
+        groups = self.collect()
+        wanted = {}                                       # value -> the part numbers typed next to it
+        for gr in self.groups:
+            for v in gr.get("values", []):
+                text = v.get("parts_text")
+                if text is not None:
+                    wanted[f"{gr['group']}={v['value']}"] = [
+                        int(m.group(1)) for m in (re.match(r"\s*(\d+)", x) for x in re.split(r"[,،;]", text)) if m]
         try:
-            out = save_options(self.ws, self.collect())
+            out = save_options(self.ws, groups)
+            parts_ver = set_option_parts(self.ws, wanted, _mdl_or_none(self.ws))
         except Exception as e:  # noqa: BLE001
-            QMessageBox.warning(self, tr("Error"), str(e))
+            QMessageBox.warning(self, tr("Error"), tr_msg(str(e)))
             return False
-        msg = f"{tr('Saved')}: {tr('Rules')} {out['catalog_version']}"
+        msg = f"{tr('Saved')}: {tr('Rules')} {parts_ver or out['catalog_version']}"
         if out["mapping_version"]:
             msg += f"\n{tr('ERP mapping profile')} {out['mapping_version']}"
         reread_held_question(self, msg)

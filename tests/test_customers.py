@@ -220,3 +220,33 @@ def test_each_setting_opens_in_its_own_window_save_and_close(ws, monkeypatch):
     app.processEvents()
     assert cp.editor_dialog.isVisible()
     cp.editor_dialog.reject()
+
+
+def test_part_numbers_typed_next_to_an_option_value(ws, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from conftest import MDL
+    if not os.path.isfile(MDL):
+        pytest.skip("customer MDL not in the checkout")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.services.gparts import parts_table
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    monkeypatch.setattr("level7mtm.ui.main_window.reread_held_question", lambda *a: None)
+    ws.set_grafis_mdl(MDL)
+    win = MainWindow(ws)
+    win.show()
+    win.goto("Design options")
+    page = win.pages["Customers"].editor_page
+    gi = next(i for i, g in enumerate(page.groups) if g["group"] == "sleeve")
+    page.g.setCurrentCell(gi, 0)
+    app.processEvents()
+    vi = next(i for i in range(page.v.rowCount()) if page.v.item(i, 0).text() == "saada")
+    page.v.item(vi, 4).setText("36, 37")                              # the parts this Variation chooses
+    assert page.save()
+    got = sorted(int(r["part"]) for r in parts_table(ws) if r["option"] == "sleeve=saada")
+    assert got == [36, 37]
+    gi = next(i for i, g in enumerate(page.groups) if g["group"] == "sleeve")
+    page.g.setCurrentCell(gi, 0)
+    app.processEvents()
+    vi = next(i for i in range(page.v.rowCount()) if page.v.item(i, 0).text() == "saada")
+    assert page.v.item(vi, 4).text().startswith("036")                 # shown with the part names

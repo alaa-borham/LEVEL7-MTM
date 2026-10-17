@@ -66,3 +66,24 @@ def save_parts(ws, rows: list[dict], mdl_path: str | None = None, note: str = "G
     load_catalog(cat)                                   # same checks as everywhere (options exist, copies …)
     ws.set_active("catalog", ws.save_document("catalog", cat, note))
     return cat["version"]
+
+
+def set_option_parts(ws, wanted: dict[str, list[int]], mdl_path: str | None = None,
+                     note: str = "part numbers set in the piece options") -> str | None:
+    """The GRAFIS part numbers a design option value produces ("collar=square": [12, 13]), as typed next to the
+    value in Piece options setup: its rows in the parts table are replaced (a part kept keeps its material, copies
+    and mirroring; a new one gets material from the model, 1 copy). Returns the new version, None if unchanged."""
+    rows = parts_table(ws)
+    mats = {n: (v[1] or "O") for n, v in model_parts(mdl_path).items()} if mdl_path else {}
+    changed = False
+    for opt, nums in wanted.items():
+        have = [r for r in rows if r["option"] == opt]
+        if sorted(int(r["part"]) for r in have) == sorted(nums):
+            continue
+        changed = True
+        keep = {int(r["part"]): r for r in have}
+        rows = [r for r in rows if r["option"] != opt]
+        for n in nums:
+            rows.append(keep.get(n) or {"option": opt, "part": n, "material": mats.get(n, "O"), "copies": 1,
+                                        "mirrored": 0})
+    return save_parts(ws, rows, mdl_path, note) if changed else None
