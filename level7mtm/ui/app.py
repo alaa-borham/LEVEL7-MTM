@@ -41,6 +41,8 @@ def main(argv=None) -> int:
     _install_crash_log(folder)
     app = QApplication.instance() or QApplication(argv)
     app.setApplicationName("LEVEL7 MTM")
+    from PySide6.QtCore import QLocale
+    QLocale.setDefault(QLocale(QLocale.English, QLocale.UnitedStates))   # numbers as 60.5 in every box, never ٦٠٫٥
     try:
         ws = Workspace(folder, actor=os.environ.get("USERNAME") or os.environ.get("USER") or "operator")
     except Exception as e:  # noqa: BLE001

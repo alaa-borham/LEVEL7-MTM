@@ -353,3 +353,24 @@ def test_select_tool_picks_a_piece(tmp_path):
     assert v.selected is not None and v.box.isVisible() and "cm" in v.box.extra.text()
     QTest.mouseClick(v.viewport(), Qt.LeftButton, Qt.NoModifier, v.mapFromScene(-120, -120))   # off the pieces
     assert v.selected is None and not v.box.isVisible()
+
+
+def test_measurement_dialog_in_cm_with_western_digits():
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from PySide6.QtCore import QTimer
+    from level7mtm.ui.main_window import measurement_dialog
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    seen = {}
+
+    def answer():
+        d = app.activeModalWidget()
+        box = d.findChild(QtWidgets.QDoubleSpinBox)
+        seen["text"] = box.text()
+        box.setValue(61.5)
+        [e for e in d.findChildren(QtWidgets.QLineEdit) if e.parent() is d][0].setText("owner")   # the reason
+        d.accept()
+    QTimer.singleShot(50, answer)
+    assert measurement_dialog(None, "CH", "Chest", 600.0) == (615.0, "owner")
+    assert seen["text"] == "60.0 cm"

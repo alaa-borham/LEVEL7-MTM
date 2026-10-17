@@ -140,6 +140,42 @@ def selected_data(t: QTableWidget):
     return [t.item(r, 0).data(Qt.UserRole) for r in rows]
 
 
+def measurement_dialog(parent, code: str, name: str, value_mm: float) -> tuple[float, str] | None:
+    """New value of one measurement, in cm (as the ERP sends it), and the reason, in one window.
+    Returns (value in mm, reason) or None."""
+    from PySide6.QtCore import QLocale
+    d = QDialog(parent)
+    d.setWindowTitle(tr("Edit measurement…"))
+    d.setMinimumWidth(360)
+    f = QFormLayout(d)
+    f.addRow(QLabel(f"<b>{name}</b> ({code})"))
+    box = QDoubleSpinBox()
+    box.setLocale(QLocale(QLocale.English, QLocale.UnitedStates))    # 60.5, never ٦٠٫٥
+    box.setLayoutDirection(Qt.LeftToRight)
+    box.setRange(0, 500)
+    box.setDecimals(1)
+    box.setSingleStep(0.5)
+    box.setSuffix(" cm")
+    box.setValue(value_mm / 10)
+    box.setMinimumWidth(160)
+    f.addRow(tr("Now") + ":", QLabel(f"{value_mm / 10:g} cm"))
+    f.addRow(tr("New value") + ":", box)
+    why = QLineEdit()
+    f.addRow(tr("Reason") + ":", why)
+    bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+    ok = bb.button(QDialogButtonBox.Ok)
+    ok.setEnabled(False)
+    why.textChanged.connect(lambda t: ok.setEnabled(bool(t.strip())))   # a change is always recorded with why
+    bb.accepted.connect(d.accept)
+    bb.rejected.connect(d.reject)
+    f.addRow(bb)
+    box.setFocus()
+    box.selectAll()
+    if d.exec() != QDialog.Accepted or not why.text().strip():
+        return None
+    return round(box.value() * 10, 1), why.text().strip()
+
+
 def ask_reason(parent, title) -> str | None:
     text, ok = QInputDialog.getText(parent, title, tr("Reason"))
     return text.strip() if ok and text.strip() else None
@@ -441,6 +477,8 @@ class OrderPage(Page):
             bar.addWidget(b)
             if text == "Calculate":
                 self.b_calc = b
+            elif text == "Edit measurement…":
+                self.b_edit = b
         bar.addStretch()
         lay.addLayout(bar)
 
@@ -450,6 +488,11 @@ class OrderPage(Page):
             return
         r = self.ws.revision(rid)
         done = r["status"] in ("cancelled", "superseded", "approved", "sent_to_nesting", "completed")
+        from ..services.workflow import OPEN_FOR_EDIT
+        editable = r["status"] in OPEN_FOR_EDIT
+        self.b_edit.setEnabled(editable)
+        self.b_edit.setToolTip("" if editable else
+                               tr("This order is {s}: its measurements are not changed").format(s=tr(r["status"])))
         self.b_calc.setEnabled(not done)                 # a finished order is not calculated again
         self.b_calc.setToolTip(tr("This order is {s}: its pattern is not calculated again").format(s=tr(r["status"]))
                                if done else "")
@@ -474,12 +517,10 @@ class OrderPage(Page):
         if rid is None or not codes:
             return
         code = codes[0]
-        cur = self.ws.revision(rid)["normalized"]["measurements"][code]["value_mm"] or 0.0
-        val, ok = QInputDialog.getDouble(self, code, tr("Value (mm)"), cur, 0, 5000, 1)
-        if not ok:
-            return
-        reason = ask_reason(self, code)
-        if reason:
+        m = self.ws.revision(rid)["normalized"]["measurements"][code]
+        got = measurement_dialog(self, code, label(m.get("label")) or code, m["value_mm"] or 0.0)
+        if got:
+            val, reason = got
             self.win.guard(lambda: self.ws.edit_measurement(rid, code, val, reason))
             self.refresh()
 

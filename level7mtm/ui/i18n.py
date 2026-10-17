@@ -12,6 +12,9 @@ AR = {
     "Size table setup": "ضبط جدول المقاسات",
     "Piece options setup": "ضبط اختيارات القطع",
     "Fixed pieces": "القطع الثابتة",
+    "This order is {s}: its measurements are not changed": "هذا الطلب {s}: لا تُعدَّل قياساته",
+    "Now": "الحالية",
+    "New value": "القيمة الجديدة",
     "This order is {s}: its pattern is not calculated again": "هذا الطلب {s}: لا يُحسب البترون له من جديد",
     "Add measurements together (Backspace: remove the last, Esc: clear)":
         "جمع القياسات (Backspace: حذف آخر جزء، Esc: مسح الكل)",
