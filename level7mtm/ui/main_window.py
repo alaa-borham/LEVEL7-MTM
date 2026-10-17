@@ -2600,7 +2600,7 @@ class MainWindow(QMainWindow):
                         ("robot", "robot", tr("Robot"), lambda: grafis().robot_now()),
                         ("xvalues", "xvalues", tr("Size table setup"), lambda: self.goto("X values for GRAFIS")),
                         ("options", "options", tr("Piece options setup"), lambda: self.goto("Design options")),
-                        ("parts", "parts", tr("Parts"), lambda: self.goto("GRAFIS parts"))]),
+                        ("parts", "parts", tr("Fixed pieces"), lambda: self.goto("GRAFIS parts"))]),
             (tr("Nesting"), [("renest", "renest", tr("Nest again"), self.renest_selected),
                              ("nesting", "marker", "LEVEL7 Nesting", self.nesting_selected),
                              ("markers", "nest", tr("Markers"), lambda: self.goto("GRAFIS markers"))]),
