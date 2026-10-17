@@ -43,6 +43,11 @@ def test_order_rows_follow_the_chain(ws, tmp_path):
         c.execute("INSERT INTO grafis_orders(revision_id, created_at, status, path, info) VALUES (?,?,?,?,?)",
                   (rev["id"], now(), "written", "x.mdl", json.dumps({"rows": [{"x": "X1", "value_mm": 1570}]})))
     assert {r["rid"]: r for r in order_rows(ws)}[rev["id"]]["stage"] == "grafis"
+    with ws.db.tx() as c:                                   # the robot failed: said on the order, not hidden
+        c.execute("INSERT INTO robot_jobs(sha256, path, at, status, message) VALUES ('h','x.mdl','9999','failed',"
+                  "'GRAFIS did not show x within 60 s')")
+    r = {r["rid"]: r for r in order_rows(ws)}[rev["id"]]
+    assert r["stage"] == "err" and r["robot_failed"] and "within 60 s" in r["problems"][-1]
     l7n = tmp_path / "m.l7n"
     _l7n(l7n)
     with ws.db.tx() as c:
@@ -54,6 +59,7 @@ def test_order_rows_follow_the_chain(ws, tmp_path):
                                                       json.dumps({"l7n": str(l7n), "length_mm": 300.0,
                                                                   "efficiency_pct": 86.1, "placed": 2})))
     r = {r["rid"]: r for r in order_rows(ws)}[rev["id"]]
+    assert not r["robot_failed"] and not r["problems"]                         # GRAFIS saved it after all
     assert r["stage"] == "cut" and r["l7n"] == str(l7n) and r["outputs"] == ["x.plt"]
     assert r["x_rows"] == [{"x": "X1", "value_mm": 1570}] and set(r["times"]) == {"new", "grafis", "nest", "cut"}
     with ws.db.tx() as c:

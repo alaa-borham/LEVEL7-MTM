@@ -140,7 +140,7 @@ def order_rows(ws, limit: int = 300) -> list[dict]:
                "fabric": raw.get("fabric_number") or "", "width": norm.get("fabric_width_mm"),
                "quantity": rev["quantity"], "times": {"new": rev["imported_at"]}, "x_rows": [], "mdl": None,
                "result": None, "l7n": None, "outputs": [], "length_mm": None, "efficiency_pct": None,
-               "placed": None, "status": rev["status"]}
+               "placed": None, "status": rev["status"], "robot_failed": False}
         if go:
             info = json.loads(go["info"])
             row["x_rows"] = info.get("rows", [])
@@ -150,6 +150,10 @@ def order_rows(ws, limit: int = 300) -> list[dict]:
                 row["problems"] += info.get("problems", []) or [tr(go["status"])]
             elif go["status"] in ("written", "duplicate"):
                 row["stage"] = "grafis"
+                rj = db.one("SELECT status, message, at FROM robot_jobs WHERE path=? ORDER BY id DESC", (go["path"],))
+                if rj and rj["status"] == "failed" and rj["at"] >= go["created_at"]:
+                    row["robot_failed"] = True                # stays until "Robot: try again" (never silent)
+                    row["problems"].append(f"{tr('GRAFIS robot')}: {rj['message']}")
         res = results.get(rid)
         if res:
             row["result"] = res["path"]
@@ -168,6 +172,9 @@ def order_rows(ws, limit: int = 300) -> list[dict]:
                     row["times"]["cut"] = cj["created_at"]
                 elif cj["status"] in ("failed", "not_configured"):
                     row["problems"].append(ci.get("message") or tr(cj["status"]))
+        if res:                                               # GRAFIS saved it: an old robot failure is over
+            row["problems"] = [p for p in row["problems"] if not p.startswith(tr("GRAFIS robot") + ":")]
+            row["robot_failed"] = False
         if row["problems"] and row["stage"] != "cut":
             row["stage_reached"], row["stage"] = row["stage"], "err"
         out.append(row)
@@ -731,6 +738,8 @@ class Inspector(QScrollArea):
         self._clear(self.stages)
         for b in self.buttons.values():
             b.setEnabled(r is not None)
+        if "robot" in self.buttons:
+            self.buttons["robot"].setVisible(False)
         if r is None:
             self.title.setText("—")
             self.pill.setText("")
@@ -786,6 +795,8 @@ class Inspector(QScrollArea):
         self.buttons.get("open_cut") and self.buttons["open_cut"].setEnabled(bool(r["outputs"]))
         self.buttons.get("renest") and self.buttons["renest"].setEnabled(bool(r["result"]))
         self.buttons.get("nesting") and self.buttons["nesting"].setEnabled(bool(r["l7n"]))
+        if "robot" in self.buttons:
+            self.buttons["robot"].setVisible(bool(r.get("robot_failed")))
 
 
 class MarkerPanel(QWidget):

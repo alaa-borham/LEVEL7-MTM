@@ -2482,12 +2482,14 @@ class MainWindow(QMainWindow):
         sl.setSpacing(0)
         head, _ = cad.panel_head(tr("Properties"))
         sl.addWidget(head)
-        self.inspector = cad.Inspector([("open_cut", tr("Open cutting file") + "  PLT / ISO", True),
+        self.inspector = cad.Inspector([("robot", "↻  " + tr("Robot: try again"), True),
+                                        ("open_cut", tr("Open cutting file") + "  PLT / ISO", True),
                                         ("nesting", tr("Show marker in LEVEL7 Nesting"), False),
                                         ("renest", tr("Nest again"), False),
                                         ("details", tr("Measurements and options"), False)])
         b = self.inspector.buttons
         b["open_cut"].clicked.connect(self.open_cutting)
+        b["robot"].clicked.connect(self.robot_retry_selected)
         b["nesting"].clicked.connect(self.nesting_selected)
         b["renest"].clicked.connect(self.renest_selected)
         b["details"].clicked.connect(self.open_details)
@@ -2672,6 +2674,17 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "LEVEL7 Nesting", tr("This row has no marker yet"))
             return
         self.pages["GRAFIS markers"].renest(r["result"])
+
+    def robot_retry_selected(self):
+        """Let the robot take the selected order's model again (after GRAFIS was closed / a dialog answered)."""
+        r = self._need_row()
+        if r is None or not r.get("mdl"):
+            return
+        with self.ws.db.tx() as c:
+            c.execute("DELETE FROM robot_jobs WHERE path=? AND status<>'done'", (r["mdl"],))
+            self.ws.db.audit(c, self.ws.actor, "robot.retry", "file", os.path.basename(r["mdl"]))
+        self.refresh_cad(force=True)
+        self.status(tr("The robot takes the model again in a few seconds"))
 
     def nesting_selected(self):
         r = self._need_row()
