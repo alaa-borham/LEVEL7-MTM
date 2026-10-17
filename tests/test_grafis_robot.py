@@ -101,3 +101,18 @@ def test_shortened_grafis_title_is_recognised():
     assert robot.shows_file("Grafis - [A:\\LEVEL7GRAFIS-IN\\MDL\\Order-9-52-1_0__9-52-1_0.mdl]", p)
     assert not robot.shows_file("Grafis - [A: ..9-52-2_0__9-52-2_0.mdl] - 50-Werte-OPTIMASS", p)
     assert not robot.shows_file("GRAFIS", p)
+
+
+def test_open_timeout_says_what_grafis_shows_instead(ws, tmp_path):
+    """The reason names the GRAFIS windows / dialogs on the screen, so the owner sees what blocks."""
+    class Blocked(FakeGrafis):
+        def windows(self):
+            return [{"hwnd": 1, "title": "Grafis - [A: ..9-49-1_0.mdl]", "cls": "GrafisMain"},
+                    {"hwnd": 3, "title": "Grafis", "cls": "#32770"}]
+    ws.db.set_setting("robot.open_timeout_s", 3)
+    ws.db.set_setting("robot.buttons", {"test_run": {"title": "GRAFIS", "cls": "Toolbar", "dx": 470, "dy": 60}})
+    p = tmp_path / "Order-9-50-1_0.mdl"
+    p.write_bytes(b"x")
+    r = robot.run_one(ws, {"path": str(p), "sha256": "s"}, Blocked(), sleep=lambda s: None, clock=_clock())
+    assert r["status"] == "failed" and "did not show Order-9-50-1_0" in r["message"]
+    assert '"Grafis - [A: ..9-49-1_0.mdl]"' in r["message"] and '"Grafis" (dialog)' in r["message"]

@@ -145,6 +145,20 @@ def _find(drv, spec: dict, prefer: str = "") -> int | None:
     return ws_[0]["hwnd"] if len(ws_) == 1 else None
 
 
+def _seen(drv, btn: dict) -> str:
+    """What was on the screen instead (GRAFIS windows and dialogs by title), for the reason of a failure."""
+    classes = {b.get("cls") for b in btn.values() if isinstance(b, dict)}
+    try:
+        ws_ = [w for w in drv.windows() if w["title"] and ("grafis" in w["title"].lower() or w["cls"] in classes
+                                                          or w["cls"] == "#32770")]          # #32770 = dialog box
+    except Exception:  # noqa: BLE001
+        return "windows not readable"
+    if not ws_:
+        return "no GRAFIS window open"
+    return "windows: " + " | ".join(f"\"{w['title'][:90]}\"" + (" (dialog)" if w["cls"] == "#32770" else "")
+                                    for w in ws_[:8])
+
+
 def pending(ws) -> list[dict]:
     """Order models written by this program and still not saved by GRAFIS (and not tried by the robot)."""
     out = []
@@ -179,7 +193,8 @@ def run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) -> 
                 break
             sleep(1)
         else:
-            raise RobotError(f"GRAFIS did not show {stem} within {st['open_timeout']:g} s")
+            raise RobotError(f"GRAFIS did not show {stem} within {st['open_timeout']:g} s — "
+                             f"{_seen(drv, btn)}")
         sleep(2)
         h = _find(drv, btn["test_run"], job["path"])
         if h is None:
