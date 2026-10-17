@@ -494,3 +494,17 @@ def test_pieces_button_is_a_drop_down_of_both_pages(ws):
     assert len(acts) == 2 and "parts" not in win.ribbon.buttons
     acts[1].trigger()                                             # Fixed pieces
     assert win.current_page().title == "GRAFIS parts"
+
+
+def test_nest_again_button_with_level7_nesting_in_its_arrow(ws):
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    win = MainWindow(ws)
+    win.show()
+    app.processEvents()
+    b = win.ribbon.buttons["renest"]
+    assert b.popupMode() == QtWidgets.QToolButton.MenuButtonPopup and "nesting" not in win.ribbon.buttons
+    assert len(b.menu().actions()) == 2
