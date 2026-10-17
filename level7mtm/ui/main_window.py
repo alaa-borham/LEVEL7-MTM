@@ -847,10 +847,37 @@ class GrafisPage(Page):
               ("Errors folder (ER)…", self.choose_errors), ("Cutting files folder…", self.choose_out)))
         step("nesting", 3, "LEVEL7 Nesting", "The nesting program that writes the marker and the cutting files.",
              (("LEVEL7 Nesting program…", self.choose_cli),))
+
+        robot_box = QWidget()
+        rl_ = QHBoxLayout(robot_box)
+        rl_.setContentsMargins(0, 4, 0, 0)
+        self.no_mouse = QCheckBox(tr("Without the mouse (in the background)"))
+        self.no_mouse.setToolTip(tr("The robot sends GRAFIS its menu commands or clicks the button's own window: "
+                                    "the mouse pointer never moves, you can keep working"))
+        self.no_mouse.setChecked(self.ws.db.get_setting("robot.mode", "auto") == "background")
+        self.no_mouse.toggled.connect(lambda on: (self.ws.db.set_setting("robot.mode", "background" if on else "auto"),
+                                                  self.refresh()))
+        b_menu = QPushButton(tr("GRAFIS menu commands…"))
+        b_menu.clicked.connect(self.choose_menu)
+        rl_.addWidget(self.no_mouse)
+        rl_.addWidget(b_menu)
+        rl_.addStretch()
+        erp_box = QWidget()
+        el = QHBoxLayout(erp_box)
+        el.setContentsMargins(0, 4, 0, 0)
+        el.addWidget(QLabel(tr("Check every") + ":"))
+        self.erp_every = QSpinBox()
+        self.erp_every.setRange(1, 1440)
+        self.erp_every.setSuffix(" " + tr("min"))
+        self.erp_every.setValue(int(self.ws.db.get_setting("watch.interval_min", 1) or 1))
+        self.erp_every.valueChanged.connect(lambda v: (self.win.set_watch_interval(v), self.refresh()))
+        el.addWidget(self.erp_every)
+        el.addStretch()
         step("robot", 4, "Teach the GRAFIS robot", "Open a model in GRAFIS, press a button below and point the mouse "
                                                    "at that GRAFIS button within 5 seconds.",
              (("Teach: Test Run All Parts button", lambda: self.teach("test_run")),
-              ("Teach: Save button", lambda: self.teach("save")), ("Teach: Close button", lambda: self.teach("close"))))
+              ("Teach: Save button", lambda: self.teach("save")), ("Teach: Close button", lambda: self.teach("close"))),
+             extra=robot_box)
         auto_box = QWidget()
         al = QVBoxLayout(auto_box)
         al.setContentsMargins(0, 4, 0, 0)
@@ -892,6 +919,9 @@ class GrafisPage(Page):
         al.addLayout(frow)
         step("auto", 5, "Switch on", "What runs by itself for each new order, and the cutting files it writes.",
              (("Watch GRAFIS output folder", self.toggle),), extra=auto_box)
+        step("erp", 6, "New orders from ERP", "The folder where the ERP puts the XML orders: checked on this timer, "
+                                               "every new order goes through the whole chain by itself.",
+             (("ERP XML folder…", self.choose_erp), ("Check now", lambda: self.win.poll_watch())), extra=erp_box)
         adv = QHBoxLayout()
         for text, fn in (("Nesting folder…", self.choose_nesting), ("Register GRAFIS marker (SCB)…", self.register)):
             b = QPushButton(tr(text))
@@ -1018,12 +1048,19 @@ class GrafisPage(Page):
                      (cli_ok, "LEVEL7 Nesting"),
                      (bool(st["formats"]), f"{tr('Cutting files')}: {', '.join(st['formats']).upper()}")])
         er = self.ws.db.get_setting("errors.folder")
+        menu = self.ws.db.get_setting("robot.menu", {}) or {}
+        rmode = self.ws.db.get_setting("robot.mode", "auto")
         done = {"model": (mdl_ok, os.path.basename(mdl or "") or tr("not set")),
                 "folders": (bool(er) and os.path.isdir(gs["out"]), f"MDL: {gs['out']}   ER: {er or '—'}   "
                                                                     f"CUT: {st['out']}"),
                 "nesting": (cli_ok, cli),
-                "robot": ("test_run" in rb, " · ".join(f"{k}: {'✓' if k in rb else '—'}"
-                                                       for k in ("test_run", "save", "close"))),
+                "robot": ("test_run" in rb or bool(menu.get("test_run")),
+                          " · ".join(f"{k}: {self._how(k, menu, rb)}" for k in ("test_run", "save", "close"))
+                          + (f" — {tr('Without the mouse (in the background)')}" if rmode == "background" else "")),
+                "erp": (self.win.watcher is not None if hasattr(self.win, "watcher") else False,
+                        f"{self.ws.db.get_setting('watch.folder') or tr('not set')} — {tr('Check every')} "
+                        f"{self.ws.db.get_setting('watch.interval_min', 1)} {tr('min')} — {tr('last check')}: "
+                        f"{(self.ws.db.get_setting('watch.last_check') or '—').replace('T', ' ')[:19]}"),
                 "auto": (robot_on and self.running(),
                          f"{tr('watching') if self.running() else tr('not watching')} — "
                          f"{', '.join(st['formats']).upper()}, {st['time']:g} s")}
@@ -1096,9 +1133,69 @@ class GrafisPage(Page):
                 QMessageBox.warning(self, tr("GRAFIS robot"), str(e))
                 return
             QMessageBox.information(self, tr("GRAFIS robot"), f"{tr('Saved')}: {name} — {spec['title']} "
-                                                              f"({spec['dx']}, {spec['dy']})")
+                                                              f"({spec['dx']}, {spec['dy']})\n\n" +
+                                    (tr("✓ This button can be pressed in the background, without the mouse.")
+                                     if spec.get("child") else
+                                     tr("This button needs the mouse; choose its GRAFIS menu command to work "
+                                        "without it.")))
             self.refresh()
         QTimer.singleShot(5000, record)
+
+    @staticmethod
+    def _how(key, menu, rb) -> str:
+        if menu.get(key):
+            return "✓ " + tr("menu")
+        if (rb.get(key) or {}).get("child"):
+            return "✓ " + tr("background")
+        return "✓ " + tr("mouse") if key in rb else "—"
+
+    def choose_erp(self):
+        d = QFileDialog.getExistingDirectory(self, tr("ERP XML folder…"), self.ws.db.get_setting("watch.folder", ""))
+        if d:
+            if self.win.watcher:
+                self.win.timer.stop()
+                self.win.watcher = None
+            self.win.start_watch(d)
+            self.refresh()
+
+    def choose_menu(self):
+        """Pick the GRAFIS menu commands the robot sends in the background (Test Run All Parts, Save, Close)."""
+        from ..services.grafis_robot import MENU_TEXT, RobotError, Win32
+        try:
+            drv = Win32()
+            wins = [w for w in drv.windows() if "grafis" in w["title"].lower()]
+            items = next((it for it in (drv.menu_items(w["hwnd"]) for w in wins) if it), [])
+        except RobotError as e:
+            QMessageBox.information(self, tr("GRAFIS robot"), str(e))
+            return
+        if not items:
+            QMessageBox.information(self, tr("GRAFIS robot"), tr("Open GRAFIS with a model first. If GRAFIS is open "
+                                                                 "and nothing is listed, its menu cannot be read: "
+                                                                 "teach the buttons instead."))
+            return
+        dlg = QDialog(self)
+        dlg.setWindowTitle(tr("GRAFIS menu commands…"))
+        f = QFormLayout(dlg)
+        chosen = dict(self.ws.db.get_setting("robot.menu", {}) or {})
+        combos = {}
+        paths = [i["path"] for i in items]
+        for key, label_ in (("test_run", "Test Run All Parts"), ("save", tr("Save")), ("close", tr("Close"))):
+            cb = QComboBox()
+            cb.addItem("—", "")
+            for pth in paths:
+                cb.addItem(pth, pth)
+            guess = chosen.get(key) or next((i["path"] for i in items
+                                             if i["text"].lower().rstrip(".… ") in MENU_TEXT[key]), "")
+            cb.setCurrentIndex(max(0, cb.findData(guess)))
+            combos[key] = cb
+            f.addRow(label_, cb)
+        bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        bb.accepted.connect(dlg.accept)
+        bb.rejected.connect(dlg.reject)
+        f.addRow(bb)
+        if dlg.exec() == QDialog.Accepted:
+            self.ws.db.set_setting("robot.menu", {k: c.currentData() for k, c in combos.items() if c.currentData()})
+            self.refresh()
 
     def robot_now(self):
         """Run the robot on the next waiting model now and show what happened (also when nothing is waiting)."""
@@ -2569,7 +2666,7 @@ class MainWindow(QMainWindow):
         self.sb_items = {}
         self._sb_widgets = []
         for key, text in (("grafis", "GRAFIS"), ("nesting", "LEVEL7 Nesting"), ("robot", tr("GRAFIS robot")),
-                          ("watch", tr("Folder watch"))):
+                          ("watch", tr("Folder watch")), ("erp", tr("ERP orders"))):
             w = _ClickLabel(lambda k=key: self._light_clicked(k))
             w.setCursor(Qt.PointingHandCursor)
             w.setToolTip(tr("Click: switch on / set up"))
@@ -2587,6 +2684,12 @@ class MainWindow(QMainWindow):
 
     def _light_clicked(self, key):
         gp = self.pages["GRAFIS markers"]
+        if key == "erp" and self.watcher is None:
+            folder = self.ws.db.get_setting("watch.folder")
+            if folder and os.path.isdir(folder):
+                self.start_watch(folder)
+                self.refresh_cad(force=True)
+                return
         if key == "watch" and not gp.running():
             gp.start_saved()
             self.refresh_cad(force=True)
@@ -2608,7 +2711,11 @@ class MainWindow(QMainWindow):
         gp = self.pages.get("GRAFIS markers")
         states = {"grafis": bool(mdl and os.path.isfile(mdl)), "nesting": cli is not None,
                   "robot": bool(db.get_setting("robot.enabled", False)) and "test_run" in rb,
-                  "watch": bool(gp is not None and gp.running())}
+                  "watch": bool(gp is not None and gp.running()),
+                  "erp": self.watcher is not None}
+        if self.watcher is not None:
+            self.sb_items["erp"].setProperty("label", f"{tr('ERP orders')} · {self.watch_interval_min()} "
+                                                      f"{tr('min')}")
         for k, w in self.sb_items.items():
             col = themes.colour("ok" if states[k] else "bad").name()
             w.setText(f"<span style='color:{col}'>●</span> {w.property('label')}")
@@ -2914,19 +3021,35 @@ class MainWindow(QMainWindow):
                 self.start_watch(folder)
         self.pages["Orders"].refresh()
 
+    def watch_interval_min(self) -> int:
+        """How often the ERP folder is checked for new XML orders (minutes, set by the owner)."""
+        return max(1, int(self.ws.db.get_setting("watch.interval_min", 1) or 1))
+
+    def set_watch_interval(self, minutes: int):
+        self.ws.db.set_setting("watch.interval_min", int(minutes))
+        if self.watcher:
+            self.timer.start(self.watch_interval_min() * 60000)
+
     def start_watch(self, folder):
         from ..services.grafis_orders import import_and_prepare
         self.watcher = FolderWatcher(self.ws, folder, settle_seconds=3, handler=lambda p: import_and_prepare(self.ws, p))
         self.ws.db.set_setting("watch.folder", folder)
         self.ws.db.set_setting("watch.enabled", True)
-        self.timer.start(2000)
+        self.timer.start(self.watch_interval_min() * 60000)
         self.status(f"{tr('Watch folder')}: {folder}")
+        QTimer.singleShot(500, self.poll_watch)              # look at once, then on the owner's timer
 
     def poll_watch(self):
         if not self.watcher:
             return
+        from .. storage.db import now
         outs = self.guard(self.watcher.poll) or []
+        self.ws.db.set_setting("watch.last_check", now())
+        if self.watcher.state.seen and not getattr(self, "_settle_pending", False):
+            self._settle_pending = True                       # a new file still being copied: look again in 4 s,
+            QTimer.singleShot(4000, self._settled_poll)       # not only at the next timer
         if outs:
+            self.refresh_cad()
             page = self.pages["Orders"]
             for o in outs:
                 page.add_log(f"[watch] {o.file_name}: {tr(o.status)} {o.message}")
@@ -2934,6 +3057,10 @@ class MainWindow(QMainWindow):
                     page.add_log(f"  GRAFIS {g['line_number']}: {tr(g['status'])} "
                                  f"{os.path.basename(g['path'] or '')} {'; '.join(g['problems'])}")
             page.refresh()
+
+    def _settled_poll(self):
+        self._settle_pending = False
+        self.poll_watch()
 
     def retry_failed(self):
         if not self.watcher:

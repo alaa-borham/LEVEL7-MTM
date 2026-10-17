@@ -116,3 +116,66 @@ def test_open_timeout_says_what_grafis_shows_instead(ws, tmp_path):
     r = robot.run_one(ws, {"path": str(p), "sha256": "s"}, Blocked(), sleep=lambda s: None, clock=_clock())
     assert r["status"] == "failed" and "did not show Order-9-50-1_0" in r["message"]
     assert '"Grafis - [A: ..9-49-1_0.mdl]"' in r["message"] and '"Grafis" (dialog)' in r["message"]
+
+
+class BackgroundGrafis(FakeGrafis):
+    """GRAFIS with a menu: commands and posted clicks, never the real mouse."""
+    MENU = [{"path": "Datei > Speichern", "text": "Speichern", "id": 57603},
+            {"path": "Datei > Speichern unter", "text": "Speichern unter...", "id": 57604},
+            {"path": "Teile > Test Run All Parts", "text": "Test Run All Parts", "id": 4711}]
+
+    def __init__(self, menu=True):
+        super().__init__()
+        self.menu, self.commands, self.posted = menu, [], []
+
+    def menu_items(self, h):
+        return list(self.MENU) if self.menu else []
+
+    def command(self, h, cmd_id):
+        self.commands.append((h, cmd_id))
+        if cmd_id == 4711:
+            self.ran = True
+        if cmd_id == 57603:
+            self._save()
+
+    def find_child(self, top, path):
+        return 99 if path == [["ToolbarWindow32", 0]] else None
+
+    def post_click(self, h, x, y):
+        self.posted.append((h, x, y))
+        if (x, y) == (470, 30):
+            self.ran = True
+
+    def click(self, h, dx, dy):
+        raise AssertionError("the real mouse must not move")
+
+    def ctrl_s(self, h):
+        raise AssertionError("no keyboard in the background")
+
+
+@needs_mdl
+def test_robot_works_in_the_background_without_the_mouse(ws, tmp_path):
+    _setup(ws, tmp_path)
+    ws.db.set_setting("robot.mode", "background")
+    g = BackgroundGrafis()                                       # menu commands: nothing taught at all
+    r = robot.run_one(ws, robot.pending(ws)[0], g, sleep=lambda s: None, clock=_clock())
+    assert r["status"] == "done" and g.commands == [(1, 4711), (1, 57603)]    # "Save as" never chosen
+    assert "menu Teile > Test Run All Parts" in r["message"]
+    # no menu entry for Test Run: the taught button is clicked through its own window (pointer stays)
+    ws.db.set_setting("robot.buttons", {"test_run": {"title": "GRAFIS", "cls": "Toolbar", "dx": 470, "dy": 60,
+                                                     "child": {"path": [["ToolbarWindow32", 0]], "x": 470, "y": 30}}})
+    BackgroundGrafis.MENU = BackgroundGrafis.MENU[:2]
+    try:
+        g = BackgroundGrafis()
+        r = robot.run_one(ws, robot.pending(ws)[0], g, sleep=lambda s: None, clock=_clock())
+        assert r["status"] == "done" and g.posted == [(99, 470, 30)] and g.commands == [(1, 57603)]
+        assert "background click" in r["message"]
+        ws.db.set_setting("robot.buttons", {})
+        import pytest
+        with pytest.raises(robot.RobotError, match="without the mouse"):    # nothing usable: said, not guessed
+            robot._act(BackgroundGrafis(), robot.settings(ws), 1, "test_run", "x.mdl", True)
+    finally:
+        BackgroundGrafis.MENU = BackgroundGrafis.MENU + [{"path": "Teile > Test Run All Parts",
+                                                          "text": "Test Run All Parts", "id": 4711}]
+    ws.db.set_setting("robot.menu", {"test_run": "Teile > Test Run All Parts", "save": "Datei > Speichern"})
+    assert robot._menu_item(BackgroundGrafis(), 1, "save", {"save": "Datei > Speichern"})["id"] == 57603

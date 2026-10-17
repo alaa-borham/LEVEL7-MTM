@@ -394,6 +394,23 @@ AR = {
     "Click: switch on / set up": "اضغط: تشغيل / إعداد",
     "Folder watch is off: the robot and the saved GRAFIS files wait. Click «Folder watch» in the status bar to switch it on.": "مراقبة المجلدات متوقفة: الروبوت وملفات GRAFIS المحفوظة تنتظر. اضغط «مراقبة المجلدات» في شريط الحالة أسفل النافذة لتشغيلها.",
     "The robot takes the model again in a few seconds": "سيأخذ الروبوت الموديل من جديد خلال ثوانٍ",
+    "ERP orders": "طلبات ERP",
+    "min": "د",
+    "Without the mouse (in the background)": "بدون الفأرة (في الخلفية)",
+    "The robot sends GRAFIS its menu commands or clicks the button's own window: the mouse pointer never moves, you can keep working": "يرسل الروبوت أوامر قائمة GRAFIS أو يضغط الزر من داخل نافذته: مؤشر الفأرة لا يتحرك، ويمكنك متابعة عملك",
+    "GRAFIS menu commands…": "أوامر قائمة GRAFIS…",
+    "Check every": "الفحص كل",
+    "New orders from ERP": "الطلبات الجديدة من ERP",
+    "The folder where the ERP puts the XML orders: checked on this timer, every new order goes through the whole chain by itself.": "المجلد الذي يضع فيه ERP ملفات الطلبات XML: يُفحص حسب هذا المؤقت، وكل طلب جديد يمر بالسلسلة كاملة وحده.",
+    "ERP XML folder…": "مجلد XML من ERP…",
+    "Check now": "فحص الآن",
+    "last check": "آخر فحص",
+    "menu": "قائمة",
+    "background": "خلفية",
+    "mouse": "فأرة",
+    "Open GRAFIS with a model first. If GRAFIS is open and nothing is listed, its menu cannot be read: teach the buttons instead.": "افتح GRAFIS بموديل أولًا. إن كان GRAFIS مفتوحًا ولم يظهر شيء، فقائمته لا تُقرأ: علّم الأزرار بدلًا منها.",
+    "✓ This button can be pressed in the background, without the mouse.": "✓ هذا الزر يُضغط في الخلفية بدون الفأرة.",
+    "This button needs the mouse; choose its GRAFIS menu command to work without it.": "هذا الزر يحتاج الفأرة؛ اختر أمره من قائمة GRAFIS ليعمل بدونها.",
 }
 
 

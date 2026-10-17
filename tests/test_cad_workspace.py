@@ -125,6 +125,15 @@ def test_window_shows_the_selected_marker(ws, tmp_path):
     win._light_clicked("watch")                                                    # red light clicked: on again
     assert gp.running() and gp.watcher is not None and ws.db.get_setting("grafis.watch.enabled")
     gp.timer.stop()
+    erp = tmp_path / "ERP"                                                          # owner's timer for ERP orders
+    erp.mkdir()
+    win.set_watch_interval(5)
+    win.start_watch(str(erp))
+    assert win.timer.interval() == 5 * 60000 and win.watch_interval_min() == 5
+    win._status_lights()
+    assert "5" in win.sb_items["erp"].property("label")
+    win.timer.stop()
+    win.watcher = None
     win.toggle_theme()                                                             # rebuild keeps working
     win.close()
     app.processEvents()
