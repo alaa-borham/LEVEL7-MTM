@@ -772,7 +772,7 @@ class Inspector(QScrollArea):
         self.kv["width"].setText(f"{r['width']:g} mm" if r["width"] else "—")
         self.kv["quantity"].setText(str(r["quantity"] or "—"))
         self.kv["imported"].setText((r["imported"] or "").replace("T", " ")[:16])
-        self.kv["length"].setText(f"{r['length_mm'] / 1000:.3f} m" if r["length_mm"] else "—")
+        self.kv["length"].setText(f"{r['length_mm'] / 1000:.2f} m" if r["length_mm"] else "—")
         self.kv["placed"].setText(str(r["placed"]) if r["placed"] is not None else "—")
         self.ring.set_value(r["efficiency_pct"])
         for i, x in enumerate(r["x_rows"][:40]):
@@ -873,7 +873,7 @@ class MarkerPanel(QWidget):
         self.view.show_marker(marker, message)
         length = (marker or {}).get("length") or (row or {}).get("length_mm")
         eff = (row or {}).get("efficiency_pct")
-        self.hud_values["length"].setText(f"{length / 1000:.3f} m" if length else "—")
+        self.hud_values["length"].setText(f"{length / 1000:.2f} m" if length else "—")
         self.hud_values["eff"].setText(f"{eff:.1f}%" if eff else "—")
         self.hud_values["pieces"].setText(str(len(marker["pieces"])) if marker else "—")
         self.hud.adjustSize()

@@ -165,4 +165,7 @@ def _save(ws, chk, scb_path, result) -> dict:
         ws.db.audit(c, ws.actor, f"cutting.{result['status']}", "file", os.path.basename(scb_path),
                     {"outputs": result["outputs"], "message": result.get("message", ""),
                      "length_mm": result.get("length_mm")})
+    if result["status"] == "done":
+        from .done_folder import move_finished
+        result["xml_done"] = move_finished(ws, [ln["revision_id"] for ln in chk.lines])
     return result
