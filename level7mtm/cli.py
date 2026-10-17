@@ -123,7 +123,7 @@ def _run(a) -> int:
         return 0
     if a.cmd == "grafis-x":
         from .services.grafis_handover import x_sheet
-        d = x_sheet(ws, _rid(ws, a.line), a.mdl or ws.db.get_setting("grafis.mdl"), out_dir=a.outdir)
+        d = x_sheet(ws, _rid(ws, a.line), a.mdl or ws.grafis_mdl(), out_dir=a.outdir)
         for r in d["rows"]:
             if not r["superseded"]:
                 print(f"{r['piece']} {r['x']:<4} {r['x_name']:<20} {r['order_value_mm']:>8} mm  "

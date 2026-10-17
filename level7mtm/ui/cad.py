@@ -22,6 +22,7 @@ from .i18n import tr, tr_msg
 ICONS = {
     "import": "M12 3v11m0 0l-4-4m4 4l4-4M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4",
     "orders": "M4 5h16M4 10h16M4 15h10M4 20h7",
+    "customers": "M9 11a4 4 0 100-8 4 4 0 000 8zM2 21v-1a6 6 0 0112 0v1M17 11a3 3 0 100-6M22 21v-1a5 5 0 00-4-4.9",
     "ruler": "M3 17L17 3l4 4L7 21zM7 13l2 2M10 10l2 2M13 7l2 2",
     "model": "M12 3a2 2 0 012 2c0 1-1 1.5-2 2v1l9 6v2H3v-2l9-6",
     "robot": "M6 8h12v10H6zM12 4v4M9 12h.01M15 12h.01M9 15h6M3 12v3M21 12v3",
@@ -186,6 +187,8 @@ def order_rows(ws, limit: int = 300) -> list[dict]:
             if ln.get("revision_id") is not None:
                 results[ln["revision_id"]] = dict(r)          # the newest result of the line wins
     out = []
+    from ..services.customers import names as customer_names
+    names = customer_names(ws)
     for rev in ws.list_revisions()[:limit]:
         if rev["status"] == "cancelled":
             continue
@@ -196,7 +199,9 @@ def order_rows(ws, limit: int = 300) -> list[dict]:
         go = next((dict(g) for g in gos if not g["archived"]), None)
         full = ws.revision(rid)
         norm, raw = full["normalized"], full["raw_line"]
+        cust = norm.get("customer") or "level7"
         row = {"rid": rid, "line": rev["line_number"], "stage": "new", "problems": [], "imported": rev["imported_at"],
+               "customer": names.get(cust, cust),
                "fabric": raw.get("fabric_number") or "", "width": norm.get("fabric_width_mm"),
                "quantity": rev["quantity"], "times": {"new": rev["imported_at"]}, "x_rows": [], "mdl": None,
                "result": None, "l7n": None, "outputs": [], "length_mm": None, "efficiency_pct": None,
@@ -1419,8 +1424,8 @@ class Inspector(QScrollArea):
             self.buttons[key] = b
             self.lay.addWidget(b)
         self.kv: dict[str, QLabel] = {}
-        self._section(tr("The order"), [("fabric", "Fabric"), ("width", "Width"), ("quantity", "Quantity"),
-                                    ("imported", "Imported")])
+        self._section(tr("The order"), [("customer", "Customer"), ("fabric", "Fabric"), ("width", "Width"),
+                                         ("quantity", "Quantity"), ("imported", "Imported")])
         self.lay.addWidget(self._sec_title(tr("Nesting")))
         nr = QHBoxLayout()
         self.ring = Ring()
@@ -1496,6 +1501,7 @@ class Inspector(QScrollArea):
         col = c[STAGE_COLOUR[r["stage"]]]
         self.pill.setText(tr(STAGE_TEXT[r["stage"]]))
         self.pill.setStyleSheet(f"color: {col.name()}; border-color: {col.name()};")
+        self.kv["customer"].setText(r.get("customer") or "—")
         self.kv["fabric"].setText(str(r["fabric"] or "—"))
         self.kv["width"].setText(f"{r['width']:g} mm" if r["width"] else "—")
         self.kv["quantity"].setText(str(r["quantity"] or "—"))

@@ -1226,10 +1226,10 @@ class GrafisPage(Page):
             self.win.run(lambda: [self._register(p) for p in paths], lambda _r: self.refresh())
 
     def choose_mdl(self):
-        p, _ = QFileDialog.getOpenFileName(self, tr("GRAFIS model (MDL)…"), self.ws.db.get_setting("grafis.mdl") or "",
+        p, _ = QFileDialog.getOpenFileName(self, tr("GRAFIS model (MDL)…"), self.ws.grafis_mdl() or "",
                                            "GRAFIS (*.mdl *.MDL)")
         if p:
-            self.ws.db.set_setting("grafis.mdl", p)
+            self.ws.set_grafis_mdl(p)                    # for the customer being edited
             self.refresh()
 
     def teach(self, name):
@@ -1809,7 +1809,7 @@ class GrafisPartsPage(Page):
         self.options: list = []
 
     def _mdl(self):
-        m = self.ws.db.get_setting("grafis.mdl")
+        m = self.ws.grafis_mdl()                         # the base model of the customer being edited
         return m if m and os.path.isfile(m) else None
 
     def refresh(self):
@@ -1928,14 +1928,14 @@ class XValuesPage(Page):
         lay.addWidget(self.codes)
 
     def _mdl(self):
-        m = self.ws.db.get_setting("grafis.mdl")
+        m = self.ws.grafis_mdl()                         # the base model of the customer being edited
         return m if m and os.path.isfile(m) else None
 
     def choose_mdl(self):
-        p, _ = QFileDialog.getOpenFileName(self, tr("GRAFIS model (MDL)…"), self.ws.db.get_setting("grafis.mdl") or "",
+        p, _ = QFileDialog.getOpenFileName(self, tr("GRAFIS model (MDL)…"), self.ws.grafis_mdl() or "",
                                            "GRAFIS (*.mdl *.MDL)")
         if p:
-            self.ws.db.set_setting("grafis.mdl", p)
+            self.ws.set_grafis_mdl(p)                    # for the customer being edited
             self.refresh()
 
     def refresh(self):
@@ -2041,6 +2041,106 @@ class XValuesPage(Page):
         self.refresh()
 
 
+class CustomersPage(Page):
+    """Customers: each with his name in the XML (Reference), his own size table, piece options, fixed pieces and
+    GRAFIS base model. The settings pages show the customer chosen at the top of the screen (ribbon)."""
+    title = "Customers"
+
+    def __init__(self, win):
+        super().__init__(win)
+        lay = QVBoxLayout(self)
+        info = QLabel(tr("Each customer has his own name in the XML (Reference), his own size table, piece "
+                         "options, fixed pieces and GRAFIS model. An XML is read with the settings of the customer "
+                         "it names; an XML naming no customer goes to ER."))
+        info.setWordWrap(True)
+        lay.addWidget(info)
+        self.t = table(["Customer", "XML name (Reference)", "GRAFIS model (MDL)"])
+        lay.addWidget(self.t, 1)
+        bar = QHBoxLayout()
+        for text, fn in (("Add customer…", self.add), ("Edit…", self.edit), ("GRAFIS model (MDL)…", self.choose_mdl),
+                         ("Edit this customer's settings", self.use)):
+            b = QPushButton(tr(text))
+            b.clicked.connect(fn)
+            bar.addWidget(b)
+        bar.addStretch()
+        lay.addLayout(bar)
+
+    def refresh(self):
+        from ..services.customers import list_customers
+        cs = list_customers(self.ws)
+        cur = self.ws.customer()
+        fill(self.t, [[("● " if c["id"] == cur else "") + c["name"], c["reference"],
+                       os.path.basename(c["mdl"] or "") or tr("not set")] for c in cs], None, [c["id"] for c in cs])
+
+    def _cid(self):
+        ids = selected_data(self.t)
+        return ids[0] if ids else None
+
+    def _dialog(self, title, name="", ref="", copy_choices=None):
+        d = QDialog(self)
+        d.setWindowTitle(title)
+        d.setMinimumWidth(420)
+        f = QFormLayout(d)
+        e_name, e_ref = QLineEdit(name), QLineEdit(ref)
+        e_ref.setPlaceholderText("From …")
+        f.addRow(tr("Customer") + ":", e_name)
+        f.addRow(tr("XML name (Reference)") + ":", e_ref)
+        src = None
+        if copy_choices:
+            src = QComboBox()
+            for cid, n in copy_choices:
+                src.addItem(n, cid)
+            f.addRow(tr("Copy the settings of") + ":", src)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(d.accept)
+        bb.rejected.connect(d.reject)
+        f.addRow(bb)
+        if d.exec() != QDialog.Accepted:
+            return None
+        return e_name.text(), e_ref.text(), (src.currentData() if src else None)
+
+    def add(self):
+        from ..services.customers import add_customer, list_customers
+        got = self._dialog(tr("Add customer…"), copy_choices=[(c["id"], c["name"]) for c in list_customers(self.ws)])
+        if got:
+            name, ref, src = got
+            cid = self.win.guard(lambda: add_customer(self.ws, name, ref, copy_from=src))
+            if cid:
+                self.ws.db.set_setting("ui.customer", cid)
+                self.win.customer_changed()
+                QMessageBox.information(self, tr("Customers"), tr("Customer added with a copy of the settings of the "
+                                                                  "customer chosen. Choose his GRAFIS model, then "
+                                                                  "change his size table, piece options and fixed "
+                                                                  "pieces."))
+
+    def edit(self):
+        from ..services.customers import get, update_customer
+        cid = self._cid()
+        c = get(self.ws, cid) if cid else None
+        if c is None:
+            return
+        got = self._dialog(tr("Edit…"), c["name"], c["reference"])
+        if got:
+            self.win.guard(lambda: update_customer(self.ws, cid, name=got[0], reference=got[1]))
+            self.win.customer_changed()
+
+    def choose_mdl(self):
+        from ..services.customers import get, update_customer
+        cid = self._cid() or self.ws.customer()
+        c = get(self.ws, cid)
+        p, _ = QFileDialog.getOpenFileName(self, f"{tr('GRAFIS model (MDL)…')} — {c['name']}", c["mdl"] or "",
+                                           "GRAFIS (*.mdl *.MDL)")
+        if p:
+            self.win.guard(lambda: update_customer(self.ws, cid, mdl=p))
+            self.win.customer_changed()
+
+    def use(self):
+        cid = self._cid()
+        if cid:
+            self.ws.db.set_setting("ui.customer", cid)
+            self.win.customer_changed()
+
+
 class LibraryPage(Page):
     title = "Model library"
     developer_only = True
@@ -2096,7 +2196,7 @@ GPART_COLS = ["Design option", "GRAFIS part no.", "GRAFIS part name", "Material"
 
 def _grafis_model_parts(ws) -> dict[int, tuple]:
     """{part number: (name, PartSpec | None)} of the GRAFIS model chosen in the GRAFIS screen ({} if none)."""
-    mdl = ws.db.get_setting("grafis.mdl")
+    mdl = ws.grafis_mdl()
     if not mdl or not os.path.isfile(mdl):
         return {}
     from ..grafis.container import read_container
@@ -2564,7 +2664,8 @@ class LogPage(Page):
 SECTIONS = [
     ("Daily work", [("Home", "⌂"), ("Orders", "☰"), ("Import & mapping", "⇪"), ("Order details", "✎")]),
     ("GRAFIS & cutting", [("GRAFIS markers", "✂")]),
-    ("GRAFIS setup", [("X values for GRAFIS", "Ⅹ"), ("Design options", "◈"), ("GRAFIS parts", "▦")]),
+    ("GRAFIS setup", [("Customers", "☺"), ("X values for GRAFIS", "Ⅹ"), ("Design options", "◈"),
+                      ("GRAFIS parts", "▦")]),
     ("Pattern engine", [("Model & design", "◇"), ("Pattern preview", "◫"), ("Validation", "✓"),
                         ("Approve & send", "➤")]),
     ("Settings & system", [("Model library", "▤"), ("Rules editor", "⚙"), ("Materials & export", "◰"),
@@ -2572,6 +2673,7 @@ SECTIONS = [
 ]
 SUBTITLES = {
     "Home": "What is happening now, what needs attention, quick actions",
+    "Customers": "Each customer: his name in the XML, size table, piece options, fixed pieces and GRAFIS model",
     "Orders": "Order lines from the ERP, their revisions and status",
     "Import & mapping": "XML files received and how their fields are read",
     "Order details": "Measurements and design options of the selected order line",
@@ -2589,7 +2691,8 @@ SUBTITLES = {
     "Log & backups": "Everything that happened, backups and restore",
 }
 _BY_TITLE = {c.title: c for c in [HomePage, OrdersPage, ImportPage, OrderPage, ModelPage, PreviewPage, ValidationPage,
-                                  SendPage, GrafisPage, XValuesPage, OptionsPage, GrafisPartsPage, LibraryPage,
+                                  SendPage, GrafisPage, CustomersPage, XValuesPage, OptionsPage, GrafisPartsPage,
+                                  LibraryPage,
                                   RulesPage, SettingsPage, LogPage]}
 PAGES = [_BY_TITLE[t] for _, items in SECTIONS for t, _ in items]
 
@@ -2668,7 +2771,8 @@ class MainWindow(QMainWindow):
             (tr("The order"), [("import", "import", tr("Import XML"), self.import_dialog),
                            ("orders", "orders", tr("Orders"), lambda: self.goto("Orders")),
                            ("details", "ruler", tr("Order info"), self.open_details)]),
-            ("GRAFIS", [("write", "model", tr("Write model"), self.write_model),
+            ("GRAFIS", [("customers", "customers", tr("Customers"), lambda: self.goto("Customers")),
+                        ("write", "model", tr("Write model"), self.write_model),
                         ("robot", "robot", tr("Robot"), lambda: grafis().robot_now()),
                         ("xvalues", "xvalues", tr("Size table setup"), lambda: self.goto("X values for GRAFIS")),
                         ("options", "options", tr("Piece options setup"), lambda: self.goto("Design options")),
@@ -2681,7 +2785,7 @@ class MainWindow(QMainWindow):
             (tr("System"), [("setup", "setup", tr("Setup"), self.open_setup),
                             ("home", "home", tr("Today"), lambda: self.goto("Home")),
                             ("log", "log", tr("Log"), lambda: self.goto("Log & backups"))]),
-        ], extra=[(tr("ERP orders"), self._erp_timer_widget())])
+        ], extra=[(tr("Customer"), self._customer_widget()), (tr("ERP orders"), self._erp_timer_widget())])
         lay.addWidget(self.ribbon)
         split = QSplitter(Qt.Horizontal)
         split.setHandleWidth(1)
@@ -2730,6 +2834,35 @@ class MainWindow(QMainWindow):
         self.refresh_cad(force=True)
         self._tick()
         self.tabs.currentChanged.connect(self._tab_changed)
+
+    def _customer_widget(self) -> QWidget:
+        """Whose settings the settings pages show (size table, piece options, fixed pieces, GRAFIS model)."""
+        self.customer_box = QComboBox()
+        self.customer_box.setToolTip(tr("The customer whose settings are shown and changed"))
+        self.customer_box.setMinimumWidth(130)
+        self._fill_customers()
+        self.customer_box.activated.connect(lambda _i: (self.ws.db.set_setting("ui.customer",
+                                                                                self.customer_box.currentData()),
+                                                        self.customer_changed()))
+        return self.customer_box
+
+    def _fill_customers(self):
+        from ..services.customers import names
+        box = self.customer_box
+        box.blockSignals(True)
+        box.clear()
+        for cid, n in names(self.ws).items():
+            box.addItem(n, cid)
+        box.setCurrentIndex(max(box.findData(self.ws.customer()), 0))
+        box.blockSignals(False)
+
+    def customer_changed(self):
+        """Another customer chosen (or one added / changed): the open settings pages show his settings."""
+        self._fill_customers()
+        page = self.current_page()
+        if page is not None:
+            self.guard(page.refresh)
+        self.statusBar().showMessage(f"{tr('Customer')}: {self.customer_box.currentText()}", 5000)
 
     def _erp_timer_widget(self) -> QWidget:
         """Countdown to the next check of the ERP folder; the seconds are set right here; ▶ checks now."""

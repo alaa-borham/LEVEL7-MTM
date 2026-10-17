@@ -67,7 +67,8 @@ def check_mdl(ws, path: str) -> tuple[ScbCheck, dict | None]:
     prod = {n: s for n, (_, s) in production(cont).items() if s}
     if not prod:
         chk.issues.append(("blocking", "the saved model has no production part"))
-    template = ws.db.get_setting("grafis.mdl")
+    with ws.for_customer(ws.customer_of(row["revision_id"])):
+        template = ws.grafis_mdl()                       # the base model of the order's customer
     if template and os.path.isfile(template):
         base = read_container(template)
         with open(template, "rb") as fh:

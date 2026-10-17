@@ -12,6 +12,20 @@ AR = {
     "Size table setup": "ضبط جدول المقاسات",
     "Piece options setup": "ضبط اختيارات القطع",
     "Fixed pieces": "القطع الثابتة",
+    "Customers": "العملاء",
+    "Customer": "العميل",
+    "XML name (Reference)": "اسمه في XML (Reference)",
+    "Add customer…": "إضافة عميل…",
+    "Edit…": "تعديل…",
+    "Edit this customer's settings": "تعديل إعدادات هذا العميل",
+    "Copy the settings of": "نسخ إعدادات",
+    "The customer whose settings are shown and changed": "العميل الذي تُعرض وتُعدَّل إعداداته",
+    "Each customer: his name in the XML, size table, piece options, fixed pieces and GRAFIS model":
+        "لكل عميل: اسمه في XML وجدول المقاسات واختيارات القطع والقطع الثابتة وموديل GRAFIS",
+    "Each customer has his own name in the XML (Reference), his own size table, piece options, fixed pieces and GRAFIS model. An XML is read with the settings of the customer it names; an XML naming no customer goes to ER.":
+        "لكل عميل اسمه الخاص في ملف XML (Reference)، وجدول مقاسات واختيارات قطع وقطع ثابتة وموديل GRAFIS خاصة به. يُقرأ كل ملف XML بإعدادات العميل المذكور فيه، والملف الذي لا يطابق أي عميل يذهب إلى ER.",
+    "Customer added with a copy of the settings of the customer chosen. Choose his GRAFIS model, then change his size table, piece options and fixed pieces.":
+        "تمت إضافة العميل بنسخة من إعدادات العميل المختار. اختر موديل GRAFIS الخاص به، ثم عدّل جدول مقاساته واختيارات القطع والقطع الثابتة.",
     "The pieces of the order as GRAFIS made them (one of each)": "قطع الطلب كما صنعها GRAFIS (قطعة من كل نوع)",
     "The pattern of this order is made in GRAFIS: its pieces are shown here once GRAFIS has saved the model and it was nested":
         "بترون هذا الطلب يُصنع في GRAFIS: تظهر قطعه هنا بعد أن يحفظ GRAFIS الموديل ويتم التعشيق",
@@ -476,6 +490,8 @@ def label(d: dict | str | None) -> str:
 # translated when shown, piece by piece ("A — B", "R003: A"), with these patterns.
 MSG_AR = [
     (r"order line needs review \(import problems\)", "سطر الطلب يحتاج مراجعة (مشاكل في الاستيراد)"),
+    (r"no customer has the XML name Reference='(.+)' — add the customer in Customers \(known: (.+)\)",
+     "لا يوجد عميل اسمه في XML هو '{0}' — أضِف العميل في «العملاء» (الموجود: {1})"),
     (r"resolve them first", "عالجها أولاً"),
     (r"design option '(.+)' not set", "خيار التصميم '{0}' غير محدد"),
     (r"design option '(.+)' not in the order: default (.+)", "خيار التصميم '{0}' غير موجود في الطلب: الافتراضي {1}"),

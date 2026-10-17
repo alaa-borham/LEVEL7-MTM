@@ -10,6 +10,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 from .. import ENGINE_VERSION, __version__
@@ -53,6 +55,10 @@ def _doc_id_key(kind: str, body: dict) -> str:
             "catalog": "catalog_id"}[kind]
 
 
+DEFAULT_CUSTOMER = "level7"           # the first customer: the settings made before customers existed
+CUSTOMER_KINDS = ("mapping", "catalog")   # each customer has its own XML mapping and rules (size table, options, parts)
+
+
 def _sha(body: dict) -> str:
     return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
@@ -65,7 +71,45 @@ class Workspace:
             os.makedirs(os.path.join(folder, sub), exist_ok=True)
         self.db = Database(os.path.join(folder, "level7mtm.db"))
         self.actor = actor
+        self._ctx = threading.local()
         self._register_builtin()
+
+    # ------------------------------------------------------------ customers
+    def customer(self) -> str:
+        """The customer whose settings are used now: the one of the order being worked on (``for_customer``);
+        on the screen otherwise the customer chosen for editing; in the background the first customer."""
+        cid = getattr(self._ctx, "cid", None)
+        if cid:
+            return cid
+        if threading.current_thread() is threading.main_thread():
+            return self.db.get_setting("ui.customer") or DEFAULT_CUSTOMER
+        return DEFAULT_CUSTOMER
+
+    @contextmanager
+    def for_customer(self, cid: str | None):
+        old = getattr(self._ctx, "cid", None)
+        self._ctx.cid = cid or DEFAULT_CUSTOMER
+        try:
+            yield
+        finally:
+            self._ctx.cid = old
+
+    def customer_of(self, rid: int) -> str:
+        r = self.db.one("SELECT normalized FROM revisions WHERE id=?", (rid,))
+        return (json.loads(r["normalized"]).get("customer") if r else None) or DEFAULT_CUSTOMER
+
+    def _key(self, base: str, kind: str | None = None) -> str:
+        cid = self.customer()
+        if cid == DEFAULT_CUSTOMER or (kind is not None and kind not in CUSTOMER_KINDS):
+            return base
+        return f"{base}@{cid}"
+
+    def grafis_mdl(self) -> str | None:
+        """The customer's GRAFIS base model (the first customer's when none is chosen)."""
+        return self.db.get_setting(self._key("grafis.mdl")) or self.db.get_setting("grafis.mdl")
+
+    def set_grafis_mdl(self, path: str) -> None:
+        self.db.set_setting(self._key("grafis.mdl"), path)
 
     # ------------------------------------------------------------ documents (versioned)
     def _register_builtin(self) -> None:
@@ -118,12 +162,13 @@ class Workspace:
         return json.loads(r["body"])
 
     def active(self, kind: str) -> tuple[int, dict]:
-        pk = self.db.get_setting(f"active.{kind}")
+        """The document in use (for mapping and catalog: the current customer's)."""
+        pk = self.db.get_setting(self._key(f"active.{kind}", kind)) or self.db.get_setting(f"active.{kind}")
         return pk, self.document(pk)
 
     def set_active(self, kind: str, doc_pk: int) -> None:
         self.document(doc_pk)
-        self.db.set_setting(f"active.{kind}", doc_pk)
+        self.db.set_setting(self._key(f"active.{kind}", kind), doc_pk)
         with self.db.tx() as c:
             self.db.audit(c, self.actor, "document.activated", kind, doc_pk)
 
@@ -146,8 +191,31 @@ class Workspace:
         dup = self.db.one("SELECT id, status FROM import_files WHERE sha256=?", (sha,))
         if dup and dup["status"] == "imported":
             return FileOutcome(name, "duplicate", "the same file was already imported; nothing created")
+        from .customers import customer_for_xml
+        cid, why = customer_for_xml(self, data)
+        if cid is None:                    # the XML names a customer that has no settings
+            res = None
+            status, msg = "failed", why
+            with self.db.tx() as c:
+                if dup:
+                    c.execute("UPDATE import_files SET status=?, message=?, received_at=? WHERE id=?",
+                              (status, msg, now(), dup["id"]))
+                    fid = dup["id"]
+                else:
+                    fid = c.execute("INSERT INTO import_files(sha256, file_name, source_path, received_at, size, "
+                                    "encoding, mapping_doc, status, message, raw, structure) "
+                                    "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                                    (sha, name, source_path, now(), len(data), "", None, status, msg, data,
+                                     "{}")).lastrowid
+                self.db.audit(c, self.actor, "import.failed", "import_file", fid, {"file": name, "message": msg})
+            return FileOutcome(name, status, msg)
+        with self.for_customer(cid):
+            return self._import_for(data, name, source_path, sha, dup, cid)
+
+    def _import_for(self, data, name, source_path, sha, dup, cid) -> FileOutcome:
         map_pk, profile = self.active("mapping")
         res: ImportResult = import_bytes(data, profile)
+        res.customer = cid
         status = "imported" if res.ok else "failed"
         msg = "; ".join(p.message for p in res.problems if p.severity == "error")
         out = FileOutcome(name, status, msg)
@@ -179,7 +247,8 @@ class Workspace:
                                      "status": m.status, "variable": m.variable, "source_value": m.source_value,
                                      "source_unit": m.source_unit} for k, m in ln.measurements.items()},
                 "options": ln.options, "quantity": ln.quantity, "fabric_width_mm": ln.fabric_width_mm,
-                "problems": [p.__dict__ for p in ln.problems]}
+                "problems": [p.__dict__ for p in ln.problems],
+                "customer": getattr(res, "customer", None) or DEFAULT_CUSTOMER}
         dsha = _sha({"m": {k: v["value_mm"] for k, v in norm["measurements"].items()}, "o": ln.options,
                      "q": ln.quantity, "w": ln.fabric_width_mm})
         line_ref = ln.line_ref or ln.number
@@ -319,7 +388,8 @@ class Workspace:
     def resolve_order(self, rid: int) -> tuple[int, dict, object]:
         """Catalog step only: measurements / options -> pattern variables + piece plan (no geometry)."""
         rev = self.revision(rid)
-        cat_pk, cat = self.active("catalog")
+        with self.for_customer(rev["normalized"].get("customer")):     # the rules of the order's customer
+            cat_pk, cat = self.active("catalog")
         raw, norm = rev["raw_line"], rev["normalized"]
         try:
             product, style = find_style(cat, raw.get("item"), raw.get("measurement_table"))

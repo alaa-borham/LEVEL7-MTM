@@ -32,7 +32,7 @@ from ..storage.db import now
 
 
 def settings(ws) -> dict:
-    return {"template": ws.db.get_setting("grafis.mdl"),
+    return {"template": ws.grafis_mdl(),                 # the base model of the current customer
             "out": ws.db.get_setting("grafis.input") or os.path.join(ws.folder, "grafis", "input"),
             "enabled": bool(ws.db.get_setting("grafis.auto_mdl", True))}
 
@@ -134,7 +134,7 @@ def order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = N
     """Write the order's MDL. Returns {status: written / duplicate / blocked / not_configured / skipped, ...}.
     ``force``: write again although the same model was written before (the owner asked for it)."""
     from .activity import working
-    with working([rid], "model"):
+    with working([rid], "model"), ws.for_customer(ws.customer_of(rid)):   # the customer's model and parts table
         return _order_mdl(ws, rid, template, out_dir, force)
 
 
