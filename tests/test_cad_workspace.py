@@ -174,11 +174,34 @@ def test_measure_tools_on_the_marker(tmp_path):
     panel.use_tool("line")
     v.measure_click((0.3, 0.2))                                      # snaps to the corner (0, 0)
     v.measure_click((100, 50))
-    assert v.meas["text"] == "111.8 mm" and panel.hud_measure[0].isVisible()
+    assert v.meas["text"] == "11.2 cm" and panel.hud_measure[0].isVisible()      # in centimetres
     panel.use_tool("curve")
     v.measure_click((30, 0))                                         # on the edge of front1 (first copy)
     v.measure_click((100, 20))
-    assert v.meas["text"] == "90.0 mm" and "300.0" in v.meas["extra"]   # 70 + 20 along the edge; edge 300
+    assert v.meas["text"] == "9.0 cm" and v.meas["extra"] == "front1"     # 7 + 2 along the edge, no perimeter
+    app.processEvents()
+    v.viewport().repaint()
+    assert v.box.isVisible() and "9.0 cm" in v.box.value.text()
+    v.box.move(5, 300)                                               # the owner drags the box away …
+    v.box.moved = True
+    v.measure_click((30, 0))
+    v.measure_click((100, 20))
+    v.viewport().repaint()
+    assert v.box.pos().y() == 300                                    # … and it stays where he put it
+    k = v.transform().m11()
+    v.zoom_at(1.35, v.viewport().rect().center())                    # space + right click: zoom in
+    assert abs(v.transform().m11() - k * 1.35) < 1e-9
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    k = v.transform().m11()
+    QTest.keyPress(v, Qt.Key_Space)                                  # space held: zoom mode
+    assert v.zooming
+    QTest.mouseClick(v.viewport(), Qt.LeftButton, pos=v.viewport().rect().center())   # left = zoom out
+    assert v.transform().m11() < k and not v.meas.get("pts") == [(0, 0)]
+    QTest.mouseClick(v.viewport(), Qt.RightButton, pos=v.viewport().rect().center())  # right = zoom in
+    assert abs(v.transform().m11() - k) < 1e-6
+    QTest.keyRelease(v, Qt.Key_Space)
+    assert not v.zooming
     panel.use_tool("select")
     assert v.tool is None and not v.meas
     panel.close()

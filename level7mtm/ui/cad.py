@@ -242,6 +242,56 @@ def arc_between(pts, sa: float, sb: float):
     return total - inner, way
 
 
+class MeasureBox(QFrame):
+    """The measured value in a box the owner can drag anywhere on the canvas; once moved it stays there."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setObjectName("hud")
+        self.setCursor(Qt.OpenHandCursor)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(10, 5, 10, 5)
+        lay.setSpacing(0)
+        self.value = QLabel()
+        self.value.setStyleSheet(f"color: {themes.colour('warn').name()}; font-size: 13pt; font-weight: 800;")
+        self.extra = QLabel()
+        self.extra.setObjectName("hudLabel")
+        lay.addWidget(self.value)
+        lay.addWidget(self.extra)
+        self.moved = False
+        self._grab = None
+        self.hide()
+
+    def show_value(self, text, extra, near):
+        self.value.setText(ltr(text))
+        self.extra.setText(ltr(extra))
+        self.extra.setVisible(bool(extra))
+        self.adjustSize()
+        if not self.moved:                        # next to the measurement until the owner moves it
+            par = self.parentWidget().rect()
+            x = min(max(int(near.x()) + 14, 4), par.width() - self.width() - 4)
+            y = min(max(int(near.y()) - self.height() - 10, 26), par.height() - self.height() - 4)
+            self.move(x, y)
+        self.show()
+        self.raise_()
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.LeftButton:
+            self._grab = e.position().toPoint()
+            self.setCursor(Qt.ClosedHandCursor)
+
+    def mouseMoveEvent(self, e):
+        if self._grab is not None:
+            par = self.parentWidget().rect()
+            p = self.mapToParent(e.position().toPoint() - self._grab)
+            self.move(min(max(p.x(), 0), par.width() - self.width()), min(max(p.y(), 0), par.height() - self.height()))
+            self.moved = True
+
+    def mouseReleaseEvent(self, e):
+        self._grab = None
+        self.setCursor(Qt.OpenHandCursor)
+
+
 class MarkerView(QGraphicsView):
     """The marker in millimetres: grid, fabric with selvedges, pieces with grain lines and names, the length
     dimension; rulers along the top and the side; wheel = zoom at the cursor, pan tool / middle button = move."""
@@ -265,6 +315,9 @@ class MarkerView(QGraphicsView):
         self._pan = None
         self.tool: str | None = None            # None, "line" (straight length) or "curve" (along a piece edge)
         self.meas: dict = {}
+        self.box = MeasureBox(self.viewport())
+        self.zooming = False                     # space bar held: left click = zoom out, right click = zoom in
+        self.setFocusPolicy(Qt.StrongFocus)
 
     # -- content
     def show_marker(self, marker: dict | None, message: str = ""):
@@ -272,6 +325,8 @@ class MarkerView(QGraphicsView):
         sc.clear()
         self.marker, self.message = marker, message
         self.meas = {}
+        if hasattr(self, "box"):
+            self.box.hide()
         if not marker:
             sc.setSceneRect(QRectF(-100, -100, 3000, 1700))
             self.resetTransform()
@@ -347,6 +402,11 @@ class MarkerView(QGraphicsView):
         self.setDragMode(QGraphicsView.ScrollHandDrag if on else QGraphicsView.NoDrag)
 
     # -- input
+    def contextMenuEvent(self, e):
+        if self.zooming:
+            return
+        super().contextMenuEvent(e)
+
     def wheelEvent(self, e):
         self.zoom(1.18 if e.angleDelta().y() > 0 else 1 / 1.18)
 
@@ -354,7 +414,8 @@ class MarkerView(QGraphicsView):
         self.tool = tool
         self.meas = {}
         self.setCursor(Qt.CrossCursor if tool else Qt.ArrowCursor)
-        self.viewport().setCursor(Qt.CrossCursor if tool else Qt.ArrowCursor)
+        self._cursor_shape()
+        self.box.moved = False
         self.measured.emit("")
         self.viewport().update()
 
@@ -382,7 +443,7 @@ class MarkerView(QGraphicsView):
             if len(pts) == 2:
                 d = math.dist(*pts)
                 dx, dy = abs(pts[1][0] - pts[0][0]), abs(pts[1][1] - pts[0][1])
-                self.meas.update(value=d, text=f"{d:.1f} mm", extra=f"ΔX {dx:.1f}  ΔY {dy:.1f}")
+                self.meas.update(value=d, text=f"{d / 10:.1f} cm", extra=f"ΔX {dx / 10:.1f}  ΔY {dy / 10:.1f} cm")
                 self.measured.emit(self.meas["text"])
         else:
             near = None
@@ -399,13 +460,40 @@ class MarkerView(QGraphicsView):
                 return
             pc = self.marker["pieces"][i]
             length, way = arc_between(pc["cut"], first[1], s_)
-            per = contour_length(pc["cut"])
             self.meas = {"kind": "curve", "first": first, "pts": [first[2], c], "way": way, "value": length,
-                         "text": f"{length:.1f} mm", "extra": f"{pc['name']} — {tr('edge')} {per:.1f} mm"}
+                         "text": f"{length / 10:.1f} cm", "extra": pc["name"]}
             self.measured.emit(self.meas["text"])
         self.viewport().update()
 
+    def enterEvent(self, e):
+        self.setFocus()                          # the space bar works as soon as the mouse is over the marker
+        super().enterEvent(e)
+
+    def _cursor_shape(self):
+        shape = Qt.SizeAllCursor if self.zooming else (Qt.CrossCursor if self.tool else Qt.ArrowCursor)
+        self.viewport().setCursor(shape)
+
+    def zoom_at(self, k: float, pos):
+        before = self.mapToScene(pos)
+        self.scale(k, k)
+        after = self.mapToScene(pos)
+        d = after - before
+        self.translate(d.x(), d.y())
+        self.zoom_changed.emit(self.transform().m11())
+
+    def keyReleaseEvent(self, e):
+        if e.key() == Qt.Key_Space and not e.isAutoRepeat():
+            self.zooming = False
+            self._cursor_shape()
+            return
+        super().keyReleaseEvent(e)
+
     def keyPressEvent(self, e):
+        if e.key() == Qt.Key_Space:
+            if not e.isAutoRepeat():
+                self.zooming = True
+                self._cursor_shape()
+            return
         if e.key() == Qt.Key_Escape and self.tool:
             self.meas = {}
             self.measured.emit("")
@@ -416,6 +504,9 @@ class MarkerView(QGraphicsView):
     def mousePressEvent(self, e):
         if e.button() == Qt.MiddleButton:
             self._pan = e.position()
+            return
+        if self.zooming and e.button() in (Qt.LeftButton, Qt.RightButton):
+            self.zoom_at(1 / 1.35 if e.button() == Qt.LeftButton else 1.35, e.position().toPoint())
             return
         if e.button() == Qt.LeftButton and self.tool:
             p = self.mapToScene(e.position().toPoint())
@@ -474,6 +565,8 @@ class MarkerView(QGraphicsView):
 
     def _draw_measure(self, p: QPainter, c):
         m = self.meas
+        if not m or not self.marker or not m.get("text"):
+            self.box.hide()
         if not m or not self.marker:
             return
         v = lambda q: self.mapFromScene(QPointF(*q))
@@ -489,20 +582,7 @@ class MarkerView(QGraphicsView):
             p.drawEllipse(v(q), 4, 4)
         if m.get("text"):
             mid = v(way[len(way) // 2]) if m.get("kind") == "curve" else (v(way[0]) + v(way[-1])) / 2
-            f = QFont(themes.FAMILY["name"], 10)
-            f.setBold(True)
-            p.setFont(f)
-            lines = [m["text"], m.get("extra", "")]
-            w = max(p.fontMetrics().horizontalAdvance(t) for t in lines) + 14
-            box = QRectF(mid.x() + 10, mid.y() - 40, w, 40)
-            p.setPen(Qt.NoPen)
-            p.setBrush(QColor(c["sidebar"].red(), c["sidebar"].green(), c["sidebar"].blue(), 225))
-            p.drawRect(box)
-            p.setPen(c["warn"])
-            p.drawText(box.adjusted(7, 2, -7, -20), Qt.AlignLeft | Qt.AlignVCenter, ltr(lines[0]))
-            p.setPen(c["text"])
-            p.setFont(QFont(themes.FAMILY["name"], 8))
-            p.drawText(box.adjusted(7, 20, -7, -2), Qt.AlignLeft | Qt.AlignVCenter, ltr(lines[1]))
+            self.box.show_value(m["text"], m.get("extra", ""), mid)
         p.setBrush(Qt.NoBrush)
 
     def drawForeground(self, p: QPainter, rect: QRectF):
