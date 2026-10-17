@@ -251,6 +251,7 @@ AR = {
     "Switch on": "التشغيل",
     "What runs by itself for each new order, and the cutting files it writes.": "ما يعمل وحده لكل طلب جديد، وملفات القص التي تُكتب.",
     "GRAFIS setup": "إعداد GRAFIS",
+    "Customer settings": "إعدادات العملاء",
     "Robot on this PC": "الروبوت على هذا الجهاز",
     "Write the order models": "كتابة موديلات الطلبات",
     "Nest and write cutting files": "التعشيق وإخراج ملفات القص",

@@ -2756,7 +2756,7 @@ class LogPage(Page):
 SECTIONS = [
     ("Daily work", [("Home", "⌂"), ("Orders", "☰"), ("Import & mapping", "⇪"), ("Order details", "✎")]),
     ("GRAFIS & cutting", [("GRAFIS markers", "✂")]),
-    ("GRAFIS setup", [("Customers", "☺"), ("X values for GRAFIS", "Ⅹ"), ("Design options", "◈"),
+    ("Customer settings", [("Customers", "☺"), ("X values for GRAFIS", "Ⅹ"), ("Design options", "◈"),
                       ("GRAFIS parts", "▦")]),
     ("Pattern engine", [("Model & design", "◇"), ("Pattern preview", "◫"), ("Validation", "✓"),
                         ("Approve & send", "➤")]),
