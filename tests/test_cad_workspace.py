@@ -95,7 +95,7 @@ def test_window_shows_the_selected_marker(ws, tmp_path):
     win.browser.tree.setCurrentItem(item)
     app.processEvents()
     assert win.sel_row["rid"] == rev["id"] and win.marker.view.marker["length"] == 300
-        assert item.childCount() == 0                                              # no pieces listed under the order
+    assert item.childCount() == 0                                              # no pieces listed under the order
     assert win.marker.hud_values["pieces"].text() == "2"
     from level7mtm.services.activity import working                               # a step running on the line
     with working([rev["id"]], "nesting", expected_s=100):
