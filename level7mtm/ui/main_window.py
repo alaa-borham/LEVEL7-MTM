@@ -177,6 +177,22 @@ def measurement_dialog(parent, code: str, name: str, value_mm: float) -> tuple[f
     return round(box.value() * 10, 1), why.text().strip()
 
 
+def ordered_ribbon(groups, cfg: dict) -> list:
+    """The ribbon groups in the owner's order (setting ui.ribbon: groups, items per group, hidden icons).
+    ``groups``: [(id, title, items)]. Icons and groups the setting does not know yet (a newer version) come
+    after the known ones; a group whose icons are all hidden is left out."""
+    rank = lambda order, key: order.index(key) if key in order else len(order)   # noqa: E731
+    gorder = cfg.get("groups", [])
+    hidden = set(cfg.get("hidden", []))
+    out = []
+    for gid, title, items in sorted(groups, key=lambda g: rank(gorder, g[0])):
+        iorder = cfg.get("items", {}).get(gid, [])
+        its = [it for it in sorted(items, key=lambda it: rank(iorder, it[0])) if it[0] not in hidden]
+        if its:
+            out.append((gid, title, its))
+    return out
+
+
 _GRAFIS_POLL = threading.Lock()          # one GRAFIS folder poll / robot step at a time
 
 
@@ -2859,29 +2875,35 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
         grafis = lambda: self.pages["GRAFIS markers"]
-        self.ribbon = cad.Ribbon([
-            (tr("The order"), [("import", "import", tr("Import XML"), self.import_dialog),
+        self.ribbon_groups = [
+            ("order", tr("The order"), [("import", "import", tr("Import XML"), self.import_dialog),
                            ("orders", "orders", tr("Orders"), lambda: self.goto("Orders")),
                            ("details", "ruler", tr("Order info"), self.open_details)]),
-            ("GRAFIS", [("customers", "customers", tr("Customers"), lambda: self.goto("Customers")),
+            ("grafis", "GRAFIS", [("customers", "customers", tr("Customers"), lambda: self.goto("Customers")),
                         ("write", "model", tr("Write model"), self.write_model),
                         ("robot", "robot", tr("Robot"), lambda: grafis().robot_now()),
                         ("options", "options", tr("Model settings"),
                          [(tr("Size table setup"), lambda: self.goto("X values for GRAFIS")),
                           (tr("Piece options setup"), lambda: self.goto("Design options")),
                           (tr("Fixed pieces"), lambda: self.goto("GRAFIS parts"))])]),
-            (tr("Nesting"), [("renest", "renest", tr("Nest again"),
+            ("nesting", tr("Nesting"), [("renest", "renest", tr("Nest again"),
                               {"main": self.renest_selected,
                                "menu": [(tr("Nest again"), self.renest_selected),
                                         (tr("Show marker in LEVEL7 Nesting"), self.nesting_selected)]}),
                              ("markers", "nest", tr("Marker name"), lambda: self.goto("GRAFIS markers"))]),
-            (tr("Output"), [("cut", "folder", tr("Files"),
+            ("output", tr("Output"), [("cut", "folder", tr("Files"),
                              [(tr("Cutting files"), self.open_cutting),
                               (tr("Errors (ER)"), lambda: self.pages["Home"]._open_er())])]),
-            (tr("System"), [("setup", "setup", tr("Setup"), self.open_setup),
-                            ("home", "home", tr("Today"), lambda: self.goto("Home")),
+            ("system", tr("System"), [("setup", "setup", tr("Setup"), self.open_setup),
                             ("log", "log", tr("Log"), lambda: self.goto("Log & backups"))]),
-        ], extra=[(tr("Customer"), self._customer_widget()), (tr("ERP orders"), self._erp_timer_widget())])
+        ]
+        self.ribbon = cad.Ribbon([(t, its) for _g, t, its in
+                                  ordered_ribbon(self.ribbon_groups, self.ws.db.get_setting("ui.ribbon") or {})],
+                                 extra=[(tr("Customer"), self._customer_widget()),
+                                        (tr("ERP orders"), self._erp_timer_widget())])
+        self.ribbon.home.connect(lambda: self.goto("Home"))         # the L7 mark: the day's overview
+        self.ribbon.setContextMenuPolicy(Qt.CustomContextMenu)       # right click: arrange the icons
+        self.ribbon.customContextMenuRequested.connect(self._ribbon_menu)
         lay.addWidget(self.ribbon)
         split = QSplitter(Qt.Horizontal)
         split.setHandleWidth(1)
@@ -2930,6 +2952,92 @@ class MainWindow(QMainWindow):
         self.refresh_cad(force=True)
         self._tick()
         self.tabs.currentChanged.connect(self._tab_changed)
+
+    def _ribbon_menu(self, pos):
+        from PySide6.QtWidgets import QMenu
+        m = QMenu(self)
+        m.addAction(tr("Arrange the icons…"), self.customize_ribbon)
+        m.exec(self.ribbon.mapToGlobal(pos))
+
+    def customize_ribbon(self):
+        """The owner arranges the ribbon: the order of the groups and of the icons in each group, and which
+        icons are shown. Kept in the setting ui.ribbon; "Default" puts everything back."""
+        from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
+        d = QDialog(self)
+        d.setWindowTitle(tr("Arrange the icons…"))
+        d.resize(440, 560)
+        lay = QVBoxLayout(d)
+        note = QLabel(tr("Select a group or an icon and move it up or down; untick an icon to hide it."))
+        note.setWordWrap(True)
+        lay.addWidget(note)
+        tree = QTreeWidget()
+        tree.setHeaderHidden(True)
+        lay.addWidget(tree, 1)
+
+        def load(cfg):
+            tree.clear()
+            hidden = set(cfg.get("hidden", []))
+            for gid, title, items in ordered_ribbon(self.ribbon_groups, {**cfg, "hidden": []}):
+                g = QTreeWidgetItem([title])
+                g.setData(0, Qt.UserRole, gid)
+                for key, _ic, text, _fn in items:
+                    it = QTreeWidgetItem([text])
+                    it.setData(0, Qt.UserRole, key)
+                    it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+                    it.setCheckState(0, Qt.Unchecked if key in hidden else Qt.Checked)
+                    g.addChild(it)
+                tree.addTopLevelItem(g)
+                g.setExpanded(True)
+        load(self.ws.db.get_setting("ui.ribbon") or {})
+
+        def move(step):
+            it = tree.currentItem()
+            if it is None:
+                return
+            par = it.parent()
+            if par is None:
+                i = tree.indexOfTopLevelItem(it)
+                j = i + step
+                if 0 <= j < tree.topLevelItemCount():
+                    tree.takeTopLevelItem(i)
+                    tree.insertTopLevelItem(j, it)
+                    it.setExpanded(True)
+                    tree.setCurrentItem(it)
+            else:
+                i = par.indexOfChild(it)
+                j = i + step
+                if 0 <= j < par.childCount():
+                    par.takeChild(i)
+                    par.insertChild(j, it)
+                    tree.setCurrentItem(it)
+        bar = QHBoxLayout()
+        for text, fn in (("▲  " + tr("Up"), lambda: move(-1)), ("▼  " + tr("Down"), lambda: move(1)),
+                         (tr("Default"), lambda: load({}))):
+            b = QPushButton(text)
+            b.clicked.connect(fn)
+            bar.addWidget(b)
+        bar.addStretch()
+        lay.addLayout(bar)
+        bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        bb.accepted.connect(d.accept)
+        bb.rejected.connect(d.reject)
+        lay.addWidget(bb)
+        if d.exec() != QDialog.Accepted:
+            return
+        cfg = {"groups": [], "items": {}, "hidden": []}
+        for i in range(tree.topLevelItemCount()):
+            g = tree.topLevelItem(i)
+            gid = g.data(0, Qt.UserRole)
+            cfg["groups"].append(gid)
+            cfg["items"][gid] = []
+            for k in range(g.childCount()):
+                it = g.child(k)
+                key = it.data(0, Qt.UserRole)
+                cfg["items"][gid].append(key)
+                if it.checkState(0) != Qt.Checked:
+                    cfg["hidden"].append(key)
+        self.ws.db.set_setting("ui.ribbon", cfg)
+        self._rebuild()
 
     def _customer_widget(self) -> QWidget:
         """Whose settings the settings pages show (size table, piece options, fixed pieces, GRAFIS model)."""
@@ -3051,6 +3159,9 @@ class MainWindow(QMainWindow):
         v = mb.addMenu(tr("View"))
         a = QAction(tr("Marker"), self)
         a.triggered.connect(lambda: self.tabs.setCurrentIndex(0))
+        v.addAction(a)
+        a = QAction(tr("Arrange the icons…"), self)
+        a.triggered.connect(self.customize_ribbon)
         v.addAction(a)
         a = QAction(tr("Light") if themes.name() == "dark" else tr("Dark"), self)
         a.triggered.connect(self.toggle_theme)

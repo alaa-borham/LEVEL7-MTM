@@ -14,6 +14,12 @@ AR = {
     "Fixed pieces": "القطع الثابتة",
     "Model pieces": "قطع الموديلات",
     "Model settings": "إعدادات الموديلات",
+    "Arrange the icons…": "ترتيب الأيقونات…",
+    "Select a group or an icon and move it up or down; untick an icon to hide it.":
+        "اختر مجموعة أو أيقونة وحرّكها لأعلى أو لأسفل؛ أزل العلامة عن أيقونة لإخفائها.",
+    "Up": "لأعلى",
+    "Down": "لأسفل",
+    "Default": "الترتيب الأصلي",
     "Files": "الملفات",
     "busy": "مشغول",
     "the robot is working on another model": "الروبوت يعمل على موديل آخر الآن",

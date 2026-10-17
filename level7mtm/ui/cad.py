@@ -1088,7 +1088,9 @@ class MenuButton(QToolButton):
 
 class Ribbon(QFrame):
     """Tool groups in the order of the work: order → model → nesting → output → system. Never squeezes its
-    buttons: with less room the labels go (icons only, label in the tooltip), with still less it scrolls."""
+    buttons: with less room the labels go (icons only, label in the tooltip), with still less it scrolls.
+    A click on the L7 mark emits ``home`` (the day's overview)."""
+    home = Signal()
 
     def __init__(self, groups, extra=()):
         super().__init__()
@@ -1118,6 +1120,10 @@ class Ribbon(QFrame):
         mark.setObjectName("brandMark")
         mark.setFixedSize(38, 38)
         mark.setAlignment(Qt.AlignCenter)
+        mark.setCursor(Qt.PointingHandCursor)
+        mark.setToolTip(tr("Today"))
+        mark.mousePressEvent = lambda e: self.home.emit() if e.button() == Qt.LeftButton else None
+        self.brand_mark = mark
         bl.addWidget(mark)
         self.brand_text = QWidget()
         col = QVBoxLayout(self.brand_text)

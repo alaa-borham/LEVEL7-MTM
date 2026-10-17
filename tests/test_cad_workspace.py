@@ -510,3 +510,25 @@ def test_nest_again_button_with_level7_nesting_in_its_arrow(ws):
     assert len(b.menu().actions()) == 2
     f = win.ribbon.buttons["cut"]                                 # cutting files and ER under "Files"
     assert len(f.menu().actions()) == 2 and "er" not in win.ribbon.buttons
+
+
+def test_owner_arranges_the_ribbon(ws):
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.ui.main_window import MainWindow, ordered_ribbon
+    groups = [("a", "A", [("x", "", "X", None), ("y", "", "Y", None)]), ("b", "B", [("z", "", "Z", None)])]
+    out = ordered_ribbon(groups, {"groups": ["b", "a"], "items": {"a": ["y", "x"]}, "hidden": ["z"]})
+    assert [(g, [i[0] for i in its]) for g, _t, its in out] == [("a", ["y", "x"])]   # b only had z: left out
+    assert [g for g, _t, _i in ordered_ribbon(groups, {"groups": ["b"]})] == ["b", "a"]   # unknown after known
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ws.db.set_setting("ui.ribbon", {"groups": ["system"], "hidden": ["robot"]})
+    win = MainWindow(ws)
+    win.show()
+    app.processEvents()
+    assert "robot" not in win.ribbon.buttons and "setup" in win.ribbon.buttons
+    assert "home" not in win.ribbon.buttons                       # "Today" opens from the L7 mark
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    QTest.mouseClick(win.ribbon.brand_mark, Qt.LeftButton)
+    assert win.current_page().title == "Home"
