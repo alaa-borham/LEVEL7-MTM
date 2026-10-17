@@ -12,6 +12,7 @@ AR = {
     "Size table setup": "ضبط جدول المقاسات",
     "Piece options setup": "ضبط اختيارات القطع",
     "Fixed pieces": "القطع الثابتة",
+    "Marker name": "اسم الماركر",
     "What is new": "الجديد في هذا التحديث",
     "This order is {s}: its measurements are not changed": "هذا الطلب {s}: لا تُعدَّل قياساته",
     "Now": "الحالية",

@@ -2654,7 +2654,7 @@ class MainWindow(QMainWindow):
                         ("parts", "parts", tr("Fixed pieces"), lambda: self.goto("GRAFIS parts"))]),
             (tr("Nesting"), [("renest", "renest", tr("Nest again"), self.renest_selected),
                              ("nesting", "marker", "LEVEL7 Nesting", self.nesting_selected),
-                             ("markers", "nest", tr("Markers"), lambda: self.goto("GRAFIS markers"))]),
+                             ("markers", "nest", tr("Marker name"), lambda: self.goto("GRAFIS markers"))]),
             (tr("Output"), [("cut", "folder", tr("Cutting files"), self.open_cutting),
                             ("er", "error", tr("Errors (ER)"), lambda: self.pages["Home"]._open_er())]),
             (tr("System"), [("setup", "setup", tr("Setup"), self.open_setup),
