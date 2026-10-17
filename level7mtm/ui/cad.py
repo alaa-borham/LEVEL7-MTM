@@ -42,6 +42,7 @@ ICONS = {
     "zoomout": "M11 4a7 7 0 110 14 7 7 0 010-14zM21 21l-5-5M8 11h6",
     "fit": "M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5",
     "theme": "M12 3a9 9 0 100 18 7 7 0 010-18z",
+    "curve": "M3 19C5 9 10 5 21 5M3 19h.01M21 5h.01",
 }
 
 
@@ -183,11 +184,70 @@ def order_rows(ws, limit: int = 300) -> list[dict]:
 
 # ---------------------------------------------------------------- marker canvas
 
+# ---------------------------------------------------------------- measuring (marker millimetres)
+
+def _closed(pts):
+    return list(pts) + [pts[0]] if pts and pts[0] != pts[-1] else list(pts)
+
+
+def contour_length(pts) -> float:
+    q = _closed(pts)
+    return sum(math.dist(q[i], q[i + 1]) for i in range(len(q) - 1))
+
+
+def nearest_on_contour(pts, p):
+    """(distance, arc position s along the contour, the point on it) of the contour point nearest to p."""
+    q = _closed(pts)
+    best, s0 = None, 0.0
+    for i in range(len(q) - 1):
+        (x1, y1), (x2, y2) = q[i], q[i + 1]
+        dx, dy = x2 - x1, y2 - y1
+        L2 = dx * dx + dy * dy
+        t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((p[0] - x1) * dx + (p[1] - y1) * dy) / L2))
+        c = (x1 + t * dx, y1 + t * dy)
+        d = math.dist(c, p)
+        seg = math.sqrt(L2)
+        if best is None or d < best[0]:
+            best = (d, s0 + t * seg, c)
+        s0 += seg
+    return best
+
+
+def point_at(pts, s):
+    q = _closed(pts)
+    for i in range(len(q) - 1):
+        seg = math.dist(q[i], q[i + 1])
+        if s <= seg or i == len(q) - 2:
+            t = 0.0 if seg == 0 else min(1.0, s / seg)
+            return (q[i][0] + t * (q[i + 1][0] - q[i][0]), q[i][1] + t * (q[i + 1][1] - q[i][1]))
+        s -= seg
+    return q[-1]
+
+
+def arc_between(pts, sa: float, sb: float):
+    """The shorter way along the contour between two arc positions: (length, the points of that way)."""
+    total = contour_length(pts)
+    a, b = sorted((sa, sb))
+    inner = b - a
+    q = _closed(pts)
+    cum, acc = [0.0], 0.0
+    for i in range(len(q) - 1):
+        acc += math.dist(q[i], q[i + 1])
+        cum.append(acc)
+    if inner <= total - inner:
+        way = [point_at(pts, a)] + [q[i] for i in range(len(q)) if a < cum[i] < b] + [point_at(pts, b)]
+        return inner, way
+    way = [point_at(pts, b)] + [q[i] for i in range(len(q)) if cum[i] > b] + \
+        [q[i] for i in range(len(q)) if 0 < cum[i] < a] + [point_at(pts, a)]
+    return total - inner, way
+
+
 class MarkerView(QGraphicsView):
     """The marker in millimetres: grid, fabric with selvedges, pieces with grain lines and names, the length
     dimension; rulers along the top and the side; wheel = zoom at the cursor, pan tool / middle button = move."""
     cursor_moved = Signal(float, float)
     zoom_changed = Signal(float)
+    measured = Signal(str)
     RULER = 22
 
     def __init__(self, parent=None):
@@ -203,12 +263,15 @@ class MarkerView(QGraphicsView):
         self.message = ""
         self._cursor: QPointF | None = None
         self._pan = None
+        self.tool: str | None = None            # None, "line" (straight length) or "curve" (along a piece edge)
+        self.meas: dict = {}
 
     # -- content
     def show_marker(self, marker: dict | None, message: str = ""):
         sc = self.scene()
         sc.clear()
         self.marker, self.message = marker, message
+        self.meas = {}
         if not marker:
             sc.setSceneRect(QRectF(-100, -100, 3000, 1700))
             self.resetTransform()
@@ -287,9 +350,76 @@ class MarkerView(QGraphicsView):
     def wheelEvent(self, e):
         self.zoom(1.18 if e.angleDelta().y() > 0 else 1 / 1.18)
 
+    def set_tool(self, tool: str | None):
+        self.tool = tool
+        self.meas = {}
+        self.setCursor(Qt.CrossCursor if tool else Qt.ArrowCursor)
+        self.viewport().setCursor(Qt.CrossCursor if tool else Qt.ArrowCursor)
+        self.measured.emit("")
+        self.viewport().update()
+
+    def _tol(self) -> float:
+        return 12 / (self.transform().m11() or 1.0)          # 12 screen pixels in millimetres
+
+    def _snap(self, p):
+        """Snap to the nearest piece corner within a few pixels."""
+        best = None
+        for pc in (self.marker or {}).get("pieces", []):
+            for v in pc["cut"]:
+                d = math.dist(v, p)
+                if d <= self._tol() and (best is None or d < best[0]):
+                    best = (d, v)
+        return best[1] if best else p
+
+    def measure_click(self, p):
+        """One click of the measuring tools at scene point p (millimetres)."""
+        if not self.marker or not self.tool:
+            return
+        if self.tool == "line":
+            pts = self.meas.get("pts", []) if len(self.meas.get("pts", [])) < 2 else []
+            pts = pts + [self._snap(p)]
+            self.meas = {"kind": "line", "pts": pts}
+            if len(pts) == 2:
+                d = math.dist(*pts)
+                dx, dy = abs(pts[1][0] - pts[0][0]), abs(pts[1][1] - pts[0][1])
+                self.meas.update(value=d, text=f"{d:.1f} mm", extra=f"ΔX {dx:.1f}  ΔY {dy:.1f}")
+                self.measured.emit(self.meas["text"])
+        else:
+            near = None
+            for i, pc in enumerate(self.marker["pieces"]):
+                d, s_, c = nearest_on_contour(pc["cut"], p)
+                if d <= self._tol() and (near is None or d < near[0]):
+                    near = (d, i, s_, c)
+            if near is None:
+                return                                        # not on a piece edge
+            _, i, s_, c = near
+            first = self.meas.get("first")
+            if self.meas.get("kind") != "curve" or first is None or first[0] != i or self.meas.get("way"):
+                self.meas = {"kind": "curve", "first": (i, s_, c), "pts": [c]}
+                return
+            pc = self.marker["pieces"][i]
+            length, way = arc_between(pc["cut"], first[1], s_)
+            per = contour_length(pc["cut"])
+            self.meas = {"kind": "curve", "first": first, "pts": [first[2], c], "way": way, "value": length,
+                         "text": f"{length:.1f} mm", "extra": f"{pc['name']} — {tr('edge')} {per:.1f} mm"}
+            self.measured.emit(self.meas["text"])
+        self.viewport().update()
+
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key_Escape and self.tool:
+            self.meas = {}
+            self.measured.emit("")
+            self.viewport().update()
+            return
+        super().keyPressEvent(e)
+
     def mousePressEvent(self, e):
         if e.button() == Qt.MiddleButton:
             self._pan = e.position()
+            return
+        if e.button() == Qt.LeftButton and self.tool:
+            p = self.mapToScene(e.position().toPoint())
+            self.measure_click((p.x(), p.y()))
             return
         super().mousePressEvent(e)
 
@@ -342,6 +472,39 @@ class MarkerView(QGraphicsView):
                 p.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
                 y += s
 
+    def _draw_measure(self, p: QPainter, c):
+        m = self.meas
+        if not m or not self.marker:
+            return
+        v = lambda q: self.mapFromScene(QPointF(*q))
+        pen = QPen(c["warn"], 2.2)
+        p.setPen(pen)
+        way = m.get("way") or m.get("pts", [])
+        if m.get("kind") == "line" and len(m["pts"]) == 1 and self._cursor is not None:
+            way = [m["pts"][0], (self._cursor.x(), self._cursor.y())]          # rubber band to the cursor
+        for a, b in zip(way, way[1:]):
+            p.drawLine(v(a), v(b))
+        p.setBrush(c["warn"])
+        for q in m.get("pts", []):
+            p.drawEllipse(v(q), 4, 4)
+        if m.get("text"):
+            mid = v(way[len(way) // 2]) if m.get("kind") == "curve" else (v(way[0]) + v(way[-1])) / 2
+            f = QFont(themes.FAMILY["name"], 10)
+            f.setBold(True)
+            p.setFont(f)
+            lines = [m["text"], m.get("extra", "")]
+            w = max(p.fontMetrics().horizontalAdvance(t) for t in lines) + 14
+            box = QRectF(mid.x() + 10, mid.y() - 40, w, 40)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(c["sidebar"].red(), c["sidebar"].green(), c["sidebar"].blue(), 225))
+            p.drawRect(box)
+            p.setPen(c["warn"])
+            p.drawText(box.adjusted(7, 2, -7, -20), Qt.AlignLeft | Qt.AlignVCenter, ltr(lines[0]))
+            p.setPen(c["text"])
+            p.setFont(QFont(themes.FAMILY["name"], 8))
+            p.drawText(box.adjusted(7, 20, -7, -2), Qt.AlignLeft | Qt.AlignVCenter, ltr(lines[1]))
+        p.setBrush(Qt.NoBrush)
+
     def drawForeground(self, p: QPainter, rect: QRectF):
         """In viewport pixels: the empty-state text, the cursor cross and the rulers (top and left edge)."""
         c = themes.colours()
@@ -352,6 +515,7 @@ class MarkerView(QGraphicsView):
             p.setPen(c["muted"])
             p.setFont(QFont(themes.FAMILY["name"], 11))
             p.drawText(vp, Qt.AlignCenter, self.message or tr("Choose an order line in the browser"))
+        self._draw_measure(p, c)
         cur = self.mapFromScene(self._cursor) if self._cursor is not None and self.marker else None
         if cur is not None:
             p.setPen(QPen(c["accent"], 1))
@@ -886,6 +1050,9 @@ class Inspector(QScrollArea):
         self.buttons.get("open_cut") and self.buttons["open_cut"].setEnabled(bool(r["outputs"]))
         self.buttons.get("renest") and self.buttons["renest"].setEnabled(bool(r["result"]))
         self.buttons.get("nesting") and self.buttons["nesting"].setEnabled(bool(r["l7n"]))
+        for k in ("m_line", "m_curve"):
+            if k in self.buttons:
+                self.buttons[k].setEnabled(bool(r["l7n"]))
         if "robot" in self.buttons:
             self.buttons["robot"].setVisible(bool(r.get("robot_failed")))
 
@@ -906,6 +1073,7 @@ class MarkerPanel(QWidget):
         tl.setSpacing(2)
         self.tool_buttons = {}
         for key, ic, tip in (("select", "select", "Select"), ("pan", "pan", "Move the view"),
+                             ("line", "ruler", "Measure lengths"), ("curve", "curve", "Measure curves"),
                              ("zoomin", "zoomin", "Zoom in"), ("zoomout", "zoomout", "Zoom out"),
                              ("fit", "fit", "Whole marker")):
             b = QToolButton()
@@ -913,15 +1081,13 @@ class MarkerPanel(QWidget):
             b.setIcon(icon(ic))
             b.setIconSize(QSize(18, 18))
             b.setToolTip(tr(tip))
-            b.setCheckable(key in ("select", "pan"))
+            b.setCheckable(key in ("select", "pan", "line", "curve"))
             self.tool_buttons[key] = b
             tl.addWidget(b)
         tb = self.tool_buttons
         tb["select"].setChecked(True)
-        tb["select"].clicked.connect(lambda: (tb["pan"].setChecked(False), tb["select"].setChecked(True),
-                                              self.view.set_pan(False)))
-        tb["pan"].clicked.connect(lambda: (tb["select"].setChecked(False), tb["pan"].setChecked(True),
-                                           self.view.set_pan(True)))
+        for key in ("select", "pan", "line", "curve"):
+            tb[key].clicked.connect(lambda _=False, k=key: self.use_tool(k))
         tb["zoomin"].clicked.connect(lambda: self.view.zoom(1.25))
         tb["zoomout"].clicked.connect(lambda: self.view.zoom(0.8))
         tb["fit"].clicked.connect(self.view.fit)
@@ -931,7 +1097,7 @@ class MarkerPanel(QWidget):
         hl.setContentsMargins(12, 6, 12, 6)
         hl.setSpacing(16)
         self.hud_values = {}
-        for key, t in (("length", "Length"), ("eff", "Efficiency"), ("pieces", "Pieces")):
+        for key, t in (("measure", "Measured"), ("length", "Length"), ("eff", "Efficiency"), ("pieces", "Pieces")):
             col = QVBoxLayout()
             col.setSpacing(0)
             v = QLabel("—")
@@ -942,6 +1108,27 @@ class MarkerPanel(QWidget):
             col.addWidget(lab)
             hl.addLayout(col)
             self.hud_values[key] = v
+            if key == "measure":
+                v.setStyleSheet(f"color: {themes.colour('warn').name()}; font-size: 13pt; font-weight: 800;")
+                self.hud_measure = (v, lab)
+                v.hide()
+                lab.hide()
+        self.view.measured.connect(self._measured)
+
+    def use_tool(self, key: str):
+        """select / pan / line (measure lengths) / curve (measure curves): one at a time."""
+        for k in ("select", "pan", "line", "curve"):
+            self.tool_buttons[k].setChecked(k == key)
+        self.view.set_pan(key == "pan")
+        self.view.set_tool(key if key in ("line", "curve") else None)
+
+    def _measured(self, text: str):
+        v, lab = self.hud_measure
+        v.setText(ltr(text))
+        v.setVisible(bool(text))
+        lab.setVisible(bool(text))
+        self.hud.adjustSize()
+        self._place()
 
     def set_marker(self, marker, row=None, message=""):
         self.view.show_marker(marker, message)

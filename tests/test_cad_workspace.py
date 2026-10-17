@@ -144,3 +144,41 @@ def test_window_shows_the_selected_marker(ws, tmp_path):
     win.toggle_theme()                                                             # rebuild keeps working
     win.close()
     app.processEvents()
+
+
+def test_measuring_geometry():
+    from level7mtm.ui.cad import arc_between, contour_length, nearest_on_contour
+    sq = [(0, 0), (100, 0), (100, 50), (0, 50)]
+    assert contour_length(sq) == 300
+    d, s, c = nearest_on_contour(sq, (40, -3))
+    assert d == 3 and s == 40 and c == (40, 0)
+    assert arc_between(sq, 0, 100)[0] == 100                       # along the long edge
+    length, way = arc_between(sq, 0, 250)                           # the shorter way round: 50 mm
+    assert length == 50 and way[0] == (0, 50) and way[-1] == (0, 0)
+
+
+def test_measure_tools_on_the_marker(tmp_path):
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.ui.cad import MarkerPanel, load_marker
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    p = tmp_path / "m.l7n"
+    _l7n(p)
+    panel = MarkerPanel()
+    panel.resize(900, 600)
+    panel.show()
+    panel.set_marker(load_marker(str(p)))
+    app.processEvents()
+    v = panel.view
+    panel.use_tool("line")
+    v.measure_click((0.3, 0.2))                                      # snaps to the corner (0, 0)
+    v.measure_click((100, 50))
+    assert v.meas["text"] == "111.8 mm" and panel.hud_measure[0].isVisible()
+    panel.use_tool("curve")
+    v.measure_click((30, 0))                                         # on the edge of front1 (first copy)
+    v.measure_click((100, 20))
+    assert v.meas["text"] == "90.0 mm" and "300.0" in v.meas["extra"]   # 70 + 20 along the edge; edge 300
+    panel.use_tool("select")
+    assert v.tool is None and not v.meas
+    panel.close()

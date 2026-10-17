@@ -415,6 +415,10 @@ AR = {
     "Teach: button of a GRAFIS start window": "تعليم: زر نافذة بدء GRAFIS",
     "Start GRAFIS so its start window shows. After OK you have 5 seconds to point the mouse at the button you press in that window (do not click).": "شغّل GRAFIS حتى تظهر نافذة البدء. بعد «موافق» لديك 5 ثوانٍ لتضع مؤشر الفأرة فوق الزر الذي تضغطه في تلك النافذة (بدون ضغط).",
     "In progress": "قيد العمل",
+    "Measure lengths": "قياس الأطوال",
+    "Measure curves": "قياس المنحنيات",
+    "Measured": "القياس",
+    "edge": "المحيط",
 }
 
 
