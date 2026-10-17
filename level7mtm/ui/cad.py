@@ -340,7 +340,11 @@ class MarkerView(QGraphicsView):
     cursor_moved = Signal(float, float)
     zoom_changed = Signal(float)
     measured = Signal(str)
+    shortcut = Signal(str)                      # a tool key pressed over the marker: select / pan / line / …
     RULER = 22
+    # one letter per tool; Windows virtual keys, so they work with the Arabic keyboard layout too
+    KEYS = {"V": "select", "H": "pan", "L": "line", "C": "curve", "S": "sum", "F": "fit"}
+    ZOOM_KEYS = {0xBB: "zoomin", 0x6B: "zoomin", 0xBD: "zoomout", 0x6D: "zoomout"}
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -661,6 +665,14 @@ class MarkerView(QGraphicsView):
     def eventFilter(self, obj, e):
         from PySide6.QtCore import QEvent
         t = e.type()
+        if t == QEvent.KeyPress and e.key() != Qt.Key_Space and self.marker and self._mouse_over():
+            from PySide6.QtWidgets import QAbstractSpinBox, QApplication, QLineEdit, QPlainTextEdit, QTextEdit
+            typing = isinstance(QApplication.focusWidget(), (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox))
+            act = None if typing or e.modifiers() & (Qt.ControlModifier | Qt.AltModifier) else self.key_action(e)
+            if act:
+                if not e.isAutoRepeat():
+                    self.shortcut.emit(act)
+                return True
         if t in (QEvent.KeyPress, QEvent.KeyRelease) and e.key() == Qt.Key_Space:
             from PySide6.QtWidgets import QAbstractSpinBox, QApplication, QLineEdit, QPlainTextEdit, QTextEdit
             typing = isinstance(QApplication.focusWidget(), (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox))
@@ -675,6 +687,18 @@ class MarkerView(QGraphicsView):
                     self._cursor_shape()
                 return True                                   # never "presses" a focused button
         return False
+
+    def key_action(self, e) -> str | None:
+        """The tool of a key: by the key's place on the keyboard (Windows), so the layout does not matter."""
+        vk, k = e.nativeVirtualKey(), e.key()
+        if vk in self.ZOOM_KEYS:
+            return self.ZOOM_KEYS[vk]
+        if k in (Qt.Key_Plus, Qt.Key_Equal):
+            return "zoomin"
+        if k in (Qt.Key_Minus, Qt.Key_Underscore):
+            return "zoomout"
+        letter = chr(vk) if 0x41 <= vk <= 0x5A else (chr(k) if Qt.Key_A <= k <= Qt.Key_Z else None)
+        return self.KEYS.get(letter)
 
     def enterEvent(self, e):
         self.setFocus()                          # the space bar works as soon as the mouse is over the marker
@@ -1470,16 +1494,19 @@ class MarkerPanel(QWidget):
         tl.setContentsMargins(3, 3, 3, 3)
         tl.setSpacing(2)
         self.tool_buttons = {}
+        keys = {"select": "V", "pan": "H", "line": "L", "curve": "C", "sum": "S", "zoomin": "+", "zoomout": "−",
+                "fit": "F"}
         for key, ic, tip in (("select", "select", "Select"), ("pan", "pan", "Move the view"),
                              ("line", "ruler", "Measure lengths"), ("curve", "curve", "Measure curves"),
                              ("sum", "sum", "Add measurements together (Backspace: remove the last, Esc: clear)"),
                              ("zoomin", "zoomin", "Zoom in"), ("zoomout", "zoomout", "Zoom out"),
                              ("fit", "fit", "Whole marker")):
+            tip = tr(tip) + f"   [{keys[key]}]"
             b = QToolButton()
             b.setObjectName("tool")
             b.setIcon(icon(ic))
             b.setIconSize(QSize(18, 18))
-            b.setToolTip(tr(tip))
+            b.setToolTip(tip)
             b.setCheckable(key in ("select", "pan", "line", "curve", "sum"))
             self.tool_buttons[key] = b
             tl.addWidget(b)
@@ -1514,6 +1541,13 @@ class MarkerPanel(QWidget):
                 v.hide()
                 lab.hide()
         self.view.measured.connect(self._measured)
+        self.view.shortcut.connect(self._shortcut)
+
+    def _shortcut(self, act: str):
+        if act == "sum":
+            self.tool_buttons["sum"].toggle()
+        else:
+            self.tool_buttons[act].click()
 
     def use_tool(self, key: str):
         """select / pan / line (measure lengths) / curve (measure curves): one at a time."""

@@ -374,3 +374,35 @@ def test_measurement_dialog_in_cm_with_western_digits():
     QTimer.singleShot(50, answer)
     assert measurement_dialog(None, "CH", "Chest", 600.0) == (615.0, "owner")
     assert seen["text"] == "60.0 cm"
+
+
+def test_tool_shortcuts_over_the_marker(tmp_path, monkeypatch):
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+    from level7mtm.ui.cad import MarkerPanel, MarkerView, load_marker
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    p = tmp_path / "m.l7n"
+    _l7n(p)
+    panel = MarkerPanel()
+    panel.resize(900, 600)
+    panel.show()
+    panel.set_marker(load_marker(str(p)))
+    app.processEvents()
+    v = panel.view
+    monkeypatch.setattr(MarkerView, "_mouse_over", lambda self: True)
+
+    def press(key, vk=0):
+        e = QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier, 0, vk, 0, "")
+        return v.eventFilter(v, e)
+    assert press(Qt.Key_L) and v.tool == "line"
+    assert press(0x0634, 0x43) and v.tool == "curve"            # Arabic layout: the C key gives «ش»
+    assert press(Qt.Key_S) and v.adding
+    k = v.transform().m11()
+    assert press(Qt.Key_Plus) and v.transform().m11() > k
+    assert press(Qt.Key_H) and v.tool is None and v.dragMode() == v.DragMode.ScrollHandDrag
+    assert press(Qt.Key_V) and v.dragMode() == v.DragMode.NoDrag
+    assert not press(Qt.Key_Q)                                   # not a tool key: left alone
+    assert "[L]" in panel.tool_buttons["line"].toolTip()
