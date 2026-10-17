@@ -36,7 +36,7 @@ def list_customers(ws) -> list[dict]:
     out = []
     for r in rows:
         with ws.for_customer(r["id"]):
-            out.append({**r, "mdl": ws.grafis_mdl(), "own_mdl": bool(ws.db.get_setting(ws._key("grafis.mdl")))
+            out.append({"reseller": "", **r, "mdl": ws.grafis_mdl(), "own_mdl": bool(ws.db.get_setting(ws._key("grafis.mdl")))
                         or r["id"] == DEFAULT_CUSTOMER})
     return out
 
@@ -58,7 +58,8 @@ def name_of(ws, cid: str | None) -> str:
 
 
 def _save_list(ws, rows):
-    ws.db.set_setting("customers", [{"id": r["id"], "name": r["name"], "reference": r["reference"]} for r in rows])
+    ws.db.set_setting("customers", [{"id": r["id"], "name": r["name"], "reference": r["reference"],
+                                     "reseller": r.get("reseller", "")} for r in rows])
 
 
 def customer_for_xml(ws, data: bytes) -> tuple[str | None, str]:
@@ -68,24 +69,31 @@ def customer_for_xml(ws, data: bytes) -> tuple[str | None, str]:
         root = load_bytes(data).root
     except XmlError:
         return DEFAULT_CUSTOMER, ""
-    ref = root.attrib.get("Reference")
+    ref, res = root.attrib.get("Reference"), (root.attrib.get("Reseller") or "").strip()
     custs = list_customers(ws)
-    for c in custs:
-        if c["reference"] == ref:
-            return c["id"], ""
+    same = [c for c in custs if c["reference"] == ref]
+    exact = [c for c in same if c.get("reseller") and c["reseller"] == res]       # name and reseller both
+    if exact:
+        return exact[0]["id"], ""
+    open_ = [c for c in same if not c.get("reseller")]                            # no reseller set: by name
+    if open_:
+        return open_[0]["id"], ""
     if ref is None:
         return DEFAULT_CUSTOMER, ""
-    return None, (f"no customer has the XML name Reference='{ref}' — add the customer in Customers "
-                  f"(known: {', '.join(repr(c['reference']) for c in custs)})")
+    known = ", ".join(f"{c['reference']!r}" + (f"/{c['reseller']}" if c.get("reseller") else "") for c in custs)
+    return None, (f"no customer has the XML name Reference='{ref}' with Reseller='{res}' — add the customer "
+                  f"in Customers (known: {known})")
 
 
-def add_customer(ws, name: str, reference: str, copy_from: str = DEFAULT_CUSTOMER, mdl: str | None = None) -> str:
-    """A new customer, his settings copied from ``copy_from`` (then changed on their own). Returns his id."""
-    name, reference = name.strip(), reference.strip()
+def add_customer(ws, name: str, reference: str, copy_from: str = DEFAULT_CUSTOMER, mdl: str | None = None,
+                 reseller: str = "") -> str:
+    """A new customer, his settings copied from ``copy_from`` (then changed on their own). Returns his id.
+    ``reseller``: the Reseller number of his XML files (empty: any)."""
+    name, reference, reseller = name.strip(), reference.strip(), (reseller or "").strip()
     if not name or not reference:
         raise WorkflowError("a customer needs a name and his XML name (Reference)")
     custs = list_customers(ws)
-    if any(c["reference"] == reference for c in custs):
+    if any(c["reference"] == reference and c.get("reseller", "") == reseller for c in custs):
         raise WorkflowError(f"the XML name '{reference}' belongs to a customer already")
     base = ID_RE.sub("_", name.lower()).strip("_") or "customer"
     cid, n = base, 2
@@ -107,7 +115,7 @@ def add_customer(ws, name: str, reference: str, copy_from: str = DEFAULT_CUSTOME
         ws.set_active("catalog", ws.save_document("catalog", cat, note))
         if mdl or src_mdl:
             ws.db.set_setting(ws._key("grafis.mdl"), mdl or src_mdl)
-    _save_list(ws, [c for c in custs] + [{"id": cid, "name": name, "reference": reference}])
+    _save_list(ws, [c for c in custs] + [{"id": cid, "name": name, "reference": reference, "reseller": reseller}])
     with ws.db.tx() as c:
         ws.db.audit(c, ws.actor, "customer.added", "customer", cid, {"name": name, "reference": reference,
                                                                       "copy_from": copy_from})
@@ -115,7 +123,7 @@ def add_customer(ws, name: str, reference: str, copy_from: str = DEFAULT_CUSTOME
 
 
 def update_customer(ws, cid: str, name: str | None = None, reference: str | None = None,
-                    mdl: str | None = None) -> None:
+                    mdl: str | None = None, reseller: str | None = None) -> None:
     """Rename, change the XML name (a new version of his mapping profile) or choose his GRAFIS model."""
     custs = list_customers(ws)
     cur = next((c for c in custs if c["id"] == cid), None)
@@ -135,6 +143,13 @@ def update_customer(ws, cid: str, name: str | None = None, reference: str | None
         cur["reference"] = reference
     if name is not None and name.strip():
         cur["name"] = name.strip()
+    if reseller is not None:
+        reseller = reseller.strip()
+        if any(c["reference"] == cur["reference"] and c.get("reseller", "") == reseller and c["id"] != cid
+               for c in custs):
+            raise WorkflowError(f"the XML name '{cur['reference']}' with Reseller '{reseller}' belongs to a "
+                                f"customer already")
+        cur["reseller"] = reseller
     if mdl is not None:
         with ws.for_customer(cid):
             ws.db.set_setting(ws._key("grafis.mdl") if cid != DEFAULT_CUSTOMER else "grafis.mdl", mdl)
@@ -297,6 +312,12 @@ def learn_from_xml(ws, cid: str, data: bytes) -> dict:
     prof["version"] = _next_version(ws, "mapping", prof["profile_id"], prof["version"])
     with ws.for_customer(cid):
         ws.set_active("mapping", ws.save_document("mapping", prof, "learned from the customer's XML"))
+    res = (root.attrib.get("Reseller") or "").strip()
+    c = get(ws, cid)
+    out["reseller"] = None
+    if res and c is not None and not c.get("reseller"):        # his Reseller number, as in his files
+        update_customer(ws, cid, reseller=res)
+        out["reseller"] = res
     return out
 
 

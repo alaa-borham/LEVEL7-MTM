@@ -26,6 +26,8 @@ AR = {
     "Customers": "العملاء",
     "Patterns": "البترونات",
     "Save and close": "حفظ وإغلاق",
+    "Reseller in the XML": "الريسيلر في XML",
+    "The Reseller number in his XML files (empty: any)": "رقم الريسيلر في ملفات XML لهذا العميل (فارغ: أي رقم)",
     "The GRAFIS part numbers this value produces, e.g. 36 or 36, 37 (kept in Fixed pieces)":
         "أرقام بارتات GRAFIS التي تختارها هذه القيمة، مثل 36 أو 36, 37 (تُحفظ أيضاً في «القطع الثابتة»)",
     "The GRAFIS parts this value produces (set in Fixed pieces)": "بارتات GRAFIS التي تُنتجها هذه القيمة (تُضبط في «القطع الثابتة»)",
@@ -537,6 +539,8 @@ MSG_AR = [
     (r"order line needs review \(import problems\)", "سطر الطلب يحتاج مراجعة (مشاكل في الاستيراد)"),
     (r"no customer has the XML name Reference='(.+)' — add the customer in Customers \(known: (.+)\)",
      "لا يوجد عميل اسمه في XML هو '{0}' — أضِف العميل في «العملاء» (الموجود: {1})"),
+    (r"no customer has the XML name Reference='(.*)' with Reseller='(.*)' — add the customer in Customers \(known: (.+)\)",
+     "لا يوجد عميل اسمه في XML '{0}' والريسيلر '{1}' — أضِف العميل في «العملاء» (الموجود: {2})"),
     (r"resolve them first", "عالجها أولاً"),
     (r"design option '(.+)' not set", "خيار التصميم '{0}' غير محدد"),
     (r"design option '(.+)' not in the order: default (.+)", "خيار التصميم '{0}' غير موجود في الطلب: الافتراضي {1}"),

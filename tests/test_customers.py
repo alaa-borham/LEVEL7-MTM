@@ -75,7 +75,7 @@ def test_customers_page_and_selector(ws, xml53, tmp_path):
     assert [win.customer_box.itemText(i) for i in range(win.customer_box.count())] == ["LEVEL7", "Richy"]
     win.goto("Customers")
     page = win.pages["Customers"]
-    assert page.t.rowCount() == 2 and page.t.item(1, 1).text() == "From Richy"
+    assert page.t.rowCount() == 2 and page.t.item(1, 1).text() == "From Richy" and page.t.item(1, 2).text() == "—"
     win.customer_box.setCurrentIndex(1)
     win.customer_box.activated.emit(1)
     assert ws.customer() == cid                                   # the settings pages now edit Richy's
@@ -250,3 +250,23 @@ def test_part_numbers_typed_next_to_an_option_value(ws, monkeypatch):
     app.processEvents()
     vi = next(i for i in range(page.v.rowCount()) if page.v.item(i, 0).text() == "saada")
     assert page.v.item(vi, 4).text().startswith("036")                 # shown with the part names
+
+
+def test_customer_matched_by_reference_and_reseller(ws, xml53):
+    data = _xml(xml53, "From Richy")                                  # Reseller="9" in the sample
+    a = customers.add_customer(ws, "Richy A", "From Richy", reseller="10040")
+    assert ws.import_data(data, "a.xml").status == "failed"             # same name, other reseller: refused
+    b = customers.add_customer(ws, "Richy B", "From Richy", reseller="9")
+    out = ws.import_data(data, "b.xml")
+    assert out.status == "imported" and ws.customer_of(out.lines[0]["revision_id"]) == b
+    with pytest.raises(WorkflowError):                                 # the same name and reseller twice
+        customers.add_customer(ws, "Richy C", "From Richy", reseller="9")
+    customers.update_customer(ws, a, reseller="")                       # empty: any reseller of that name
+    assert customers.get(ws, a)["reseller"] == ""
+
+
+def test_learn_takes_the_reseller_of_the_xml(ws, xml53):
+    from level7mtm.services.customers import learn_from_xml
+    cid = customers.add_customer(ws, "Richy", "From Richy")
+    res = learn_from_xml(ws, cid, _xml(xml53, "From Richy"))
+    assert res["reseller"] == "9" and customers.get(ws, cid)["reseller"] == "9"

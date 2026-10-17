@@ -2318,7 +2318,7 @@ class CustomersPage(Page):
                          "it names; an XML naming no customer goes to ER."))
         info.setWordWrap(True)
         lay.addWidget(info)
-        self.t = table(["Customer", "XML name (Reference)", "GRAFIS model (MDL)", "Patterns"])
+        self.t = table(["Customer", "XML name (Reference)", "Reseller in the XML", "GRAFIS model (MDL)", "Patterns"])
         self.t.setMaximumHeight(170)
         self.t.itemSelectionChanged.connect(self._picked)
         lay.addWidget(self.t)
@@ -2412,7 +2412,7 @@ class CustomersPage(Page):
         rows = []
         for c in cs:
             pats = patterns(self.ws, c["id"])
-            rows.append([("● " if c["id"] == cur else "") + c["name"], c["reference"],
+            rows.append([("● " if c["id"] == cur else "") + c["name"], c["reference"], c.get("reseller") or "—",
                          os.path.basename(c["mdl"] or "") or tr("not set"),
                          ", ".join(p["variation"] for p in pats) or "—"])
         self.t.blockSignals(True)
@@ -2427,15 +2427,18 @@ class CustomersPage(Page):
         ids = selected_data(self.t)
         return ids[0] if ids else None
 
-    def _dialog(self, title, name="", ref="", copy_choices=None):
+    def _dialog(self, title, name="", ref="", copy_choices=None, reseller=""):
         d = QDialog(self)
         d.setWindowTitle(title)
         d.setMinimumWidth(420)
         f = QFormLayout(d)
-        e_name, e_ref = QLineEdit(name), QLineEdit(ref)
+        e_name, e_ref, e_res = QLineEdit(name), QLineEdit(ref), QLineEdit(reseller)
         e_ref.setPlaceholderText("From …")
+        e_res.setPlaceholderText("10040")
+        e_res.setToolTip(tr("The Reseller number in his XML files (empty: any)"))
         f.addRow(tr("Customer") + ":", e_name)
         f.addRow(tr("XML name (Reference)") + ":", e_ref)
+        f.addRow(tr("Reseller in the XML") + ":", e_res)
         src = None
         if copy_choices:
             src = QComboBox()
@@ -2448,14 +2451,14 @@ class CustomersPage(Page):
         f.addRow(bb)
         if d.exec() != QDialog.Accepted:
             return None
-        return e_name.text(), e_ref.text(), (src.currentData() if src else None)
+        return e_name.text(), e_ref.text(), (src.currentData() if src else None), e_res.text()
 
     def add(self):
         from ..services.customers import add_customer, list_customers
         got = self._dialog(tr("Add customer…"), copy_choices=[(c["id"], c["name"]) for c in list_customers(self.ws)])
         if got:
-            name, ref, src = got
-            cid = self.win.guard(lambda: add_customer(self.ws, name, ref, copy_from=src))
+            name, ref, src, res = got
+            cid = self.win.guard(lambda: add_customer(self.ws, name, ref, copy_from=src, reseller=res))
             if cid:
                 self.ws.db.set_setting("ui.customer", cid)
                 self.win.customer_changed()
@@ -2470,9 +2473,9 @@ class CustomersPage(Page):
         c = get(self.ws, cid) if cid else None
         if c is None:
             return
-        got = self._dialog(tr("Edit…"), c["name"], c["reference"])
+        got = self._dialog(tr("Edit…"), c["name"], c["reference"], reseller=c.get("reseller", ""))
         if got:
-            self.win.guard(lambda: update_customer(self.ws, cid, name=got[0], reference=got[1]))
+            self.win.guard(lambda: update_customer(self.ws, cid, name=got[0], reference=got[1], reseller=got[3]))
             self.win.customer_changed()
 
     def choose_mdl(self):
@@ -2499,6 +2502,8 @@ class CustomersPage(Page):
         if res is None:
             return
         lines = []
+        if res.get("reseller"):
+            lines.append(f"{tr('Reseller in the XML')}: {res['reseller']}")
         if res["table"]:
             lines.append(f"{tr('Size table name')}: {res['table']}")
         if res["line_pattern"]:
