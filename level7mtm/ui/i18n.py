@@ -12,6 +12,7 @@ AR = {
     "Size table setup": "ضبط جدول المقاسات",
     "Piece options setup": "ضبط اختيارات القطع",
     "Fixed pieces": "القطع الثابتة",
+    "Model pieces": "قطع الموديلات",
     "busy": "مشغول",
     "the robot is working on another model": "الروبوت يعمل على موديل آخر الآن",
     "Customers": "العملاء",

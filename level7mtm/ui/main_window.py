@@ -2867,7 +2867,7 @@ class MainWindow(QMainWindow):
                         ("write", "model", tr("Write model"), self.write_model),
                         ("robot", "robot", tr("Robot"), lambda: grafis().robot_now()),
                         ("xvalues", "xvalues", tr("Size table setup"), lambda: self.goto("X values for GRAFIS")),
-                        ("options", "options", tr("Pieces"),
+                        ("options", "options", tr("Model pieces"),
                          [(tr("Piece options setup"), lambda: self.goto("Design options")),
                           (tr("Fixed pieces"), lambda: self.goto("GRAFIS parts"))])]),
             (tr("Nesting"), [("renest", "renest", tr("Nest again"), self.renest_selected),
