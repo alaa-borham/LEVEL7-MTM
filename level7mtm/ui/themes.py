@@ -140,6 +140,8 @@ QLabel#ribbonTitle {{ color: {_rgb(mut)}; font-size: 8pt; letter-spacing: 1px; }
 QToolButton#ribbonButton {{ background: transparent; border: 1px solid transparent; border-radius: 2px; padding: 3px 6px;
     color: {_rgb(txt)}; font-size: 8.5pt; }}
 QToolButton#ribbonButton:hover {{ border-color: {_rgb(acc)}; background: {_rgb(acc, 0.12)}; }}
+QToolButton#ribbonButton::menu-indicator {{ image: none; width: 0px; }}
+QToolButton#ribbonButton[hasMenu="true"] {{ padding-bottom: 9px; }}
 QToolButton#ribbonButton:pressed {{ background: {_rgb(acc, 0.30)}; }}
 QToolButton#ribbonButton:disabled {{ color: {_rgb(mut, 0.5)}; }}
 QLabel#brand {{ font-size: 14pt; font-weight: 800; letter-spacing: 2px; }}

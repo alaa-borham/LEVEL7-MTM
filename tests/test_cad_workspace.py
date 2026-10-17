@@ -506,7 +506,7 @@ def test_nest_again_button_with_level7_nesting_in_its_arrow(ws):
     win.show()
     app.processEvents()
     b = win.ribbon.buttons["renest"]
-    assert b.popupMode() == QtWidgets.QToolButton.MenuButtonPopup and "nesting" not in win.ribbon.buttons
+    assert b.popupMode() == QtWidgets.QToolButton.InstantPopup and "nesting" not in win.ribbon.buttons
     assert len(b.menu().actions()) == 2
     f = win.ribbon.buttons["cut"]                                 # cutting files and ER under "Files"
     assert len(f.menu().actions()) == 2 and "er" not in win.ribbon.buttons

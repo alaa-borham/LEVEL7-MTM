@@ -1065,6 +1065,27 @@ def panel_head(title: str) -> tuple[QFrame, QLabel]:
     return h, n
 
 
+class MenuButton(QToolButton):
+    """A ribbon button that opens a list of choices when clicked: a small arrow in the accent colour under the
+    label says there is more (no separate arrow part to aim at)."""
+
+    def __init__(self, *a):
+        super().__init__(*a)
+        self.setProperty("hasMenu", True)
+        self.setPopupMode(QToolButton.InstantPopup)
+
+    def paintEvent(self, e):
+        super().paintEvent(e)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(Qt.NoPen)
+        p.setBrush(themes.colour("accent") if self.isEnabled() else themes.colour("muted"))
+        k = 5 if self.iconSize().width() >= 24 else 4          # smaller with the smaller ribbon
+        cx, y = self.width() / 2, self.height() - k - 2
+        p.drawPolygon(QPolygonF([QPointF(cx - k, y), QPointF(cx + k, y), QPointF(cx, y + k)]))
+        p.end()
+
+
 class Ribbon(QFrame):
     """Tool groups in the order of the work: order → model → nesting → output → system. Never squeezes its
     buttons: with less room the labels go (icons only, label in the tooltip), with still less it scrolls."""
@@ -1072,7 +1093,7 @@ class Ribbon(QFrame):
     def __init__(self, groups, extra=()):
         super().__init__()
         self.setObjectName("ribbon")
-        self.setFixedHeight(96)                                   # room for two-line labels and the group titles
+        self.setFixedHeight(106)                                  # room for two-line labels and the group titles
         outer = QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         self.scroll = QScrollArea()
@@ -1121,7 +1142,7 @@ class Ribbon(QFrame):
             row = QHBoxLayout()
             row.setSpacing(2)
             for i, (key, ic, text, fn) in enumerate(items):
-                b = QToolButton()
+                b = MenuButton() if isinstance(fn, (dict, list, tuple)) else QToolButton()
                 b.setObjectName("ribbonButton")
                 b.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
                 b.setIcon(icon(ic, acc if i == 0 else None))
@@ -1129,21 +1150,12 @@ class Ribbon(QFrame):
                 b.setText(text)
                 b.setToolTip(text)
                 b.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)   # never squeezed (no overlapping)
-                if isinstance(fn, dict):                     # the button does "main"; its arrow lists the others
+                if isinstance(fn, (dict, list, tuple)):      # several actions under one button: a click lists them
                     from PySide6.QtWidgets import QMenu
                     m = QMenu(b)
-                    for sub_text, sub_fn in fn["menu"]:
+                    for sub_text, sub_fn in (fn["menu"] if isinstance(fn, dict) else fn):
                         m.addAction(sub_text, sub_fn)
                     b.setMenu(m)
-                    b.setPopupMode(QToolButton.MenuButtonPopup)
-                    b.clicked.connect(fn["main"])
-                elif isinstance(fn, (list, tuple)):          # several pages under one button: a drop-down list
-                    from PySide6.QtWidgets import QMenu
-                    m = QMenu(b)
-                    for sub_text, sub_fn in fn:
-                        m.addAction(sub_text, sub_fn)
-                    b.setMenu(m)
-                    b.setPopupMode(QToolButton.InstantPopup)
                 else:
                     b.clicked.connect(fn)
                 self.buttons[key] = b
@@ -1202,7 +1214,8 @@ class Ribbon(QFrame):
             b.setToolButtonStyle(Qt.ToolButtonIconOnly if mode == "icons" else Qt.ToolButtonTextUnderIcon)
             b.setIconSize(QSize(24, 24) if mode == "full" else QSize(19, 19))
             b.setMinimumWidth(36 if mode == "icons" else 0)
-            b.setStyleSheet("" if mode == "full" else "QToolButton { font-size: 8pt; padding: 1px 3px; }")
+            pad = " padding-bottom: 5px;" if isinstance(b, MenuButton) else ""     # room for its arrow
+            b.setStyleSheet("" if mode == "full" else f"QToolButton {{ font-size: 8pt; padding: 1px 3px;{pad} }}")
             full = b.toolTip()
             words = full.split(" ")
             if mode == "small" and len(words) > 1 and len(full) > 9:     # long labels on two lines
