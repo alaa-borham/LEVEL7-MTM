@@ -162,6 +162,9 @@ def find_style(doc: dict, item: str | None, measurement_table: str | None) -> tu
         if (item and item in prod.get("erp_items", [])) or (measurement_table and measurement_table in
                                                            prod.get("erp_measurement_tables", [])):
             return pid, prod.get("default_style") or next(iter(prod["styles"]))
+    if len(doc["products"]) == 1:                     # one product (one garment) for the customer: always it
+        pid, prod = next(iter(doc["products"].items()))
+        return pid, prod.get("default_style") or next(iter(prod["styles"]))
     raise CatalogError(f"no product for ERP item {item!r} / measurement table {measurement_table!r}")
 
 

@@ -110,3 +110,24 @@ def test_pattern_chosen_by_the_variation_of_the_order(ws, xml53, tmp_path):
     assert r["status"] == "blocked" and "no pattern" in r["problems"][0]   # held, with the reason
     with pytest.raises(WorkflowError):
         set_patterns(ws, [{"variation": "Slim2", "mdl": ""}])
+
+
+def test_learn_a_customer_xml_and_read_it_again(ws, xml53, tmp_path):
+    from level7mtm.services.customers import learn_from_xml, reread_file
+    cid = customers.add_customer(ws, "Richy", "From Richy")
+    txt = _xml(xml53, "From Richy").decode("utf-8")
+    txt = txt.replace('Number="9-53-1_2"', 'Number="GR-1963-1_2"').replace('Number="9-53-2_2"', 'Number="GR-1963-2_2"')
+    txt = txt.replace("Saudi Thobe_TableMeasurement", "Thobe_Measurments_Full").replace('Abbreviation="SH"',
+                                                                                          'Abbreviation="SHX"')
+    p = tmp_path / "GR-1963.xml"
+    p.write_text(txt, encoding="utf-8")
+    first = ws.import_file(str(p))
+    assert first.lines[0]["status"] == "needs_review"
+    res = learn_from_xml(ws, cid, p.read_bytes())
+    assert res["table"] == "Thobe_Measurments_Full" and res["line_pattern"] and "SHX" in res["added"]
+    assert "SH" in res["not_required"]
+    again = reread_file(ws, str(p))
+    rev = ws.revision(again.lines[0]["revision_id"])
+    msgs = [x["message"] for x in rev["normalized"]["problems"]]
+    assert not any("expected pattern" in m or "profile expects" in m or "SHX" in m for m in msgs), msgs
+    assert ws.customer_of(rev["id"]) == cid

@@ -221,3 +221,109 @@ def variations_seen(ws, cid: str | None = None) -> list[str]:
             seen.setdefault(_plain(c), str(c))
     return sorted(seen.values(), key=str.lower)
 
+
+
+# ------------------------------------------------------------------ learning a customer's XML (owner: Richy's files
+# have other measurement codes, full girths, another table name and order numbers like GR-1963-2_2)
+LINE_ANY = r"^(?P<reseller>[A-Za-z0-9]+)-(?P<order>[A-Za-z0-9]+)-(?P<line>[A-Za-z0-9]+)_(?P<revision>\d+)$"
+
+
+def learn_from_xml(ws, cid: str, data: bytes) -> dict:
+    """Make the customer's XML mapping read his files as they are, from one of them: his measurement table
+    name and order numbers, every measurement code in it (new ones defined in cm), no range taken over from
+    another customer that his values do not keep, no required measurement his files do not have. Saved as a
+    new version of his mapping. Returns what changed and the Variations still to be given a meaning."""
+    from ..erp.mapping import select, select_one
+    from .xtable import _next_version
+    root = load_bytes(data).root
+    with ws.for_customer(cid):
+        _, prof = ws.active("mapping")
+    prof = copy.deepcopy(prof)
+    ns = prof.get("namespaces", {})
+    L = prof["lines"]
+    lines = select(root, L["path"], ns) if isinstance(L.get("path"), str) else []
+    if not lines:
+        raise WorkflowError("no order line found in this XML")
+    el = lines[0]
+    M = prof["measurements"]
+    fields = M["fields"]
+    out = {"added": [], "ranges_dropped": [], "not_required": [], "table": None, "line_pattern": False,
+           "unknown_variations": []}
+    num = select_one(el, L.get("number", "@Number"), ns) or ""
+    rx = prof.get("line_number", {}).get("regex")
+    if rx and not re.match(rx, num) and re.match(LINE_ANY, num):
+        prof["line_number"]["regex"] = LINE_ANY
+        out["line_pattern"] = True
+    table = select_one(el, L.get("measurement_table", "Measurement/@Measurement-Table-Name"), ns)
+    if table and M.get("measurement_table") != table:
+        M["measurement_table"] = table
+        out["table"] = table
+    present = set()
+    for t in select(el, M["path"], ns):
+        code = (t.attrib.get(M["code"].lstrip("@")) or "").strip()
+        if not code:
+            continue
+        name = (t.attrib.get(M["name"].lstrip("@")) or code).strip()
+        try:
+            val = float((t.attrib.get(M["value"].lstrip("@")) or "").replace(",", "."))
+        except ValueError:
+            val = None
+        present.add(code)
+        f = fields.get(code)
+        if f is None:
+            fields[code] = {"variable": code, "label": {"ar": name, "en": name}, "unit": "cm", "kind": "length",
+                            "meaning": f"{name} (from the customer's XML)", "required": False, "status": "proposed"}
+            out["added"].append(code)
+        elif f.get("range") and val is not None and not (f["range"][0] <= val <= f["range"][1]):
+            f.pop("range")                                  # this customer's numbers mean something else
+            out["ranges_dropped"].append(code)
+    for code, f in fields.items():
+        if f.get("required") and code not in present:
+            f["required"] = False
+            out["not_required"].append(code)
+    keep = []
+    for cr in prof.get("conditional_required", []):
+        req = [c for c in cr.get("require", []) if c in present]
+        if req:
+            keep.append({**cr, "require": req})
+        else:
+            out["not_required"] += [c for c in cr.get("require", []) if c not in out["not_required"]]
+    prof["conditional_required"] = keep
+    O = prof["options"]
+    known = {_plain(k) for k in O.get("map", {})}
+    for v in select(el, O["path"], ns):
+        if _plain(v) not in known:
+            out["unknown_variations"].append(v)
+    prof["version"] = _next_version(ws, "mapping", prof["profile_id"], prof["version"])
+    with ws.for_customer(cid):
+        ws.set_active("mapping", ws.save_document("mapping", prof, "learned from the customer's XML"))
+    return out
+
+
+def reread_file(ws, path: str):
+    """Import an XML again after the customer's settings changed: its order lines that were held for review (and
+    went no further) are taken back, then the file is read anew (models written as on import). Returns the
+    import outcome."""
+    import hashlib
+    import os
+    with open(path, "rb") as fh:
+        sha = hashlib.sha256(fh.read()).hexdigest()
+    name = os.path.basename(path)
+    f = ws.db.one("SELECT id FROM import_files WHERE sha256=?", (sha,))
+    if f:
+        revs = ws.db.q("SELECT id, order_id, status FROM revisions WHERE import_file=?", (f["id"],))
+        if any(r["status"] not in ("needs_review", "ready", "imported", "validation_failed") for r in revs):
+            raise WorkflowError("this XML has order lines that went further (model written to GRAFIS, nested): "
+                                "it is not read again")
+        with ws.db.tx() as c:
+            for r in revs:
+                for t in ("grafis_orders", "manual_edits", "generations", "nesting_items"):
+                    c.execute(f"DELETE FROM {t} WHERE revision_id=?", (r["id"],))
+                c.execute("DELETE FROM revisions WHERE id=?", (r["id"],))
+                if not c.execute("SELECT id FROM revisions WHERE order_id=?", (r["order_id"],)).fetchone():
+                    c.execute("DELETE FROM orders WHERE id=?", (r["order_id"],))
+            c.execute("UPDATE import_files SET status='failed', message='read again' WHERE id=?", (f["id"],))
+            ws.db.audit(c, ws.actor, "import.reread", "import_file", f["id"], {"file": name,
+                                                                                "lines": [r["id"] for r in revs]})
+    from .grafis_orders import import_and_prepare
+    return import_and_prepare(ws, path)

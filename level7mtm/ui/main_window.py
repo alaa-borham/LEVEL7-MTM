@@ -2096,7 +2096,8 @@ class CustomersPage(Page):
         lay.addWidget(self.t, 1)
         bar = QHBoxLayout()
         for text, fn in (("Add customer…", self.add), ("Edit…", self.edit), ("GRAFIS model (MDL)…", self.choose_mdl),
-                         ("Patterns…", self.edit_patterns), ("Edit this customer's settings", self.use)):
+                         ("Patterns…", self.edit_patterns), ("Learn from an XML file…", self.learn_xml),
+                         ("Edit this customer's settings", self.use)):
             b = QPushButton(tr(text))
             b.clicked.connect(fn)
             bar.addWidget(b)
@@ -2177,6 +2178,43 @@ class CustomersPage(Page):
         if p:
             self.win.guard(lambda: update_customer(self.ws, cid, mdl=p))
             self.win.customer_changed()
+
+    def learn_xml(self):
+        """Read one of the customer's XML files and make his XML mapping read them as they are; then read the file
+        again (its held order lines are taken back first)."""
+        from ..services.customers import get, learn_from_xml, reread_file
+        cid = self._cid() or self.ws.customer()
+        c = get(self.ws, cid)
+        path, _ = QFileDialog.getOpenFileName(self, f"{tr('Learn from an XML file…')} — {c['name']}", "",
+                                              "XML (*.xml *.XML)")
+        if not path:
+            return
+        res = self.win.guard(lambda: learn_from_xml(self.ws, cid, open(path, "rb").read()))
+        if res is None:
+            return
+        lines = []
+        if res["table"]:
+            lines.append(f"{tr('Size table name')}: {res['table']}")
+        if res["line_pattern"]:
+            lines.append(tr("Order numbers like this file's are read"))
+        if res["added"]:
+            lines.append(f"{tr('New measurement codes (in cm)')}: {', '.join(res['added'])}")
+        if res["ranges_dropped"]:
+            lines.append(f"{tr('Limits not used for this customer')}: {', '.join(res['ranges_dropped'])}")
+        if res["not_required"]:
+            lines.append(f"{tr('No longer required (not in his files)')}: {', '.join(res['not_required'])}")
+        if res["unknown_variations"]:
+            lines.append(f"⚠ {tr('Variations still without a meaning — give them one in Model settings → Piece options setup')}: "
+                         f"{', '.join(res['unknown_variations'])}")
+        msg = "\n".join("• " + x for x in lines) or tr("Nothing to change: his files are read as they are")
+        if QMessageBox.question(self, tr("Learn from an XML file…"),
+                                msg + "\n\n" + tr("Read this XML again now?")) == QMessageBox.Yes:
+            out = self.win.guard(lambda: reread_file(self.ws, path))
+            if out is not None:
+                self.win.refresh_cad(force=True)
+                QMessageBox.information(self, tr("Learn from an XML file…"),
+                                        f"{out.file_name}: {tr(out.status)} {tr_msg(out.message)}")
+        self.refresh()
 
     def edit_patterns(self):
         """The customer's patterns (body shapes): the Variation name in the XML that chooses it and its GRAFIS

@@ -24,8 +24,12 @@ def style(cat):
 def test_catalog_structure(cat):
     assert find_style(cat, "91001", None) == ("saudi-thobe", "alshiaka-2027")
     assert find_style(cat, None, "Saudi Thobe_TableMeasurement") == ("saudi-thobe", "alshiaka-2027")
-    with pytest.raises(CatalogError):
-        find_style(cat, "99999", "other")
+    assert find_style(cat, "99999", "other") == ("saudi-thobe", "alshiaka-2027")   # one product: always it
+    two = copy.deepcopy(cat)
+    two["products"]["other-garment"] = copy.deepcopy(two["products"]["saudi-thobe"])
+    two["products"]["other-garment"]["erp_items"], two["products"]["other-garment"]["erp_measurement_tables"] = [], []
+    with pytest.raises(CatalogError):                                                # several: never guessed
+        find_style(two, "99999", "other")
     st = style(cat)
     assert st["base_pattern"]["model_id"] == "thobe-engine-test" and st["base_pattern"]["version"] == "0.1.0"
     m = cat["measurements"]["FL"]
