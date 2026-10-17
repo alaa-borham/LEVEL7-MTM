@@ -716,21 +716,7 @@ class MarkerView(QGraphicsView):
 
     def drawBackground(self, p: QPainter, rect: QRectF):
         c = themes.colours()
-        p.fillRect(rect, c["canvas"])
-        step = self._step(14)
-        big = step * 5
-        for colour, s in ((c["grid"], step), (c["grid2"], big)):
-            pen = QPen(colour, 0)
-            pen.setCosmetic(True)
-            p.setPen(pen)
-            x = math.floor(rect.left() / s) * s
-            while x <= rect.right():
-                p.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
-                x += s
-            y = math.floor(rect.top() / s) * s
-            while y <= rect.bottom():
-                p.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
-                y += s
+        p.fillRect(rect, c["canvas"])                        # plain: no grid lines behind the marker
 
     def _draw_snap(self, p: QPainter, c):
         """The point a click would take: a square on a corner / end point, a circle on a piece line."""
