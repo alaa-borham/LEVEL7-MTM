@@ -11,7 +11,7 @@ import traceback
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFrame,
-                               QListWidgetItem, QSizePolicy, QToolButton,
+                               QGridLayout, QListWidgetItem, QSizePolicy, QToolButton,
                                QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
                                QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QSplitter,
                                QStackedWidget, QTabBar, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
@@ -825,7 +825,9 @@ class GrafisPage(Page):
         lay.setSpacing(12)
         # status strip + settings switch
         top = QHBoxLayout()
-        self.chips = QHBoxLayout()
+        self.chips = QGridLayout()                  # 3 per row: the page fits the window, no side scrolling
+        self.chips.setHorizontalSpacing(8)
+        self.chips.setVerticalSpacing(6)
         top.addLayout(self.chips)
         top.addStretch()
         self.settings_btn = QPushButton("⚙  " + tr("Settings"))
@@ -947,7 +949,9 @@ class GrafisPage(Page):
         self.nest_time.setValue(int(float(self.ws.db.get_setting("cutting.time_s", 60))))
         self.nest_time.valueChanged.connect(lambda v: self.ws.db.set_setting("cutting.time_s", int(v)))
         frow.addWidget(self.nest_time)
-        frow.addSpacing(16)
+        frow.addStretch()
+        al.addLayout(frow)
+        frow = QHBoxLayout()                        # a row of its own: the page stays as wide as the window
         self.remnant = QCheckBox(tr("Small pieces together (one large piece of fabric left)"))
         self.remnant.setToolTip(tr("After nesting, LEVEL7 Nesting packs the small pieces next to each other so "
                                    "the fabric left over is one large piece; the marker length does not change"))
@@ -1028,12 +1032,12 @@ class GrafisPage(Page):
             w = self.chips.takeAt(0).widget()
             if w:
                 w.deleteLater()
-        for ok, text in items:
+        for i, (ok, text) in enumerate(items):
             c = QLabel(f"<span style='color:{'#2ecc71' if ok else '#e74c3c'}'>●</span> {text}")
             c.setObjectName("statChip")
             c.setStyleSheet("QLabel { border: 1px solid rgba(128,128,128,0.35); border-radius: 12px; "
                             "padding: 4px 12px; }")
-            self.chips.addWidget(c)
+            self.chips.addWidget(c, i // 3, i % 3)
 
     def refresh(self):
         from ..services.auto_cut import NestingNotConfigured, nesting_command, settings
