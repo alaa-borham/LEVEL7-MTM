@@ -2170,10 +2170,90 @@ class XValuesPage(Page):
         self.refresh()
 
 
+class PatternsPanel(QWidget):
+    """The customer's patterns (body shapes): the Variation name in the XML that chooses each and its GRAFIS
+    model. The size table, piece options and fixed pieces stay the customer's."""
+
+    def __init__(self, page):
+        super().__init__()
+        self.page, self.ws = page, page.ws
+        lay = QVBoxLayout(self)
+        self.note = QLabel()
+        self.note.setWordWrap(True)
+        lay.addWidget(self.note)
+        self.t = QTableWidget(0, 2)
+        self.t.setHorizontalHeaderLabels([tr("Variation in the XML"), tr("GRAFIS model (MDL)")])
+        self.t.horizontalHeader().setStretchLastSection(True)
+        self.t.setColumnWidth(0, 220)
+        lay.addWidget(self.t, 1)
+        bar = QHBoxLayout()
+        for text, fn in (("Add models…", self.browse), ("Change model…", self.change_mdl),
+                         ("Remove", lambda: self.t.removeRow(self.t.currentRow()) if self.t.currentRow() >= 0
+                          else None), ("Save", self.save)):
+            b = QPushButton(tr(text))
+            b.clicked.connect(fn)
+            bar.addWidget(b)
+        bar.addStretch()
+        lay.addLayout(bar)
+        self.seen: list[str] = []
+
+    def refresh(self):
+        from ..services.customers import patterns, variations_seen
+        self.seen = variations_seen(self.ws)
+        self.note.setText(tr("Each pattern: the Variation in the XML that chooses it (e.g. Athlete1, Slim2) and its "
+                             "GRAFIS model. An order without one of these Variations goes to ER. No patterns: the "
+                             "customer's GRAFIS model is used for every order.") + "\n" +
+                          (tr("Variations in this customer's XML files") + ": " + ", ".join(self.seen)
+                           if self.seen else tr("No XML of this customer imported yet")))
+        self.t.setRowCount(0)
+        for p in patterns(self.ws):
+            self._add(p["variation"], p["mdl"])
+
+    def _add(self, v="", m=""):
+        r = self.t.rowCount()
+        self.t.insertRow(r)
+        cb = QComboBox()                              # the names that came in this customer's XML files
+        cb.setEditable(True)
+        cb.addItems(self.seen)
+        cb.setCurrentText(v)
+        self.t.setCellWidget(r, 0, cb)
+        self.t.setItem(r, 1, QTableWidgetItem(m))
+
+    def browse(self):
+        files, _ = QFileDialog.getOpenFileNames(self, tr("GRAFIS model (MDL)…"), self.ws.grafis_mdl() or "",
+                                                "GRAFIS (*.mdl *.MDL)")
+        for f in files:
+            self._add(os.path.splitext(os.path.basename(f))[0], f)
+
+    def change_mdl(self):
+        r = self.t.currentRow()
+        if r < 0:
+            return
+        f, _ = QFileDialog.getOpenFileName(self, tr("GRAFIS model (MDL)…"), self.t.item(r, 1).text() or "",
+                                           "GRAFIS (*.mdl *.MDL)")
+        if f:
+            self.t.setItem(r, 1, QTableWidgetItem(f))
+
+    def rows(self) -> list[dict]:
+        return [{"variation": (self.t.cellWidget(r, 0).currentText() if self.t.cellWidget(r, 0) else ""),
+                 "mdl": (self.t.item(r, 1).text() if self.t.item(r, 1) else "")} for r in range(self.t.rowCount())]
+
+    def save(self):
+        from ..services.customers import set_patterns
+        try:
+            set_patterns(self.ws, self.rows())
+        except Exception as e:  # noqa: BLE001 - shown, nothing saved
+            QMessageBox.warning(self, tr("Error"), tr_msg(str(e)))
+            return
+        reread_held_question(self.page, tr("Saved"))
+        self.page.refresh()
+
+
 class CustomersPage(Page):
-    """Customers: each with his name in the XML (Reference), his own size table, piece options, fixed pieces and
-    GRAFIS base model. The settings pages show the customer chosen at the top of the screen (ribbon)."""
+    """One place to set a customer up: the customers (his name in the XML, his GRAFIS model) and, for the one
+    chosen, his patterns, size table, piece options and fixed pieces."""
     title = "Customers"
+    INNER = {"patterns": 0, "X values for GRAFIS": 1, "Design options": 2, "GRAFIS parts": 3}
 
     def __init__(self, win):
         super().__init__(win)
@@ -2184,29 +2264,68 @@ class CustomersPage(Page):
         info.setWordWrap(True)
         lay.addWidget(info)
         self.t = table(["Customer", "XML name (Reference)", "GRAFIS model (MDL)", "Patterns"])
-        lay.addWidget(self.t, 1)
+        self.t.setMaximumHeight(170)
+        self.t.itemSelectionChanged.connect(self._picked)
+        lay.addWidget(self.t)
         bar = QHBoxLayout()
         for text, fn in (("Add customer…", self.add), ("Edit…", self.edit), ("GRAFIS model (MDL)…", self.choose_mdl),
-                         ("Patterns…", self.edit_patterns), ("Learn from an XML file…", self.learn_xml),
-                         ("Edit this customer's settings", self.use)):
+                         ("Learn from an XML file…", self.learn_xml)):
             b = QPushButton(tr(text))
             b.clicked.connect(fn)
             bar.addWidget(b)
         bar.addStretch()
         lay.addLayout(bar)
+        self.head = QLabel()
+        self.head.setObjectName("pageTitle")
+        self.head.setStyleSheet("font-size: 13pt; font-weight: 800; padding-top: 6px;")
+        lay.addWidget(self.head)
+        self.inner = QTabWidget()                    # the chosen customer's settings, side by side
+        self.patterns = PatternsPanel(self)
+        self.inner_pages = {"patterns": self.patterns, "X values for GRAFIS": XValuesPage(win),
+                            "Design options": OptionsPage(win), "GRAFIS parts": GrafisPartsPage(win)}
+        for key, label_ in (("patterns", "Patterns"), ("X values for GRAFIS", "Size table setup"),
+                            ("Design options", "Piece options setup"), ("GRAFIS parts", "Fixed pieces")):
+            pg = self.inner_pages[key]
+            box = getattr(pg, "customer_box", None)
+            if box is not None:
+                box.parentWidget().hide()             # the customer is chosen in the list above
+            self.inner.addTab(pg, tr(label_))
+        self.inner.currentChanged.connect(lambda _i: self._refresh_inner())
+        lay.addWidget(self.inner, 1)
+
+    def show_tab(self, key: str):
+        self.inner.setCurrentIndex(self.INNER.get(key, 0))
+        self._refresh_inner()
+
+    def _refresh_inner(self):
+        pg = self.inner.currentWidget()
+        if pg is not None:
+            self.win.guard(pg.refresh)
+
+    def _picked(self):
+        cid = self._cid()
+        if cid and cid != self.ws.customer():
+            self.ws.db.set_setting("ui.customer", cid)
+            self.win.customer_changed()               # refreshes this page with his settings
 
     def refresh(self):
-        from ..services.customers import list_customers
+        from ..services.customers import list_customers, patterns
         cs = list_customers(self.ws)
         cur = self.ws.customer()
-        from ..services.customers import patterns
         rows = []
         for c in cs:
             pats = patterns(self.ws, c["id"])
             rows.append([("● " if c["id"] == cur else "") + c["name"], c["reference"],
                          os.path.basename(c["mdl"] or "") or tr("not set"),
                          ", ".join(p["variation"] for p in pats) or "—"])
+        self.t.blockSignals(True)
         fill(self.t, rows, None, [c["id"] for c in cs])
+        k = next((i for i, c in enumerate(cs) if c["id"] == cur), 0)
+        self.t.selectRow(k)
+        self.t.blockSignals(False)
+        name = next((c["name"] for c in cs if c["id"] == cur), "")
+        self.head.setText(f"{tr('Settings of')} {name}")
+        self._refresh_inner()
 
     def _cid(self):
         ids = selected_data(self.t)
@@ -2306,83 +2425,6 @@ class CustomersPage(Page):
                 QMessageBox.information(self, tr("Learn from an XML file…"),
                                         f"{out.file_name}: {tr(out.status)} {tr_msg(out.message)}")
         self.refresh()
-
-    def edit_patterns(self):
-        """The customer's patterns (body shapes): the Variation name in the XML that chooses it and its GRAFIS
-        model. The size table, piece options and fixed pieces stay the customer's."""
-        from ..services.customers import get, patterns, set_patterns, variations_seen
-        cid = self._cid() or self.ws.customer()
-        seen = variations_seen(self.ws, cid)
-        c = get(self.ws, cid)
-        d = QDialog(self)
-        d.setWindowTitle(f"{tr('Patterns…')} — {c['name']}")
-        d.resize(760, 420)
-        lay = QVBoxLayout(d)
-        note = QLabel(tr("Each pattern: the Variation in the XML that chooses it (e.g. Athlete1, Slim2) and its "
-                         "GRAFIS model. An order without one of these Variations goes to ER. No patterns: the "
-                         "customer's GRAFIS model is used for every order.") + "\n" +
-                      (tr("Variations in this customer's XML files") + ": " + ", ".join(seen) if seen else
-                       tr("No XML of this customer imported yet")))
-        note.setWordWrap(True)
-        lay.addWidget(note)
-        t = QTableWidget(0, 2)
-        t.setHorizontalHeaderLabels([tr("Variation in the XML"), tr("GRAFIS model (MDL)")])
-        t.horizontalHeader().setStretchLastSection(True)
-        t.setColumnWidth(0, 200)
-        lay.addWidget(t, 1)
-
-        def add_row(v="", m=""):
-            r = t.rowCount()
-            t.insertRow(r)
-            cb = QComboBox()                          # the names that came in this customer's XML files
-            cb.setEditable(True)
-            cb.addItems(seen)
-            cb.setCurrentText(v)
-            t.setCellWidget(r, 0, cb)
-            t.setItem(r, 1, QTableWidgetItem(m))
-        for p in patterns(self.ws, cid):
-            add_row(p["variation"], p["mdl"])
-        bar = QHBoxLayout()
-
-        def browse():
-            files, _ = QFileDialog.getOpenFileNames(d, tr("GRAFIS model (MDL)…"), c["mdl"] or "", "GRAFIS (*.mdl *.MDL)")
-            for f in files:
-                add_row(os.path.splitext(os.path.basename(f))[0], f)
-
-        def change_mdl():
-            r = t.currentRow()
-            if r < 0:
-                return
-            f, _ = QFileDialog.getOpenFileName(d, tr("GRAFIS model (MDL)…"), t.item(r, 1).text() or "",
-                                               "GRAFIS (*.mdl *.MDL)")
-            if f:
-                t.setItem(r, 1, QTableWidgetItem(f))
-        for text, fn in (("Add models…", browse), ("Change model…", change_mdl),
-                         ("Remove", lambda: t.removeRow(t.currentRow()) if t.currentRow() >= 0 else None)):
-            b = QPushButton(tr(text))
-            b.clicked.connect(fn)
-            bar.addWidget(b)
-        bar.addStretch()
-        lay.addLayout(bar)
-        bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        bb.accepted.connect(d.accept)
-        bb.rejected.connect(d.reject)
-        lay.addWidget(bb)
-        while d.exec() == QDialog.Accepted:
-            rows = [{"variation": (t.cellWidget(r, 0).currentText() if t.cellWidget(r, 0) else ""),
-                     "mdl": (t.item(r, 1).text() if t.item(r, 1) else "")} for r in range(t.rowCount())]
-            try:
-                set_patterns(self.ws, rows, cid)
-                break
-            except Exception as e:  # noqa: BLE001 - shown, the window stays open to correct it
-                QMessageBox.warning(d, tr("Error"), tr_msg(str(e)))
-        self.refresh()
-
-    def use(self):
-        cid = self._cid()
-        if cid:
-            self.ws.db.set_setting("ui.customer", cid)
-            self.win.customer_changed()
 
 
 class LibraryPage(Page):
@@ -3553,6 +3595,10 @@ class MainWindow(QMainWindow):
         return next((self.pages[t] for t, s in self.wrappers.items() if s is w), None)
 
     def goto(self, title):
+        if title in CustomersPage.INNER and title != "patterns":   # set up with the customer, in one place
+            self.goto("Customers")
+            self.pages["Customers"].show_tab(title)
+            return
         w = self.wrappers[title]
         if self.tabs.indexOf(w) < 0:
             self.tabs.addTab(w, tr(title))

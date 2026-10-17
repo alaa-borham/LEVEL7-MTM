@@ -146,10 +146,12 @@ def test_options_page_shows_the_customer_and_his_unlinked_variations(ws, xml53):
     ws.db.set_setting("ui.customer", cid)
     win = MainWindow(ws)
     win.show()
-    win.goto("Design options")
+    win.goto("Design options")                                        # opens with the customer, in one place
     app.processEvents()
-    page = win.pages["Design options"]
-    assert page.customer_box.currentText() == "Richy"                 # whose options these are
+    cp = win.pages["Customers"]
+    assert win.current_page() is cp and cp.inner.currentIndex() == 2
+    assert "Richy" in cp.head.text()                                  # whose settings these are
+    page = cp.inner_pages["Design options"]
     names = [page.unlinked.item(i).text() for i in range(page.unlinked.count())]
     assert "Sada" in names and "Collar Square" not in names            # only the ones without a meaning
     # give "Sada" a meaning (sleeve = saada), then the held file is read again and passes that problem

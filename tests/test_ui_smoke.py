@@ -41,7 +41,10 @@ def test_all_screens(ws, lang):
     for i, cls in enumerate(PAGES):
         win.goto(cls.title)
         app.processEvents()
-        assert win.current_page() is win.pages[cls.title]
+        if cls.title in ("X values for GRAFIS", "Design options", "GRAFIS parts"):     # set up with the customer
+            assert win.current_page() is win.pages["Customers"]
+        else:
+            assert win.current_page() is win.pages[cls.title]
         if shots:
             os.makedirs(shots, exist_ok=True)
             win.grab().save(os.path.join(shots, f"{lang}_{i:02d}_{cls.__name__}.png"))

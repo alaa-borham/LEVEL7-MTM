@@ -492,8 +492,8 @@ def test_pieces_button_is_a_drop_down_of_both_pages(ws):
     b = win.ribbon.buttons["options"]
     acts = b.menu().actions()
     assert len(acts) == 3 and "parts" not in win.ribbon.buttons and "xvalues" not in win.ribbon.buttons
-    acts[2].trigger()                                             # Fixed pieces
-    assert win.current_page().title == "GRAFIS parts"
+    acts[2].trigger()                                             # Fixed pieces: with the customer
+    assert win.current_page().title == "Customers" and win.pages["Customers"].inner.currentIndex() == 3
 
 
 def test_nest_again_button_with_level7_nesting_in_its_arrow(ws):
