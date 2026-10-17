@@ -144,3 +144,15 @@ def test_nesting_that_cannot_start_is_a_failure_with_its_reason(ws, tmp_path, mo
     r = register_scb(ws, scb, nesting_dir=str(tmp_path / "nest"))
     assert r["status"] == "cutting_failed" and "could not run" in r["cutting"]["message"]
     assert ws.db.one("SELECT status FROM cutting_jobs ORDER BY id DESC")["status"] == "failed"   # never stuck
+
+
+def test_same_line_number_at_two_customers_is_never_guessed(ws, tmp_path):
+    from level7mtm.services import customers
+    customers.add_customer(ws, "Richy", "From Richy")
+    data = read(XML_53)
+    ws.import_data(data, "Order-l7.xml")
+    ws.import_data(data.replace(b'Reference="From level7"', b'Reference="From Richy"'), "Order-richy.xml")
+    scb = tmp_path / "9-53-1_2.scb"                               # named by the line number only
+    shutil.copy(SCB, scb)
+    chk = check_scb(ws, str(scb))
+    assert not chk.ok and any("several customers" in m for _, m in chk.issues)

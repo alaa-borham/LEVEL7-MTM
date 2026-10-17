@@ -107,18 +107,37 @@ def check_scb(ws, path: str, renest: bool | None = None) -> ScbCheck:
                 "material_code": mat[0]}
     # --- which order lines
     stem = os.path.splitext(os.path.basename(path))[0]
+    # the model this program wrote has the same name: exactly its order line (whatever the customer)
+    mine = [g["revision_id"] for g in ws.db.q("SELECT revision_id, path FROM grafis_orders WHERE status='written' "
+                                              "ORDER BY id DESC")
+            if g["path"] and os.path.splitext(os.path.basename(g["path"]))[0].lower() == stem.lower()]
     by_file = ws.db.q("SELECT r.id FROM revisions r JOIN import_files f ON f.id=r.import_file "
                       "WHERE lower(f.file_name) IN (?, ?)", (f"{stem}.xml".lower(), f"{stem}.XML".lower()))
     rids = [r["id"] for r in by_file]
     own = re.search(r"__(\d+-\d+-\d+_\d+)", stem)     # model written per line: "<XML>__<line>" (grafis_orders)
     if own:
         rids = []
+    if mine:
+        rids = [mine[0]]
     if not rids:
         refs = {own.group(1)} if own else set(LINE_RE.findall(stem)) | {s for s in sizes if LINE_RE.fullmatch(s)}
         for ref in refs:
-            r = ws.db.one("SELECT id FROM revisions WHERE line_number=?", (ref,))
-            if r:
-                rids.append(r["id"])
+            rows = ws.db.q("SELECT id FROM revisions WHERE line_number=? AND status NOT IN ('superseded', "
+                           "'cancelled') ORDER BY id DESC", (ref,))
+            custs = {ws.customer_of(r["id"]) for r in rows}
+            if len(custs) > 1:                         # the same line number at two customers: never guess
+                from .customers import names
+                nm = names(ws)
+                chk.issues.append(("blocking", f"order line {ref} exists for several customers "
+                                               f"({', '.join(sorted(nm.get(c, c) for c in custs))}) — "
+                                               f"save the marker under the name of the order model"))
+                return chk
+            if rows:
+                rids.append(rows[0]["id"])
+    if len({ws.customer_of(r) for r in rids}) > 1:   # one XML name used by two customers
+        chk.issues.append(("blocking", f"file name '{stem}' matches order lines of several customers — "
+                                       f"save the marker under the name of the order model"))
+        return chk
     if not rids:
         chk.issues.append(("blocking", f"file name '{stem}' does not match any imported XML / order line"))
         return chk
