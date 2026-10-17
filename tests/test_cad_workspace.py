@@ -87,8 +87,11 @@ def test_window_shows_the_selected_marker(ws, tmp_path):
                   "VALUES ('s','x',?,'done','[]',?,'')", (now(), json.dumps({"l7n": str(l7n)})))
     win = MainWindow(ws)
     win.show()
-    item = next(win.browser.tree.topLevelItem(i) for i in range(win.browser.tree.topLevelItemCount())
-                if win.browser.tree.topLevelItem(i).data(0, 0x0100) == rev["id"])
+    groups = {win.browser.tree.topLevelItem(i).data(0, 0x0101): win.browser.tree.topLevelItem(i)
+              for i in range(win.browser.tree.topLevelItemCount())}
+    assert list(groups) == ["work", "err", "cut"]                                 # three separate lists
+    item = next(it for it in win.browser._order_items() if it.data(0, 0x0100) == rev["id"])
+    assert item.parent() is groups["cut"] and groups["cut"].text(1) == "1"
     win.browser.tree.setCurrentItem(item)
     app.processEvents()
     assert win.sel_row["rid"] == rev["id"] and win.marker.view.marker["length"] == 300

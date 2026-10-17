@@ -629,39 +629,72 @@ class OrderBrowser(QWidget):
         lay.addWidget(self.tree, 1)
         self.rows: list[dict] = []
 
+    # three lists, so a line that needs attention never holds up the others
+    GROUPS = (("work", "In progress", ("new", "grafis", "nest"), "accent"),
+              ("err", "Needs attention", ("err",), "bad"),
+              ("cut", "Ready to cut", ("cut",), "ok"))
+
+    def _order_items(self):
+        for g in range(self.tree.topLevelItemCount()):
+            grp = self.tree.topLevelItem(g)
+            for i in range(grp.childCount()):
+                yield grp.child(i)
+
     def set_rows(self, rows: list[dict], keep: int | None = None):
         self.rows = rows
+        if not hasattr(self, "closed"):
+            self.closed: set[str] = set()
+        for g in range(self.tree.topLevelItemCount()):       # remember which lists the owner closed
+            grp = self.tree.topLevelItem(g)
+            key = grp.data(0, Qt.UserRole + 1)
+            (self.closed.discard if grp.isExpanded() else self.closed.add)(key)
         self.tree.blockSignals(True)
         self.tree.clear()
         c = themes.colours()
-        current = None
-        for r in rows:
-            col = c[STAGE_COLOUR[r["stage"]]]
-            it = QTreeWidgetItem([ltr(r["line"]), tr(STAGE_TEXT[r["stage"]])])
-            it.setData(0, Qt.UserRole, r["rid"])
-            pm = QPixmap(10, 10)
-            pm.fill(col)
-            it.setIcon(0, QIcon(pm))
-            it.setForeground(1, col)
-            f = it.font(1)
+        current, first = None, None
+        for key, title, stages, colour in self.GROUPS:
+            mine = [r for r in rows if r["stage"] in stages]
+            grp = QTreeWidgetItem([f"{tr(title)}", str(len(mine))])
+            grp.setData(0, Qt.UserRole + 1, key)
+            grp.setFlags(Qt.ItemIsEnabled)
+            f = grp.font(0)
             f.setBold(True)
-            it.setFont(1, f)
-            it.setToolTip(0, "\n".join([r["line"]] + r["problems"][:5]))
-            self.tree.addTopLevelItem(it)
-            if r["rid"] == keep:
-                current = it
+            f.setPointSizeF(f.pointSizeF() + 0.5)
+            for col_ in (0, 1):
+                grp.setFont(col_, f)
+                grp.setForeground(col_, c[colour])
+            grp.setBackground(0, QBrush(QColor(c[colour].red(), c[colour].green(), c[colour].blue(), 28)))
+            grp.setBackground(1, QBrush(QColor(c[colour].red(), c[colour].green(), c[colour].blue(), 28)))
+            self.tree.addTopLevelItem(grp)
+            for r in mine:
+                col = c[STAGE_COLOUR[r["stage"]]]
+                it = QTreeWidgetItem([ltr(r["line"]), tr(STAGE_TEXT[r["stage"]])])
+                it.setData(0, Qt.UserRole, r["rid"])
+                pm = QPixmap(10, 10)
+                pm.fill(col)
+                it.setIcon(0, QIcon(pm))
+                it.setForeground(1, col)
+                f2 = it.font(1)
+                f2.setBold(True)
+                it.setFont(1, f2)
+                it.setToolTip(0, "\n".join([r["line"]] + r["problems"][:5]))
+                grp.addChild(it)
+                first = first or it
+                if r["rid"] == keep:
+                    current = it
+            grp.setExpanded(key not in self.closed)
         self.tree.blockSignals(False)
         self.count.setText(str(len(rows)))
         self._filter(self.find.text())
         if current is not None:
+            current.parent().setExpanded(True)
             self.tree.setCurrentItem(current)
-        elif self.tree.topLevelItemCount() and keep is None:
-            self.tree.setCurrentItem(self.tree.topLevelItem(0))
+        elif first is not None and keep is None:
+            self.tree.setCurrentItem(first)
 
     def add_pieces(self, rid, marker):
         """Show the pieces of the line's marker under it."""
-        for i in range(self.tree.topLevelItemCount()):
-            it = self.tree.topLevelItem(i)
+        for it in self._order_items():
             if it.data(0, Qt.UserRole) != rid:
                 continue
             it.takeChildren()
@@ -680,14 +713,15 @@ class OrderBrowser(QWidget):
 
     def _filter(self, text):
         t = text.strip().lower()
-        for i in range(self.tree.topLevelItemCount()):
-            it = self.tree.topLevelItem(i)
+        for it in self._order_items():
             it.setHidden(bool(t) and t not in it.text(0).strip("\u2066\u2069").lower())
 
     def _changed(self, cur, _prev):
-        while cur is not None and cur.parent() is not None:
-            cur = cur.parent()
+        while cur is not None and cur.data(0, Qt.UserRole) is None and cur.parent() is not None:
+            cur = cur.parent()                                # a piece: its order line
         rid = cur.data(0, Qt.UserRole) if cur is not None else None
+        if rid is None:
+            return                                           # a list title: keep the selection
         self.selected.emit(next((r for r in self.rows if r["rid"] == rid), None))
 
 
