@@ -48,7 +48,23 @@ def ws(tmp_path):
     from level7mtm.services.workflow import Workspace
     w = Workspace(str(tmp_path / "ws"), actor="test")
     yield w
+    _close_windows(w)                       # no window of this test may poll a closed database afterwards
     w.db.close()
+
+
+def _close_windows(ws):
+    try:
+        from PySide6.QtWidgets import QApplication
+    except ImportError:
+        return
+    app = QApplication.instance()
+    if app is None:
+        return
+    for win in app.topLevelWidgets():
+        if getattr(win, "ws", None) is ws:
+            win.close()                     # stops its timers and waits for its running work
+            win.deleteLater()
+    app.processEvents()
 
 
 def approved_setup(ws):

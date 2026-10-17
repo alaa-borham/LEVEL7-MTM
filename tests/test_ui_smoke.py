@@ -48,6 +48,9 @@ def test_all_screens(ws, lang):
         if shots:
             os.makedirs(shots, exist_ok=True)
             win.grab().save(os.path.join(shots, f"{lang}_{i:02d}_{cls.__name__}.png"))
+    win.current_rid = rid                                      # the list may have chosen another line meanwhile
+    win.goto("Pattern preview")
+    app.processEvents()
     prev = win.pages["Pattern preview"]
     assert prev.result is not None and len(prev.view.scene().items()) > 10
     val = win.pages["Validation"]
