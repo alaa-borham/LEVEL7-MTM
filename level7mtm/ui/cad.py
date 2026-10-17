@@ -7,7 +7,7 @@ import math
 import os
 import zipfile
 
-from PySide6.QtCore import QByteArray, QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QByteArray, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (QBrush, QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF,
                            QTransform)
 from PySide6.QtWidgets import (QFrame, QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsView, QGridLayout,
@@ -1047,7 +1047,7 @@ class Ribbon(QFrame):
         self.scroll.setFrameShape(QFrame.NoFrame)
         self.scroll.setWidgetResizable(True)
         self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)    # never a scroll bar: a smaller size
         self.scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }")
         outer.addWidget(self.scroll)
         inner = QWidget()
@@ -1170,11 +1170,22 @@ class Ribbon(QFrame):
     def resizeEvent(self, e):
         if e is not None:
             super().resizeEvent(e)
-        w = self.width()
-        want = "full" if w >= self.widths.get("full", 0) else ("small" if w >= self.widths.get("small", 0)
-                                                                else "icons")
+        w = self.scroll.viewport().width() - 12            # the room really there, with a little to spare
+        order = ("full", "small", "icons")
+        want = next((m for m in order if w >= self.widths.get(m, 0)), "icons")
         if want != self.mode:
             self._apply(want)
+        QTimer.singleShot(0, self._verify)
+
+    def _verify(self):
+        """After the new size is drawn: its real width (this PC's fonts); too wide after all -> the next smaller
+        size, so there is never a scroll bar."""
+        order = ("full", "small", "icons")
+        real = self._lay.sizeHint().width()
+        self.widths[self.mode] = real
+        if real > self.scroll.viewport().width() - 12 and self.mode != "icons":
+            self._apply(order[order.index(self.mode) + 1])
+            QTimer.singleShot(0, self._verify)
 
 
 class OrderBrowser(QWidget):
