@@ -92,6 +92,7 @@ QPushButton:checked {{ border-color: {_rgb(acc)}; background: {_rgb(acc, 0.18)};
 QPushButton:disabled {{ color: {_rgb(mut, 0.6)}; }}
 QPushButton#primary {{ background: {_rgb(acc)}; color: {_rgb(on)}; border-color: {_rgb(acc)}; font-weight: 700; }}
 QPushButton#primary:hover {{ background: {_rgb(acc.lighter(115))}; }}
+QPushButton#primary:disabled {{ background: {_rgb(acc, 0.18)}; color: {_rgb(mut, 0.7)}; border-color: {_rgb(acc, 0.25)}; }}
 QPushButton#quick {{ background: {_rgb(c['card'])}; padding: 12px 14px; text-align: left; }}
 
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QTextEdit, QPlainTextEdit {{
