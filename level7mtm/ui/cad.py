@@ -96,12 +96,28 @@ def load_marker(path: str) -> dict | None:
         tf = lambda pts, pl=pl: transform(pts, pl.get("rotation", 0.0), pl.get("mirrored", False), pl.get("x", 0.0),
                                           pl.get("y", 0.0), pl.get("sx", 1.0), pl.get("sy", 1.0))
         grain = (g.get("grain") or {}).get("points") or []
-        out.append({"name": pc.get("name", ""), "cut": tf(g["cut"]), "grain": tf(grain) if len(grain) >= 2 else [],
-                    "holes": [tf(h) for h in g.get("holes", [])], "mirrored": bool(pl.get("mirrored"))})
+        cut = tf(g["cut"])
+        out.append({"name": pc.get("name", ""), "cut": cut, "grain": tf(grain) if len(grain) >= 2 else [],
+                    "holes": [tf(h) for h in g.get("holes", [])], "mirrored": bool(pl.get("mirrored")),
+                    "corners": tf(g["corners"]) if g.get("corners") else sharp_corners(cut)})
     fab = m.get("fabric", {})
     length = float(m.get("length") or 0.0) or max((x for p in out for x, _ in p["cut"]), default=0.0)
     return {"width": float(fab.get("width") or 0.0), "length": length, "pieces": out, "stats": m.get("stats", {}),
             "time": m.get("compute_time")}
+
+
+def sharp_corners(pts, min_turn: float = 25.0) -> list:
+    """The corners and end points of a cut line: vertices where it turns by more than ``min_turn`` degrees (the
+    many small steps of a curve are not corners)."""
+    n = len(pts)
+    out = []
+    for i in range(n):
+        (x0, y0), (x1, y1), (x2, y2) = pts[i - 1], pts[i], pts[(i + 1) % n]
+        a1, a2 = math.atan2(y1 - y0, x1 - x0), math.atan2(y2 - y1, x2 - x1)
+        turn = abs((math.degrees(a2 - a1) + 180) % 360 - 180)
+        if turn >= min_turn:
+            out.append((x1, y1))
+    return out
 
 
 def transform(pts, rotation: float, mirrored: bool, dx: float, dy: float, sx: float = 1.0, sy: float = 1.0):
@@ -317,6 +333,7 @@ class MarkerView(QGraphicsView):
         self.meas: dict = {}
         self.box = MeasureBox(self.viewport())
         self._near = None
+        self._snapped = None
         self.zooming = False                     # space bar held: left click = zoom out, right click = zoom in
         self.setFocusPolicy(Qt.StrongFocus)
 
@@ -439,15 +456,27 @@ class MarkerView(QGraphicsView):
                 near = (d, i, s_, c)
         return near
 
-    def _snap(self, p):
-        """Snap to the nearest piece corner within a few pixels."""
+    SNAP_CORNER, SNAP_EDGE = 18, 9                   # screen pixels
+
+    def snap(self, p):
+        """Where a click at p (scene mm) lands: a corner / end point of a piece within SNAP_CORNER pixels, else
+        the nearest point on a piece line within SNAP_EDGE pixels, else p. Returns (point, kind)."""
+        px = 1 / (self.transform().m11() or 1.0)
         best = None
         for pc in (self.marker or {}).get("pieces", []):
-            for v in pc["cut"]:
+            for v in pc.get("corners") or []:
                 d = math.dist(v, p)
-                if d <= self._tol() and (best is None or d < best[0]):
+                if d <= self.SNAP_CORNER * px and (best is None or d < best[0]):
                     best = (d, v)
-        return best[1] if best else p
+        if best:
+            return best[1], "corner"
+        n = self._near_edge(p)
+        if n and n[0] <= self.SNAP_EDGE * px:
+            return n[3], "edge"
+        return p, None
+
+    def _snap(self, p):
+        return self.snap(p)[0]
 
     def measure_click(self, p):
         """One click of the measuring tools at scene point p (millimetres)."""
@@ -463,9 +492,12 @@ class MarkerView(QGraphicsView):
                 self.meas.update(value=d, text=f"{d / 10:.1f} cm", extra=f"ΔX {dx / 10:.1f}  ΔY {dy / 10:.1f} cm")
                 self.measured.emit(self.meas["text"])
         else:
+            q, kind = self.snap(p)
+            if kind is None:
+                q = p
             near = None
             for i, pc in enumerate(self.marker["pieces"]):
-                d, s_, c = nearest_on_contour(pc["cut"], p)
+                d, s_, c = nearest_on_contour(pc["cut"], q)
                 if d <= self._tol() and (near is None or d < near[0]):
                     near = (d, i, s_, c)
             if near is None:
@@ -541,10 +573,13 @@ class MarkerView(QGraphicsView):
         p = self.mapToScene(e.position().toPoint())
         self._cursor = p
         self._near = None
-        if self.tool and self.marker:                     # magnifier near a piece line
+        self._snapped = None
+        if self.tool and self.marker:                     # magnifier near a piece line; where a click would land
             n = self._near_edge((p.x(), p.y()))
             if n and n[0] <= self._tol() * 3:
                 self._near = n
+            q, kind = self.snap((p.x(), p.y()))
+            self._snapped = (q, kind) if kind else None
         self.cursor_moved.emit(p.x(), p.y())
         self.viewport().update()
         super().mouseMoveEvent(e)
@@ -586,6 +621,19 @@ class MarkerView(QGraphicsView):
                 p.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
                 y += s
 
+    def _draw_snap(self, p: QPainter, c):
+        """The point a click would take: a square on a corner / end point, a circle on a piece line."""
+        if not (self.tool and self.marker and self._snapped):
+            return
+        q, kind = self._snapped
+        v = self.mapFromScene(QPointF(*q))
+        p.setPen(QPen(c["ok"], 2))
+        p.setBrush(Qt.NoBrush)
+        if kind == "corner":
+            p.drawRect(QRectF(v.x() - 6, v.y() - 6, 12, 12))
+        else:
+            p.drawEllipse(QPointF(v), 6, 6)
+
     def _draw_measure(self, p: QPainter, c):
         m = self.meas
         if not m or not self.marker or not m.get("text"):
@@ -597,7 +645,8 @@ class MarkerView(QGraphicsView):
         p.setPen(pen)
         way = m.get("way") or m.get("pts", [])
         if m.get("kind") == "line" and len(m["pts"]) == 1 and self._cursor is not None:
-            way = [m["pts"][0], (self._cursor.x(), self._cursor.y())]          # rubber band to the cursor
+            end = self._snapped[0] if self._snapped else (self._cursor.x(), self._cursor.y())
+            way = [m["pts"][0], end]                                        # rubber band to where it would land
         for a, b in zip(way, way[1:]):
             p.drawLine(v(a), v(b))
         p.setBrush(c["warn"])
@@ -632,10 +681,13 @@ class MarkerView(QGraphicsView):
         self.scene().render(p, target, src, Qt.IgnoreAspectRatio)
         to = lambda q: QPointF(target.center().x() + (q[0] - self._cursor.x()) * k,
                                target.center().y() + (q[1] - self._cursor.y()) * k)
-        snap = self._snap((self._cursor.x(), self._cursor.y())) if self.tool == "line" else self._near[3]
-        p.setPen(QPen(c["warn"], 2))
+        q, kind = self._snapped or (self._near[3], "edge")
+        p.setPen(QPen(c["ok"], 2))
         p.setBrush(Qt.NoBrush)
-        p.drawEllipse(to(snap), 5, 5)
+        if kind == "corner":
+            p.drawRect(QRectF(to(q).x() - 6, to(q).y() - 6, 12, 12))
+        else:
+            p.drawEllipse(to(q), 6, 6)
         p.setPen(QPen(c["text"], 1))
         ctr = target.center()
         p.drawLine(QPointF(ctr.x() - 9, ctr.y()), QPointF(ctr.x() + 9, ctr.y()))
@@ -655,6 +707,7 @@ class MarkerView(QGraphicsView):
             p.setFont(QFont(themes.FAMILY["name"], 11))
             p.drawText(vp, Qt.AlignCenter, self.message or tr("Choose an order line in the browser"))
         self._draw_measure(p, c)
+        self._draw_snap(p, c)
         self._draw_loupe(p, c)
         cur = self.mapFromScene(self._cursor) if self._cursor is not None and self.marker else None
         if cur is not None:

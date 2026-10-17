@@ -146,6 +146,12 @@ def test_window_shows_the_selected_marker(ws, tmp_path):
     app.processEvents()
 
 
+def test_snap_to_corners_first_then_edges():
+    from level7mtm.ui.cad import sharp_corners
+    curve = [(0, 0), (50, 1), (100, 3), (150, 6), (200, 10), (200, 100), (0, 100)]   # gentle curve on top
+    assert sharp_corners(curve) == [(0, 0), (200, 10), (200, 100), (0, 100)]          # steps of the curve are not
+
+
 def test_measuring_geometry():
     from level7mtm.ui.cad import arc_between, contour_length, nearest_on_contour
     sq = [(0, 0), (100, 0), (100, 50), (0, 50)]
@@ -172,6 +178,11 @@ def test_measure_tools_on_the_marker(tmp_path):
     app.processEvents()
     v = panel.view
     panel.use_tool("line")
+    v.zoom(6)                                                        # about 2 px per mm, as on a real marker
+    px = 1 / v.transform().m11()
+    assert v.snap((5 * px, 4 * px)) == ((0.0, 0.0), "corner")            # near the corner: on it
+    assert v.snap((50, 3 * px))[1] == "edge" and v.snap((50, 3 * px))[0][1] == 0   # near a line: on the line
+    assert v.snap((50, 25))[1] is None                                  # in the middle: where it is
     v.measure_click((0.3, 0.2))                                      # snaps to the corner (0, 0)
     v.measure_click((100, 50))
     assert v.meas["text"] == "11.2 cm" and panel.hud_measure[0].isVisible()      # in centimetres
