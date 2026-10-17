@@ -1325,6 +1325,17 @@ class GrafisPage(Page):
                 self.start(d)
         self.refresh()
 
+    def start_saved(self):
+        """Switch the watch on again with the folder chosen before (no dialog); ask only when there is none."""
+        if self.watcher:
+            return
+        d = self.ws.db.get_setting("grafis.watch.folder")
+        if d and os.path.isdir(d):
+            self.start(d)
+            self.refresh()
+        else:
+            self.toggle()
+
     def start(self, folder):
         from ..services.grafis_orders import settings as gsettings
         from ..services.mdl_intake import register_mdl
@@ -2335,6 +2346,15 @@ PAGES = [_BY_TITLE[t] for _, items in SECTIONS for t, _ in items]
 
 # ---------------------------------------------------------------- window
 
+class _ClickLabel(QLabel):
+    def __init__(self, on_click):
+        super().__init__()
+        self._on_click = on_click
+
+    def mousePressEvent(self, e):
+        self._on_click()
+
+
 class MainWindow(QMainWindow):
     """CAD workstation: menu, ribbon (tools in the order of the work), order browser, the marker canvas and the
     work screens as tabs, properties inspector, status bar with the state of the chain."""
@@ -2522,7 +2542,9 @@ class MainWindow(QMainWindow):
         self._sb_widgets = []
         for key, text in (("grafis", "GRAFIS"), ("nesting", "LEVEL7 Nesting"), ("robot", tr("GRAFIS robot")),
                           ("watch", tr("Folder watch"))):
-            w = QLabel()
+            w = _ClickLabel(lambda k=key: self._light_clicked(k))
+            w.setCursor(Qt.PointingHandCursor)
+            w.setToolTip(tr("Click: switch on / set up"))
             w.setProperty("label", text)
             self.sb_items[key] = w
             sb.addPermanentWidget(w)
@@ -2534,6 +2556,16 @@ class MainWindow(QMainWindow):
             w.setStyleSheet("font-family: Consolas, 'DejaVu Sans Mono', monospace;")
             sb.addPermanentWidget(w)
             self._sb_widgets.append(w)
+
+    def _light_clicked(self, key):
+        gp = self.pages["GRAFIS markers"]
+        if key == "watch" and gp.watcher is None:
+            gp.start_saved()
+            self.refresh_cad(force=True)
+            if gp.watcher is not None:
+                self.status(f"{tr('Folder watch')}: {tr('watching')} {self.ws.db.get_setting('grafis.watch.folder')}")
+            return
+        self.open_setup()
 
     def _status_lights(self):
         from ..services.auto_cut import NestingNotConfigured, nesting_command
@@ -2583,6 +2615,9 @@ class MainWindow(QMainWindow):
         if row is not None and marker is None:
             msg = (tr("No marker yet") + " — " + tr(cad.STAGE_TEXT[row["stage"]])
                    + ("\n" + row["problems"][0] if row["problems"] else ""))
+            if row["stage"] in ("grafis", "nest") and self.pages["GRAFIS markers"].watcher is None:
+                msg += "\n\n⚠ " + tr("Folder watch is off: the robot and the saved GRAFIS files wait. "
+                                        "Click «Folder watch» in the status bar to switch it on.")
         self.marker.set_marker(marker, row, msg)
         if row is not None:
             self.browser.add_pieces(row["rid"], marker)

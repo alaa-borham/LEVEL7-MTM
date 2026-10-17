@@ -101,6 +101,14 @@ def test_window_shows_the_selected_marker(ws, tmp_path):
     finally:
         QMessageBox.exec = monkey_exec
     assert shown and "GRAFIS model (MDL) not set" in shown[0]                    # the result is said, not hidden
+    scb = tmp_path / "SCB"
+    scb.mkdir()
+    ws.db.set_setting("grafis.watch.folder", str(scb))
+    gp = win.pages["GRAFIS markers"]
+    assert gp.watcher is None
+    win._light_clicked("watch")                                                    # red light clicked: watch on
+    assert gp.watcher is not None and ws.db.get_setting("grafis.watch.enabled")
+    gp.timer.stop()
     win.toggle_theme()                                                             # rebuild keeps working
     win.close()
     app.processEvents()

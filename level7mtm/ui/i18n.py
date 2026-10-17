@@ -391,6 +391,8 @@ AR = {
     "Write again": "كتابة من جديد",
     "Open in GRAFIS": "فتح في GRAFIS",
     "Close": "إغلاق",
+    "Click: switch on / set up": "اضغط: تشغيل / إعداد",
+    "Folder watch is off: the robot and the saved GRAFIS files wait. Click «Folder watch» in the status bar to switch it on.": "مراقبة المجلدات متوقفة: الروبوت وملفات GRAFIS المحفوظة تنتظر. اضغط «مراقبة المجلدات» في شريط الحالة أسفل النافذة لتشغيلها.",
 }
 
 
