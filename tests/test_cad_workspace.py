@@ -91,6 +91,16 @@ def test_window_shows_the_selected_marker(ws, tmp_path):
     assert win.current_page() is win.pages["GRAFIS markers"]
     win.tabs.setCurrentIndex(0)
     assert win.current_page() is None
+    from PySide6.QtWidgets import QMessageBox
+    shown = []
+    monkey_exec = QMessageBox.exec
+    QMessageBox.exec = lambda self: shown.append(self.text()) or 0
+    try:
+        win.model_result(rev["line_number"], rev["id"], {"status": "blocked", "path": None,
+                                                         "problems": ["GRAFIS model (MDL) not set"]})
+    finally:
+        QMessageBox.exec = monkey_exec
+    assert shown and "GRAFIS model (MDL) not set" in shown[0]                    # the result is said, not hidden
     win.toggle_theme()                                                             # rebuild keeps working
     win.close()
     app.processEvents()

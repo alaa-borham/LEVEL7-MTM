@@ -122,8 +122,9 @@ def plan_values(ws, rid: int, template: str) -> dict:
             "part_rows": part_rows, "parts_note": parts_note}
 
 
-def order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = None) -> dict:
-    """Write the order's MDL. Returns {status: written / duplicate / blocked / not_configured / skipped, ...}."""
+def order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = None, force: bool = False) -> dict:
+    """Write the order's MDL. Returns {status: written / duplicate / blocked / not_configured / skipped, ...}.
+    ``force``: write again although the same model was written before (the owner asked for it)."""
     st = settings(ws)
     template = template or st["template"]
     out_dir = out_dir or st["out"]
@@ -142,7 +143,7 @@ def order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = N
     path = os.path.join(out_dir, mdl_name(ws, rev))
     dup = ws.db.one("SELECT * FROM grafis_orders WHERE revision_id=? AND status='written' AND template_sha256=? "
                     "AND archived=0 ORDER BY id DESC", (rid, tsha))
-    if dup and dup["path"] == path and os.path.exists(path):
+    if dup and not force and dup["path"] == path and os.path.exists(path):
         res.update(json.loads(dup["info"]), status="duplicate", path=path)
         return res
     try:

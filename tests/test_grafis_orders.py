@@ -73,6 +73,7 @@ def test_order_import_writes_grafis_models(ws, tmp_path):
     assert x[8].default == 360 and "002/X8 front width 1" in g["inactive"]
     assert check_all(read(g["path"]))[0] == check_all(read(g["path"]))[1]
     assert order_mdl(ws, g["revision_id"])["status"] == "duplicate"
+    assert order_mdl(ws, g["revision_id"], force=True)["status"] == "written"     # "write again" button
     row = ws.db.one("SELECT * FROM grafis_orders WHERE status='written' ORDER BY id LIMIT 1")
     assert json.loads(row["info"])["rows"][0]["source"] == "FL"
 

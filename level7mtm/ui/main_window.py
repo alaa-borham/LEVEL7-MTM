@@ -1161,8 +1161,8 @@ class GrafisPage(Page):
                                         [r["line_number"] for r in revs], 0, False)
         if ok:
             rid = next(r["id"] for r in revs if r["line_number"] == line)
-            self.win.run(lambda: order_mdl(self.ws, rid), lambda g: (self.refresh(), self.win.status(
-                f"{line}: {tr(g['status'])} {g['path'] or ''} {'; '.join(g['problems'])}"[:300])))
+            self.win.run(lambda: order_mdl(self.ws, rid), lambda g: (self.refresh(), self.win.refresh_cad(force=True),
+                                                                     self.win.model_result(line, rid, g)))
 
     def choose_cli(self):
         p, _ = QFileDialog.getOpenFileName(self, tr("LEVEL7 Nesting program…"), r"C:\Program Files\LEVEL7 Nesting",
@@ -2619,14 +2619,55 @@ class MainWindow(QMainWindow):
         elif r is not None:
             QMessageBox.information(self, "LEVEL7 Nesting", tr("This row has no marker yet"))
 
-    def write_model(self):
+    def write_model(self, force=False):
+        """Write the GRAFIS model of the order selected in the browser and say what happened."""
         from ..services.grafis_orders import order_mdl
         r = self.sel_row
         if r is None:
             self.pages["GRAFIS markers"].write_mdl()
             return
-        self.run(lambda: order_mdl(self.ws, r["rid"]), lambda g: (self.refresh_cad(force=True), self.status(
-            f"{r['line']}: {tr(g['status'])} {g['path'] or ''} {'; '.join(g['problems'])}"[:300])))
+        rid, line = r["rid"], r["line"]
+        self.run(lambda: order_mdl(self.ws, rid, force=force is True),
+                 lambda g: (self.refresh_cad(force=True), self.pages["GRAFIS markers"].refresh(),
+                            self.model_result(line, rid, g)))
+
+    def model_result(self, line, rid, g):
+        """The outcome of writing a GRAFIS model, with the next step as buttons."""
+        from ..services.grafis_orders import order_mdl
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("Write model"))
+        path = g.get("path") or ""
+        if g["status"] == "written":
+            box.setIcon(QMessageBox.Information)
+            box.setText(f"{tr('The GRAFIS model of the order line was written')}: {line}\n\n{path}\n\n"
+                        f"{tr('Next: GRAFIS calculates the pieces and saves (robot or by hand).')}")
+        elif g["status"] == "duplicate":
+            box.setIcon(QMessageBox.Information)
+            box.setText(f"{tr('This model was already written with the same values; it is waiting for GRAFIS')}:"
+                        f"\n\n{path}")
+        else:
+            box.setIcon(QMessageBox.Warning)
+            box.setText(f"{tr('The model was not written')} ({tr(g['status'])}): {line}\n\n"
+                        + "\n".join("• " + p for p in g.get("problems", [])[:12]))
+        again = box.addButton(tr("Write again"), QMessageBox.ActionRole) if g["status"] == "duplicate" else None
+        opened = box.addButton(tr("Open in GRAFIS"), QMessageBox.ActionRole) if path and os.path.isfile(path) else None
+        robot = box.addButton(tr("Robot: run now"), QMessageBox.ActionRole) if g["status"] in ("written", "duplicate") \
+            else None
+        box.addButton(tr("Close"), QMessageBox.RejectRole)
+        box.exec()
+        b = box.clickedButton()
+        if b is None:
+            return
+        if b is again:
+            self.run(lambda: order_mdl(self.ws, rid, force=True),
+                     lambda g2: (self.refresh_cad(force=True), self.model_result(line, rid, g2)))
+        elif b is opened:
+            if hasattr(os, "startfile"):
+                os.startfile(path)                   # .mdl opens in GRAFIS
+            else:
+                QMessageBox.information(self, "GRAFIS", path)
+        elif b is robot:
+            self.pages["GRAFIS markers"].robot_now()
 
     def open_details(self):
         if self.sel_row is not None:

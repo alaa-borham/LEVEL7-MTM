@@ -384,6 +384,13 @@ AR = {
     "Whole marker": "الماركر كاملًا",
     "Efficiency": "الكفاءة",
     "The order": "الطلب",
+    "The GRAFIS model of the order line was written": "تمت كتابة موديل GRAFIS للبند",
+    "Next: GRAFIS calculates the pieces and saves (robot or by hand).": "الخطوة التالية: يحسب GRAFIS القطع ثم يحفظ (بالروبوت أو يدويًا).",
+    "This model was already written with the same values; it is waiting for GRAFIS": "هذا الموديل مكتوب من قبل بنفس القيم، وهو بانتظار GRAFIS",
+    "The model was not written": "لم يُكتب الموديل",
+    "Write again": "كتابة من جديد",
+    "Open in GRAFIS": "فتح في GRAFIS",
+    "Close": "إغلاق",
 }
 
 
