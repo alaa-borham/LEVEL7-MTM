@@ -255,3 +255,28 @@ def test_order_model_names_drop_invisible_marks(ws, tmp_path):
     names = sorted(mdl_name(ws, ws.revision(r["id"])) for r in ws.list_revisions())
     assert names == ["Order-9-53-1_2__9-53-1_2.mdl", "Order-9-53-1_2__9-53-2_2.mdl"]
     assert all(n.isascii() for n in names)
+
+
+@needs_mdl
+def test_codes_on_a_part_the_model_lacks_are_carried_over(ws):
+    """A customer copied from another whose main part had another number: his model shows no XML codes; they are
+    found on the other part and moved by X name (else X number), an X with codes keeping its own."""
+    import copy
+
+    from level7mtm.services.xtable import carry_codes, codes_elsewhere, x_table
+    before = {r["x"]: r["codes"] for r in x_table(ws, MDL, 2)}
+    _, cat = ws.active("catalog")
+    cat = copy.deepcopy(cat)
+    st = next(iter(next(iter(cat["products"].values()))["styles"].values()))
+    for r in st["rules"]:
+        if r["source"]["type"] == "measurement" and r["target"]["piece"] == "002":
+            r["target"]["piece"] = "007"
+    cat["version"] = "9.0.0"
+    ws.set_active("catalog", ws.save_document("catalog", cat, "test"))
+    assert all(not r["codes"] for r in x_table(ws, MDL, 2))
+    assert codes_elsewhere(ws, MDL) == {"007": sum(1 for c in before.values() if c)}
+    out = carry_codes(ws, MDL, "007", 2)
+    assert out["catalog_version"] and not out["left"]
+    assert {r["x"]: r["codes"] for r in x_table(ws, MDL, 2)} == before
+    assert codes_elsewhere(ws, MDL) == {}
+    assert carry_codes(ws, MDL, "007", 2)["moved"] == []

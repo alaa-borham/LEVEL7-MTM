@@ -2075,6 +2075,22 @@ class XValuesPage(Page):
         self.info = QLabel()
         self.info.setWordWrap(True)
         lay.addWidget(self.info)
+        self.carry = QWidget()                          # XML codes held on a part number this model has not
+        cl = QHBoxLayout(self.carry)
+        cl.setContentsMargins(0, 0, 0, 0)
+        self.carry_note = QLabel()
+        self.carry_note.setWordWrap(True)
+        self.carry_note.setStyleSheet("color:#b26a00;font-weight:bold")
+        cl.addWidget(self.carry_note, 1)
+        self.carry_from, self.carry_to = QComboBox(), QComboBox()
+        cl.addWidget(self.carry_from)
+        cl.addWidget(QLabel("→"))
+        cl.addWidget(self.carry_to)
+        b = QPushButton(tr("Move the XML codes"))
+        b.clicked.connect(self.carry_codes)
+        cl.addWidget(b)
+        self.carry.hide()
+        lay.addWidget(self.carry)
         top = QHBoxLayout()
         top.addWidget(QLabel(tr("Part")))
         self.part = QComboBox()
@@ -2135,7 +2151,48 @@ class XValuesPage(Page):
         i = self.part.findData(cur if cur is not None else self.ALL)
         self.part.setCurrentIndex(max(i, 0))
         self.part.blockSignals(False)
+        self._fill_carry(mdl)
         self.load()
+
+    def _fill_carry(self, mdl):
+        """Codes saved on a part number this model has not (copied from another customer's model): offer to move
+        them onto this model's part."""
+        from ..services.xtable import codes_elsewhere
+        try:
+            other = codes_elsewhere(self.ws, mdl) if mdl and self.part_names else {}
+        except Exception:  # noqa: BLE001
+            other = {}
+        self.carry.setVisible(bool(other))
+        if not other:
+            return
+        self.carry_note.setText(tr("XML codes are saved on part {parts}, which is not in this model — move them "
+                                   "to the part of this model:").format(
+            parts=", ".join(f"{p} ({n} X)" for p, n in other.items())))
+        self.carry_from.clear()
+        for p, n in other.items():
+            self.carry_from.addItem(f"{p} ({n} X)", p)
+        self.carry_to.clear()
+        for num, name in sorted(self.part_names.items()):
+            self.carry_to.addItem(f"{num:03d} {name.strip()}", num)
+
+    def carry_codes(self):
+        from ..services.xtable import carry_codes
+        src, dst, mdl = self.carry_from.currentData(), self.carry_to.currentData(), self._mdl()
+        if src is None or dst is None or not mdl:
+            return
+        try:
+            out = carry_codes(self.ws, mdl, src, dst)
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(self, tr("Error"), str(e))
+            return
+        msg = tr("{n} X moved").format(n=len(out["moved"]))
+        if out["catalog_version"]:
+            msg += f" — {tr('Rules')} {out['catalog_version']}"
+        if out["left"]:
+            msg += "\n" + tr("Not moved (no X of the same name or number, or it has codes already)") + ": " + \
+                ", ".join(out["left"])
+        QMessageBox.information(self, tr("Move the XML codes"), msg)
+        self.refresh()
 
     def load(self):
         from ..services.xtable import x_table

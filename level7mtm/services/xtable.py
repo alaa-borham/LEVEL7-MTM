@@ -138,3 +138,66 @@ def _save_tables(ws, cat, st, new_codes, note) -> dict:
     if map_pk:
         ws.set_active("mapping", map_pk)
     return out
+
+
+def codes_elsewhere(ws, mdl_path: str) -> dict[str, int]:
+    """{piece: number of X with XML codes} for the parts that hold codes but are not an X table of this model —
+    e.g. a new customer copied from another whose model numbers its main part 002 while his own uses 007."""
+    _, cat = ws.active("catalog")
+    here = {f"{p:03d}" for p in x_parts(mdl_path)}
+    out: dict[str, set] = {}
+    for r in _style(cat)["rules"]:
+        if r["source"]["type"] == "measurement" and r["target"]["piece"] not in here:
+            out.setdefault(r["target"]["piece"], set()).add(r["target"]["variable"])
+    return {p: len(v) for p, v in sorted(out.items())}
+
+
+def _norm(name: str) -> str:
+    return re.sub(r"[\s\-_]+", " ", (name or "").strip().lower())
+
+
+def carry_codes(ws, mdl_path: str, from_piece: str, to_part: int, note: str | None = None) -> dict:
+    """Move the XML codes of ``from_piece`` to the X values of ``to_part`` of this model: an X of the same name
+    in GRAFIS, else the same X number. An X that has codes already keeps them. Returns {moved: [(from X, to X)],
+    left: [X], catalog_version}; nothing is saved when nothing moves."""
+    _, cat = ws.active("catalog")
+    cat = copy.deepcopy(cat)
+    st = _style(cat)
+    table = read_xvalues(mdl_path, to_part)
+    piece = f"{to_part:03d}"
+    by_name: dict[str, list[int]] = {}
+    for num, xv in table.items():
+        by_name.setdefault(_norm(xv.name), []).append(num)
+    taken = {r["target"]["variable"] for r in st["rules"]
+             if r["source"]["type"] == "measurement" and r["target"]["piece"] == piece}
+    src = [r for r in st["rules"] if r["source"]["type"] == "measurement" and r["target"]["piece"] == from_piece]
+    plan: dict[str, int | None] = {}
+    for var in sorted({r["target"]["variable"] for r in src}, key=lambda v: int(v[1:]) if v[1:].isdigit() else 0):
+        name = next((_norm(r["target"].get("x_name", "")) for r in src if r["target"]["variable"] == var
+                     and r["target"].get("x_name")), "")
+        same = by_name.get(name, []) if name else []
+        num = same[0] if len(same) == 1 else (int(var[1:]) if var[1:].isdigit() and int(var[1:]) in table
+                                                else None)
+        plan[var] = num if num is not None and f"X{num}" not in taken else None
+        if plan[var] is not None:
+            taken.add(f"X{num}")
+    moved = [(v, f"X{n}") for v, n in plan.items() if n is not None]
+    out = {"moved": moved, "left": [v for v, n in plan.items() if n is None], "catalog_version": None}
+    if not moved:
+        return out
+    ids = {r["id"] for r in st["rules"]}
+    for r in src:
+        n = plan.get(r["target"]["variable"])
+        if n is None:
+            continue
+        r["target"] = dict(r["target"], piece=piece, variable=f"X{n}", x_name=table[n].name)
+        rid = f"X{piece}_{n}_{r['source']['code']}"
+        if rid not in ids:
+            ids.discard(r["id"])
+            r["id"] = rid
+            ids.add(rid)
+    cat["version"] = _next_version(ws, "catalog", cat["catalog_id"], str(cat["version"]))
+    ws.set_active("catalog", ws.save_document("catalog", cat, note or f"XML codes moved from part {from_piece} "
+                                                                         f"to part {piece}"))
+    out["catalog_version"] = cat["version"]
+    return out

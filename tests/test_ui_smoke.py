@@ -121,6 +121,37 @@ def test_x_value_row_turns_active_when_a_code_is_typed(ws):
     app.processEvents()
 
 
+def test_size_table_offers_to_move_codes_of_a_part_the_model_lacks(ws, monkeypatch):
+    from conftest import MDL
+    if not os.path.exists(MDL):
+        pytest.skip("customer MDL not in the checkout")
+    import copy
+
+    from PySide6.QtWidgets import QMessageBox
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ws.db.set_setting("grafis.mdl", MDL)
+    _, cat = ws.active("catalog")
+    cat = copy.deepcopy(cat)
+    st = next(iter(next(iter(cat["products"].values()))["styles"].values()))
+    for r in st["rules"]:
+        if r["target"]["piece"] == "002":
+            r["target"]["piece"] = "007"
+    cat["version"] = "9.0.0"
+    ws.set_active("catalog", ws.save_document("catalog", cat, "test"))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    win = MainWindow(ws)
+    page = win.pages["X values for GRAFIS"]
+    page.refresh()
+    assert not page.carry.isHidden() and page.carry_from.currentData() == "007"
+    page.carry_to.setCurrentIndex(page.carry_to.findData(2))
+    page.carry_codes()
+    assert page.carry.isHidden()
+    assert any(page.t.item(i, 3).text() for i in range(page.t.rowCount()))
+    win.close()
+    app.processEvents()
+
+
 def test_chosen_cutting_folder_and_moving_existing_files(ws, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QFileDialog, QMessageBox
     from level7mtm.ui.main_window import MainWindow

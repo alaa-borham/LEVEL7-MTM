@@ -402,6 +402,12 @@ AR = {
     "Type next to each X the XML code(s) that fill it, e.g. FL or COS,COG. An X without an XML code is inactive. A new XML code is added automatically.":
         "اكتب بجانب كل X رمز XML الذي يملؤه، مثل FL أو COS,COG. أي X بدون رمز XML غير نشط. الرمز الجديد يُضاف تلقائيًا.",
     "inactive": "غير نشط",
+    "Move the XML codes": "نقل رموز XML",
+    "XML codes are saved on part {parts}, which is not in this model — move them to the part of this model:":
+        "رموز XML محفوظة على البارت {parts} وهو غير موجود في هذا الموديل — انقلها إلى بارت هذا الموديل:",
+    "{n} X moved": "تم نقل {n} X",
+    "Not moved (no X of the same name or number, or it has codes already)":
+        "لم يُنقل (لا يوجد X بنفس الاسم أو الرقم، أو له رموز بالفعل)",
     "Updates": "التحديثات",
     "Check for updates…": "البحث عن تحديثات…",
     "Check for updates automatically": "البحث عن التحديثات تلقائيًا",
