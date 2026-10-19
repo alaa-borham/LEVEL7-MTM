@@ -97,3 +97,37 @@ def test_options_page_round_trip(ws):
     assert "kabak_round" in [v["value"] for v in t["sleeve"]["values"]]
     win.close()
     app.processEvents()
+
+
+def test_group_opens_in_its_own_window_save_and_close_or_cancel(ws, monkeypatch):
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    monkeypatch.setattr("level7mtm.ui.main_window.reread_held_question", lambda *a: None)
+    win = MainWindow(ws)
+    page = win.pages["Design options"]
+    page.refresh()
+    row = next(i for i, g in enumerate(page.groups) if g["group"] == "sleeve")
+    page.g.setCurrentCell(row, 0)
+    page.g.cellClicked.emit(row, 0)                                       # a click opens the group's window
+    assert page.gd.isVisible() and page.gf["group"].text() == "sleeve"
+    page.v.item(0, 3).setText("Sleeve Saada; Sleeve Long")
+    page.gf["ar"].setText("الكم الجديد")
+    page._group_save_close()
+    assert not page.gd.isVisible()
+    t = {x["group"]: x for x in option_table(ws)}
+    assert t["sleeve"]["label"]["ar"] == "الكم الجديد" and "Sleeve Long" in t["sleeve"]["values"][0]["erp_names"]
+    ver = ws.active("catalog")[1]["version"]
+    assert page.save() and ws.active("catalog")[1]["version"] == ver     # nothing changed: no new version
+    page.g.cellClicked.emit(row, 0)
+    page.gf["ar"].setText("x")
+    page.gd.reject()                                                      # Cancel: unchanged
+    assert next(g for g in page.groups if g["group"] == "sleeve")["label"]["ar"] == "الكم الجديد"
+    n = len(page.groups)
+    page.add_group()
+    assert len(page.groups) == n + 1 and page.gd.isVisible()
+    page.gd.reject()                                                      # a new group cancelled is gone
+    assert len(page.groups) == n
+    win.close()
+    app.processEvents()

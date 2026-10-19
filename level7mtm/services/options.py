@@ -46,6 +46,7 @@ def save_options(ws, groups: list[dict], note: str = "design options edited") ->
     _, cat = ws.active("catalog")
     _, prof = ws.active("mapping")
     cat, prof = copy.deepcopy(cat), copy.deepcopy(prof)
+    before = copy.deepcopy(cat)
     st = _style(cat)
     new_groups, settings, seen_erp = {}, {}, {}
     for g in groups:
@@ -106,6 +107,8 @@ def save_options(ws, groups: list[dict], note: str = "design options edited") ->
                 omap[n.strip()] = {"group": g["group"], "value": v["value"], **({"label": v["label"]}
                                                                                  if v.get("label") else {})}
     out = {"catalog_version": None, "mapping_version": None}
+    if cat == before and omap == prof["options"].get("map", {}):
+        return out                                      # nothing changed: no new version
     if omap != prof["options"].get("map", {}):
         prof["options"]["map"] = omap
         prof["version"] = _next_version(ws, "mapping", prof["profile_id"], str(prof["version"]))

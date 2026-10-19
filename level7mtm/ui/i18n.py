@@ -404,6 +404,8 @@ AR = {
     "inactive": "غير نشط",
     "Move the XML codes": "نقل رموز XML",
     "for each product": "لكل منتج",
+    "click a group to set its values": "اضغط على مجموعة لضبط قيمها",
+    "Variations in this customer's XML files without a meaning": "Variations في ملفات XML لهذا العميل بدون معنى",
     "Patterns are set for each product of this customer": "البترونات تُضبط لكل منتج من منتجات هذا العميل",
     "XML codes are saved on part {parts}, which is not in this model — move them to the part of this model:":
         "رموز XML محفوظة على البارت {parts} وهو غير موجود في هذا الموديل — انقلها إلى بارت هذا الموديل:",

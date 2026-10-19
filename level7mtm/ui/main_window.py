@@ -2,6 +2,7 @@
 worker thread so the window never freezes."""
 from __future__ import annotations
 
+import copy
 import json
 import os
 import re
@@ -1751,40 +1752,66 @@ class OptionsPage(Page):
         self.unlinked_label = QLabel()                   # Variations of this customer's XML files with no meaning
         self.unlinked_label.setWordWrap(True)
         lay.addWidget(self.unlinked_label)
+        lay.addWidget(QLabel(tr("Option groups") + " — " + tr("click a group to set its values")))
+        self.g = QTableWidget(0, len(self.GCOLS))
+        self.g.setHorizontalHeaderLabels([tr(c) for c in self.GCOLS])
+        self.g.horizontalHeader().setStretchLastSection(True)
+        self.g.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.g.setEditTriggers(QAbstractItemView.NoEditTriggers)     # edited in the group's own window
+        self.g.currentCellChanged.connect(lambda r, c, pr, pc: self._switch(pr, r))
+        self.g.cellClicked.connect(lambda r, c: self.open_group(r))
+        lay.addWidget(self.g, 1)                         # the groups take the page
+        bg = QHBoxLayout()
+        for text, fn in (("Add group", self.add_group), ("Remove group", self.remove_group), ("Save", self.save)):
+            b = QPushButton(tr(text))
+            b.clicked.connect(fn)
+            bg.addWidget(b)
+        bg.addStretch()
+        lay.addLayout(bg)
+        # the window of one group: its names, required / default, its values and their Variation names
+        self.gd = QDialog(self)
+        self.gd.resize(1050, 640)
+        dl = QVBoxLayout(self.gd)
+        form = QFormLayout()
+        self.gf = {k: QLineEdit() for k in ("group", "ar", "en", "default")}
+        for k, label_ in (("group", "Group code"), ("ar", "Name (ar)"), ("en", "Name (en)"),
+                          ("default", "Default value")):
+            form.addRow(tr(label_), self.gf[k])
+        self.gf_required = QCheckBox(tr("Required"))
+        form.addRow("", self.gf_required)
+        dl.addLayout(form)
+        self.unlinked_hint = QLabel()
+        self.unlinked_hint.setWordWrap(True)
+        dl.addWidget(self.unlinked_hint)
         self.unlinked = QListWidget()
         self.unlinked.setFlow(QListWidget.LeftToRight)
         self.unlinked.setWrapping(True)
         self.unlinked.setMaximumHeight(64)
         self.unlinked.setToolTip(tr("Click a name: it is added to the selected value"))
         self.unlinked.itemClicked.connect(self._link)
-        lay.addWidget(self.unlinked)
-        lay.addWidget(QLabel(tr("Option groups")))
-        self.g = QTableWidget(0, len(self.GCOLS))
-        self.g.setHorizontalHeaderLabels([tr(c) for c in self.GCOLS])
-        self.g.horizontalHeader().setStretchLastSection(True)
-        self.g.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.g.currentCellChanged.connect(lambda r, c, pr, pc: self._switch(pr, r))
-        lay.addWidget(self.g, 2)
-        bg = QHBoxLayout()
-        for text, fn in (("Add group", self.add_group), ("Remove group", self.remove_group)):
-            b = QPushButton(tr(text))
-            b.clicked.connect(fn)
-            bg.addWidget(b)
-        bg.addStretch()
-        lay.addLayout(bg)
+        dl.addWidget(self.unlinked)
         self.vlabel = QLabel()
-        lay.addWidget(self.vlabel)
+        dl.addWidget(self.vlabel)
         self.v = QTableWidget(0, len(self.VCOLS))
         self.v.setHorizontalHeaderLabels([tr(c) for c in self.VCOLS])
         self.v.horizontalHeader().setStretchLastSection(True)
-        lay.addWidget(self.v, 3)
+        dl.addWidget(self.v, 1)
         bv = QHBoxLayout()
-        for text, fn in (("Add value", self.add_value), ("Remove value", self.remove_value), ("Save", self.save)):
+        for text, fn in (("Add value", self.add_value), ("Remove value", self.remove_value)):
             b = QPushButton(tr(text))
             b.clicked.connect(fn)
             bv.addWidget(b)
         bv.addStretch()
-        lay.addLayout(bv)
+        dl.addLayout(bv)
+        bb = QDialogButtonBox()
+        ok = bb.addButton(tr("Save and close"), QDialogButtonBox.AcceptRole)
+        ok.setObjectName("primary")
+        ok.clicked.connect(self._group_save_close)
+        bb.addButton(tr("Cancel"), QDialogButtonBox.RejectRole)
+        bb.rejected.connect(self.gd.reject)
+        dl.addWidget(bb)
+        self.gd.rejected.connect(self._group_cancel)
+        self._before = None
         self.groups: list[dict] = []
         self.cur = -1
 
@@ -1808,9 +1835,12 @@ class OptionsPage(Page):
         self.unlinked.clear()
         self.unlinked.addItems(free)
         self.unlinked.setVisible(bool(free))
-        self.unlinked_label.setText(
+        self.unlinked_hint.setText(
             (tr("Variations in this customer's XML files without a meaning — choose a value below, then click a name")
              + ":") if free else tr("Every Variation in this customer's XML files has a meaning"))
+        self.unlinked_label.setText(
+            (tr("Variations in this customer's XML files without a meaning") + ": " + ", ".join(free))
+            if free else tr("Every Variation in this customer's XML files has a meaning"))
 
     def _link(self, item):
         r = self.v.currentRow()
@@ -1833,7 +1863,7 @@ class OptionsPage(Page):
                                      gr["default"]]):
                 it = QTableWidgetItem("" if val is None else val)
                 if j == 3:
-                    it.setFlags((it.flags() | Qt.ItemIsUserCheckable) & ~Qt.ItemIsEditable)
+                    it.setFlags(it.flags() & ~Qt.ItemIsEditable & ~Qt.ItemIsUserCheckable)
                     it.setCheckState(Qt.Checked if gr["required"] else Qt.Unchecked)
                 self.g.setItem(i, j, it)
         self.g.blockSignals(False)
@@ -1900,22 +1930,67 @@ class OptionsPage(Page):
                 self.v.setItem(i, j, it)
         self.v.resizeColumnsToContents()
 
-    def add_group(self):
-        name, ok = QInputDialog.getText(self, tr("Add group"), tr("Name (ar)"))
-        if not ok or not name.strip():
+    def open_group(self, row: int, new: bool = False):
+        """The group in its own window: names, required, default and its values; Save and close or Cancel."""
+        if not (0 <= row < len(self.groups)):
             return
-        self._read_values()
-        en, _ = QInputDialog.getText(self, tr("Add group"), tr("Group code") + " (a-z, 0-9, _)")
+        if self.cur != row:
+            self._switch(self.cur, row)
+        gr = self.groups[row]
+        self._before = (row, copy.deepcopy(gr), new)
+        for k, val in (("group", gr["group"]), ("ar", gr["label"].get("ar", "")), ("en", gr["label"].get("en", "")),
+                       ("default", gr.get("default") or "")):
+            self.gf[k].setText(val)
+        self.gf_required.setChecked(bool(gr.get("required", True)))
+        self.gd.setWindowTitle(f"{tr('Option groups')}: {gr['label'].get('ar') or gr['group']}")
+        self.gd.open()
+
+    def _group_save_close(self):
         from ..services.options import code
-        gc = code(en) or f"group{len(self.groups) + 1}"
+        if self._before is None:
+            return
+        row = self._before[0]
+        gr = self.groups[row]
+        self._read_values()
+        gc = code(self.gf["group"].text().strip())
+        if not gc:
+            QMessageBox.warning(self.gd, tr("Error"), tr("Group code") + " (a-z, 0-9, _)")
+            return
+        gr.update(group=gc, label={"ar": self.gf["ar"].text().strip() or gc, "en": self.gf["en"].text().strip() or gc},
+                  required=self.gf_required.isChecked(), default=code(self.gf["default"].text().strip()))
+        self._fill_groups()
+        if self.save() is False:                          # an error keeps the window open to correct it
+            return
+        self._before = None
+        self.gd.accept()
+
+    def _group_cancel(self):
+        if self._before is None:
+            return
+        row, old, new = self._before
+        self._before = None
+        if new:
+            del self.groups[row]
+        else:
+            self.groups[row] = old
+        self.cur = -1
+        self._fill_groups()
+        self._switch(-1, min(row, len(self.groups) - 1))
+
+    def add_group(self):
+        from ..services.options import code
+        self._read_values()
         for i in range(len(self.groups)):
             self._read_group_row(i)
-        self.groups.append({"group": gc, "label": {"ar": name.strip(), "en": en.strip() or gc}, "required": False,
+        n = len(self.groups) + 1
+        while any(g["group"] == f"group{n}" for g in self.groups):
+            n += 1
+        self.groups.append({"group": code(f"group{n}"), "label": {"ar": "", "en": ""}, "required": False,
                             "default": "", "values": []})
         self.cur = -1
         self._fill_groups()
         self.g.setCurrentCell(len(self.groups) - 1, 0)
-        self._switch(-1, len(self.groups) - 1)
+        self.open_group(len(self.groups) - 1, new=True)
 
     def remove_group(self):
         r = self.g.currentRow()
@@ -1958,6 +2033,9 @@ class OptionsPage(Page):
         except Exception as e:  # noqa: BLE001
             QMessageBox.warning(self, tr("Error"), tr_msg(str(e)))
             return False
+        if not parts_ver and not out["catalog_version"]:
+            self.refresh()
+            return True                                   # nothing changed (e.g. saved already in a group's window)
         msg = f"{tr('Saved')}: {tr('Rules')} {parts_ver or out['catalog_version']}"
         if out["mapping_version"]:
             msg += f"\n{tr('ERP mapping profile')} {out['mapping_version']}"
