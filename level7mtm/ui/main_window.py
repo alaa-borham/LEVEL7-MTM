@@ -2096,7 +2096,7 @@ class GrafisPartsPage(Page):
     """Design option → GRAFIS part (number, material, normal / mirrored copies). The base model may have no
     production part: exactly the parts chosen here (for the order's options) are produced."""
     title = "GRAFIS parts"
-    COLS = ["Design option", "Part number", "Material", "Copies", "Mirrored", ""]
+    COLS = ["Design option", "Part number", "GRAFIS part name", "Material", "Copies", "Mirrored", ""]
 
     def __init__(self, win):
         super().__init__(win)
@@ -2108,7 +2108,7 @@ class GrafisPartsPage(Page):
         lay.addWidget(pattern_bar(self))
         self.t = QTableWidget(0, len(self.COLS))
         self.t.setHorizontalHeaderLabels([tr(c) for c in self.COLS])
-        self.t.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)    # the part takes the width
+        self.t.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)    # the name read from the model
         self.t.verticalHeader().setVisible(False)
         self.t.setColumnHidden(0, True)                  # fixed pieces are for every order; the parts an option
         lay.addWidget(self.t, 1)                         # chooses are typed in Piece options setup
@@ -2151,22 +2151,27 @@ class GrafisPartsPage(Page):
         self.t.insertRow(i)
         oc = QComboBox()
         oc.addItem(tr("always") + " (*)", "*")
-        pc = QComboBox()
-        pc.addItem(tr("— choose the part —"), None)         # nothing picked by itself
-        for n, (name, mat) in sorted(self.parts.items()):
-            if name.strip("*").strip():
-                pc.addItem(f"{n:03d}  {name}", n)
-        if r.get("part") is not None and pc.findData(int(r["part"])) < 0:
-            pc.addItem(f"{int(r['part']):03d}  {r.get('name', '')} ⚠", int(r["part"]))
-        pc.setCurrentIndex(max(pc.findData(int(r["part"])), 0) if r.get("part") is not None else 0)
+        pc = QSpinBox()                               # the part number, typed; its name is read from the model
+        pc.setRange(0, 999)
+        pc.setSpecialValueText("—")                   # 0: no part chosen yet
+        pc.setValue(int(r["part"]) if r.get("part") is not None else 0)
+        nm = QLabel()
+        nm.setContentsMargins(6, 0, 6, 0)
         mc = QComboBox()
         mats = sorted({m for _, m in self.parts.values() if m} | {"O"})
         mc.addItems(mats)
         mc.setCurrentText(r.get("material") or "O")
+
+        def show_name(_=0, pc=pc, nm=nm):
+            n = pc.value()
+            name = (self.parts.get(n) or ("", None))[0].strip()
+            nm.setText(name if name else ("" if not n else "⚠ " + tr("not in the GRAFIS model")))
+            nm.setStyleSheet("" if name or not n else "color:#d97706;")
+        pc.valueChanged.connect(show_name)
+        show_name()
         if not r:                                     # new row: the part's own material
-            pc.currentIndexChanged.connect(lambda _=0, pc=pc, mc=mc: mc.setCurrentText(
-                (self.parts.get(pc.currentData(), ("", None))[1]) or "O"))
-            mc.setCurrentText((self.parts.get(pc.currentData(), ("", None))[1]) or "O")
+            pc.valueChanged.connect(lambda _=0, pc=pc, mc=mc: mc.setCurrentText(
+                (self.parts.get(pc.value(), ("", None))[1]) or "O"))
         cs, ms = QSpinBox(), QSpinBox()
         cs.setRange(0, 99)
         ms.setRange(0, 99)
@@ -2176,12 +2181,12 @@ class GrafisPartsPage(Page):
         rm.setToolTip(tr("Remove row"))
         rm.setFixedWidth(36)
         rm.clicked.connect(lambda _=False, b=rm: self._remove_widget_row(b))
-        for j, w in enumerate((oc, pc, mc, cs, ms, rm)):
+        for j, w in enumerate((oc, pc, nm, mc, cs, ms, rm)):
             self.t.setCellWidget(i, j, w)
 
     def _remove_widget_row(self, button):
         for i in range(self.t.rowCount()):            # rows move up when one above is removed: find it now
-            if self.t.cellWidget(i, 5) is button:
+            if self.t.cellWidget(i, 6) is button:
                 self.t.removeRow(i)
                 return
 
@@ -2192,11 +2197,11 @@ class GrafisPartsPage(Page):
     def rows(self) -> list[dict]:
         out = []
         for i in range(self.t.rowCount()):
-            w = [self.t.cellWidget(i, j) for j in range(5)]
-            if w[1].currentData() is None:
+            w = [self.t.cellWidget(i, j) for j in range(6)]
+            if not w[1].value():
                 continue
-            out.append({"option": w[0].currentData(), "part": int(w[1].currentData()), "material": w[2].currentText(),
-                        "copies": w[3].value(), "mirrored": w[4].value()})
+            out.append({"option": w[0].currentData(), "part": w[1].value(), "material": w[3].currentText(),
+                        "copies": w[4].value(), "mirrored": w[5].value()})
         return out
 
     def save(self):

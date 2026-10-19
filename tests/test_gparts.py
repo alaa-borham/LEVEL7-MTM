@@ -66,15 +66,16 @@ def test_parts_page_round_trip(ws, base_off, monkeypatch):
     page.refresh()
     assert page.t.rowCount() == 0                                     # an option's parts: in Piece options only
     page.add_row({})
-    w = [page.t.cellWidget(0, j) for j in range(5)]
-    w[1].setCurrentIndex(w[1].findData(17))
-    assert w[2].currentText() == "F"                                  # the part's own material
-    w[4].setValue(0)
+    w = [page.t.cellWidget(0, j) for j in range(6)]
+    w[1].setValue(17)                                                 # the number typed, the name from the model
+    assert w[2].text() and "⚠" not in w[2].text()
+    assert w[3].currentText() == "F"                                  # the part's own material
+    w[5].setValue(0)
     assert page.rows() == [{"option": "*", "part": 17, "material": "F", "copies": 1, "mirrored": 0}]
     page.add_row({})                                                  # a new row picks no part by itself
     assert len(page.rows()) == 1
     page.add_row({"option": "*", "part": 7, "material": "O", "copies": 1, "mirrored": 0})
-    page.t.cellWidget(1, 5).click()                                   # ✕ of the empty row
+    page.t.cellWidget(1, 6).click()                                   # ✕ of the empty row
     assert [r["part"] for r in page.rows()] == [17, 7] and page.t.rowCount() == 2
     monkeypatch.setattr("level7mtm.ui.main_window.reread_held_question", lambda *a: None)
     assert page.save()

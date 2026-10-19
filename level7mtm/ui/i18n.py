@@ -362,6 +362,7 @@ AR = {
     "GRAFIS part": "القطعة في GRAFIS",
     "Part number": "رقم البارت",
     "Pattern to review": "البترون للمراجعة",
+    "not in the GRAFIS model": "غير موجود في موديل GRAFIS",
     "The GRAFIS parts every order has (always in the marker). The parts a design option of the XML chooses are set next to its value in Piece options setup.":
         "بارتات GRAFIS الموجودة في كل طلب (تظهر دائمًا في الماركر). أما البارتات التي يختارها خيار التصميم في XML فتُكتب بجوار قيمته في «ضبط اختيارات القطع».",
     "— choose the part —": "— اختر القطعة —",
