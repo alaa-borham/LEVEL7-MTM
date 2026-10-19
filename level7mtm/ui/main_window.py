@@ -306,10 +306,14 @@ def reread_held_question(page, msg: str) -> None:
 
 def reread_report(ws, outs) -> str:
     """Each file read again, its lines' status and — for a line still held — why (each reason once)."""
+    from ..services.customers import names
+    who = names(ws)
     out = []
     for o in outs:
-        out.append(f"{o.file_name}: {tr(o.status)} " + ", ".join(f"{x['line_number']} → {tr(x['status'])}"
-                                                                for x in o.lines))
+        cust = next((ws.customer_of(x["revision_id"]) for x in o.lines if x.get("revision_id")), None)
+        out.append(f"{o.file_name}: {tr(o.status)} " + (f"({tr('read with the settings of')} {who.get(cust, cust)}) "
+                                                        if cust else "") +
+                   ", ".join(f"{x['line_number']} → {tr(x['status'])}" for x in o.lines))
         if o.message:
             out.append("  " + tr_msg(o.message))
         why: list[str] = []
