@@ -42,9 +42,16 @@ def list_customers(ws) -> list[dict]:
 
 
 def names(ws) -> dict[str, str]:
-    """{id: name} — cheap (no documents read), for lists shown every second."""
-    out = {DEFAULT_CUSTOMER: "LEVEL7"}
-    out.update({r["id"]: r["name"] for r in ws.db.get_setting("customers") or []})
+    """{id: name} — cheap (no documents read), for lists shown every second. A product: "Customer / Product"."""
+    rows = ws.db.get_setting("customers") or []
+    top = {DEFAULT_CUSTOMER: "LEVEL7"}
+    top.update({r["id"]: r["name"] for r in rows if not r.get("parent")})
+    out = {}
+    for cid, n in top.items():                       # each customer, then his products under him
+        out[cid] = n
+        for r in rows:
+            if r.get("parent") == cid:
+                out[r["id"]] = f"{n} / {r['name']}"
     return out
 
 
@@ -59,7 +66,23 @@ def name_of(ws, cid: str | None) -> str:
 
 def _save_list(ws, rows):
     ws.db.set_setting("customers", [{"id": r["id"], "name": r["name"], "reference": r["reference"],
-                                     "reseller": r.get("reseller", "")} for r in rows])
+                                     "reseller": r.get("reseller", ""),
+                                     **({"parent": r["parent"], "item": r.get("item", "")} if r.get("parent") else {})}
+                                    for r in rows])
+
+
+def products(ws, cid: str) -> list[dict]:
+    """The customer's products (each with its Item Number and its own patterns and tables)."""
+    return [c for c in list_customers(ws) if c.get("parent") == cid]
+
+
+def _items_of(ws, cid: str, root) -> list[str]:
+    """The Item Numbers of the order lines of an XML, read with the customer's mapping."""
+    from ..erp.mapping import select, select_one
+    with ws.for_customer(cid):
+        _, prof = ws.active("mapping")
+    L, ns = prof["lines"], prof.get("namespaces", {})
+    return [(select_one(el, L.get("item", "Item/@Number"), ns) or "").strip() for el in select(root, L["path"], ns)]
 
 
 def customer_for_xml(ws, data: bytes) -> tuple[str | None, str]:
@@ -70,19 +93,44 @@ def customer_for_xml(ws, data: bytes) -> tuple[str | None, str]:
     except XmlError:
         return DEFAULT_CUSTOMER, ""
     ref, res = root.attrib.get("Reference"), (root.attrib.get("Reseller") or "").strip()
-    custs = list_customers(ws)
+    everyone = list_customers(ws)
+    custs = [c for c in everyone if not c.get("parent")]
     same = [c for c in custs if c["reference"] == ref]
     exact = [c for c in same if c.get("reseller") and c["reseller"] == res]       # name and reseller both
-    if exact:
-        return exact[0]["id"], ""
     open_ = [c for c in same if not c.get("reseller")]                            # no reseller set: by name
-    if open_:
-        return open_[0]["id"], ""
+    hit = (exact or open_ or [None])[0]
+    if hit is not None:
+        prods = [p for p in everyone if p.get("parent") == hit["id"]]
+        if not prods:
+            return hit["id"], ""
+        items = sorted(set(_items_of(ws, hit["id"], root)))       # the product: by the Item Number of the lines
+        if len(items) > 1:
+            return None, f"the XML has order lines of several products (Item {', '.join(items)}) — one per file"
+        prod = next((p for p in prods if items and p.get("item") == items[0]), None)
+        if prod is None:
+            return None, (f"no product of {hit['name']} has the Item Number '{items[0] if items else ''}' — add it "
+                          f"in Customers (known: {', '.join(p.get('item', '') for p in prods)})")
+        return prod["id"], ""
     if ref is None:
         return DEFAULT_CUSTOMER, ""
     known = ", ".join(f"{c['reference']!r}" + (f"/{c['reseller']}" if c.get("reseller") else "") for c in custs)
     return None, (f"no customer has the XML name Reference='{ref}' with Reseller='{res}' — add the customer "
                   f"in Customers (known: {known})")
+
+
+def add_product(ws, parent: str, name: str, item: str, copy_from: str | None = None, mdl: str | None = None) -> str:
+    """A product of a customer: his XML lines with this Item Number use the product's own patterns and tables
+    (copied from ``copy_from``, default the customer, then changed on their own). Returns its id."""
+    name, item = name.strip(), (item or "").strip()
+    p = get(ws, parent)
+    if p is None or p.get("parent"):
+        raise WorkflowError("choose a customer for the product")
+    if not name or not item:
+        raise WorkflowError("a product needs a name and its Item Number in the XML")
+    if any(c.get("parent") == parent and c.get("item") == item for c in list_customers(ws)):
+        raise WorkflowError(f"the Item Number '{item}' is a product of {p['name']} already")
+    return _create(ws, name, p["reference"], copy_from or parent, mdl, p.get("reseller", ""), parent=parent,
+                   item=item, base=f"{parent}_{item}")
 
 
 def add_customer(ws, name: str, reference: str, copy_from: str = DEFAULT_CUSTOMER, mdl: str | None = None,
@@ -92,10 +140,15 @@ def add_customer(ws, name: str, reference: str, copy_from: str = DEFAULT_CUSTOME
     name, reference, reseller = name.strip(), reference.strip(), (reseller or "").strip()
     if not name or not reference:
         raise WorkflowError("a customer needs a name and his XML name (Reference)")
-    custs = list_customers(ws)
+    custs = [c for c in list_customers(ws) if not c.get("parent")]
     if any(c["reference"] == reference and c.get("reseller", "") == reseller for c in custs):
         raise WorkflowError(f"the XML name '{reference}' belongs to a customer already")
-    base = ID_RE.sub("_", name.lower()).strip("_") or "customer"
+    return _create(ws, name, reference, copy_from, mdl, reseller)
+
+
+def _create(ws, name, reference, copy_from, mdl, reseller, parent=None, item="", base=None) -> str:
+    custs = list_customers(ws)
+    base = ID_RE.sub("_", (base or name).lower()).strip("_") or "customer"
     cid, n = base, 2
     while any(c["id"] == cid for c in custs) or cid == DEFAULT_CUSTOMER:
         cid, n = f"{base}_{n}", n + 1
@@ -115,41 +168,59 @@ def add_customer(ws, name: str, reference: str, copy_from: str = DEFAULT_CUSTOME
         ws.set_active("catalog", ws.save_document("catalog", cat, note))
         if mdl or src_mdl:
             ws.db.set_setting(ws._key("grafis.mdl"), mdl or src_mdl)
-    _save_list(ws, [c for c in custs] + [{"id": cid, "name": name, "reference": reference, "reseller": reseller}])
+    entry = {"id": cid, "name": name, "reference": reference, "reseller": reseller}
+    if parent:
+        entry.update(parent=parent, item=item)
+    _save_list(ws, [c for c in custs] + [entry])
     with ws.db.tx() as c:
-        ws.db.audit(c, ws.actor, "customer.added", "customer", cid, {"name": name, "reference": reference,
-                                                                      "copy_from": copy_from})
+        ws.db.audit(c, ws.actor, "product.added" if parent else "customer.added", "customer", cid,
+                    {"name": name, "reference": reference, "copy_from": copy_from, "item": item})
     return cid
 
 
 def update_customer(ws, cid: str, name: str | None = None, reference: str | None = None,
-                    mdl: str | None = None, reseller: str | None = None) -> None:
-    """Rename, change the XML name (a new version of his mapping profile) or choose his GRAFIS model."""
+                    mdl: str | None = None, reseller: str | None = None, item: str | None = None) -> None:
+    """Rename, change the XML name (a new version of his mapping profile) or choose his GRAFIS model; for a
+    product also its Item Number."""
     custs = list_customers(ws)
     cur = next((c for c in custs if c["id"] == cid), None)
     if cur is None:
         raise WorkflowError(f"customer {cid} not found")
+    if cur.get("parent"):                            # a product: name, Item Number, model (the rest is the customer's)
+        reference = reseller = None
+        if item is not None and item.strip() and item.strip() != cur.get("item"):
+            if any(c.get("parent") == cur["parent"] and c.get("item") == item.strip() and c["id"] != cid
+                   for c in custs):
+                raise WorkflowError(f"the Item Number '{item.strip()}' is a product of this customer already")
+            cur["item"] = item.strip()
     if reference is not None and reference.strip() and reference.strip() != cur["reference"]:
         reference = reference.strip()
-        if any(c["reference"] == reference and c["id"] != cid for c in custs):
+        if any(c["reference"] == reference and c["id"] != cid and not c.get("parent") for c in custs):
             raise WorkflowError(f"the XML name '{reference}' belongs to a customer already")
         from .xtable import _next_version
-        with ws.for_customer(cid):
-            _, prof = ws.active("mapping")
-            prof = copy.deepcopy(prof)
-            prof.setdefault("detect", {}).setdefault("attributes", {})["Reference"] = reference
-            prof["version"] = _next_version(ws, "mapping", prof["profile_id"], prof["version"])
-            ws.set_active("mapping", ws.save_document("mapping", prof, f"XML name of the customer: {reference}"))
+        for one in [cid] + [c["id"] for c in custs if c.get("parent") == cid]:   # his products read it too
+            with ws.for_customer(one):
+                _, prof = ws.active("mapping")
+                prof = copy.deepcopy(prof)
+                prof.setdefault("detect", {}).setdefault("attributes", {})["Reference"] = reference
+                prof["version"] = _next_version(ws, "mapping", prof["profile_id"], prof["version"])
+                ws.set_active("mapping", ws.save_document("mapping", prof, f"XML name of the customer: {reference}"))
+        for c in custs:
+            if c.get("parent") == cid:
+                c["reference"] = reference
         cur["reference"] = reference
     if name is not None and name.strip():
         cur["name"] = name.strip()
     if reseller is not None:
         reseller = reseller.strip()
         if any(c["reference"] == cur["reference"] and c.get("reseller", "") == reseller and c["id"] != cid
-               for c in custs):
+               and not c.get("parent") for c in custs):
             raise WorkflowError(f"the XML name '{cur['reference']}' with Reseller '{reseller}' belongs to a "
                                 f"customer already")
         cur["reseller"] = reseller
+        for c in custs:
+            if c.get("parent") == cid:
+                c["reseller"] = reseller
     if mdl is not None:
         with ws.for_customer(cid):
             ws.db.set_setting(ws._key("grafis.mdl") if cid != DEFAULT_CUSTOMER else "grafis.mdl", mdl)

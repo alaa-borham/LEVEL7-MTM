@@ -2318,13 +2318,14 @@ class CustomersPage(Page):
                          "it names; an XML naming no customer goes to ER."))
         info.setWordWrap(True)
         lay.addWidget(info)
-        self.t = table(["Customer", "XML name (Reference)", "Reseller in the XML", "GRAFIS model (MDL)", "Patterns"])
+        self.t = table(["Customer / product", "XML name (Reference)", "Reseller in the XML", "Item Number",
+                        "GRAFIS model (MDL)", "Patterns"])
         self.t.setMaximumHeight(170)
         self.t.itemSelectionChanged.connect(self._picked)
         lay.addWidget(self.t)
         bar = QHBoxLayout()
-        for text, fn in (("Add customer…", self.add), ("Edit…", self.edit), ("GRAFIS model (MDL)…", self.choose_mdl),
-                         ("Learn from an XML file…", self.learn_xml)):
+        for text, fn in (("Add customer…", self.add), ("Add product…", self.add_product), ("Edit…", self.edit),
+                         ("GRAFIS model (MDL)…", self.choose_mdl), ("Learn from an XML file…", self.learn_xml)):
             b = QPushButton(tr(text))
             b.clicked.connect(fn)
             bar.addWidget(b)
@@ -2407,12 +2408,19 @@ class CustomersPage(Page):
 
     def refresh(self):
         from ..services.customers import list_customers, patterns
-        cs = list_customers(self.ws)
+        every = list_customers(self.ws)
+        cs = []                                          # each customer, his products under him
+        for c in every:
+            if not c.get("parent"):
+                cs.append(c)
+                cs += [p for p in every if p.get("parent") == c["id"]]
         cur = self.ws.customer()
         rows = []
         for c in cs:
             pats = patterns(self.ws, c["id"])
-            rows.append([("● " if c["id"] == cur else "") + c["name"], c["reference"], c.get("reseller") or "—",
+            mark = "● " if c["id"] == cur else ""
+            rows.append([(f"      ↳ {mark}" if c.get("parent") else mark) + c["name"], c["reference"],
+                         c.get("reseller") or "—", c.get("item") or ("—" if not c.get("parent") else ""),
                          os.path.basename(c["mdl"] or "") or tr("not set"),
                          ", ".join(p["variation"] for p in pats) or "—"])
         self.t.blockSignals(True)
@@ -2420,12 +2428,45 @@ class CustomersPage(Page):
         k = next((i for i, c in enumerate(cs) if c["id"] == cur), 0)
         self.t.selectRow(k)
         self.t.blockSignals(False)
-        name = next((c["name"] for c in cs if c["id"] == cur), "")
-        self.head.setText(f"{tr('Settings of')} {name}")
+        from ..services.customers import names
+        self.head.setText(f"{tr('Settings of')} {names(self.ws).get(cur, '')}")
 
     def _cid(self):
         ids = selected_data(self.t)
         return ids[0] if ids else None
+
+    def add_product(self):
+        """A product of the customer chosen (his XML lines with its Item Number use its own patterns and tables)."""
+        from ..services.customers import add_product, get, products
+        cid = self._cid() or self.ws.customer()
+        c = get(self.ws, cid)
+        if c is None:
+            return
+        parent = c.get("parent") or cid
+        pc = get(self.ws, parent)
+        d = QDialog(self)
+        d.setWindowTitle(f"{tr('Add product…')} — {pc['name']}")
+        d.setMinimumWidth(420)
+        f = QFormLayout(d)
+        e_name, e_item = QLineEdit(), QLineEdit()
+        e_item.setPlaceholderText("1001001001")
+        f.addRow(tr("Product") + ":", e_name)
+        f.addRow(tr("Item Number") + ":", e_item)
+        src = QComboBox()
+        for x in [pc] + products(self.ws, parent):
+            src.addItem(x["name"], x["id"])
+        f.addRow(tr("Copy the settings of") + ":", src)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(d.accept)
+        bb.rejected.connect(d.reject)
+        f.addRow(bb)
+        if d.exec() != QDialog.Accepted:
+            return
+        pid = self.win.guard(lambda: add_product(self.ws, parent, e_name.text(), e_item.text(),
+                                                 copy_from=src.currentData()))
+        if pid:
+            self.ws.db.set_setting("ui.customer", pid)
+            self.win.customer_changed()
 
     def _dialog(self, title, name="", ref="", copy_choices=None, reseller=""):
         d = QDialog(self)
@@ -2472,6 +2513,15 @@ class CustomersPage(Page):
         cid = self._cid()
         c = get(self.ws, cid) if cid else None
         if c is None:
+            return
+        if c.get("parent"):                               # a product: its name and Item Number
+            name, ok = QInputDialog.getText(self, tr("Edit…"), tr("Product"), text=c["name"])
+            if not ok:
+                return
+            item, ok = QInputDialog.getText(self, tr("Edit…"), tr("Item Number"), text=c.get("item", ""))
+            if ok:
+                self.win.guard(lambda: update_customer(self.ws, cid, name=name, item=item))
+                self.win.customer_changed()
             return
         got = self._dialog(tr("Edit…"), c["name"], c["reference"], reseller=c.get("reseller", ""))
         if got:

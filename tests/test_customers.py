@@ -270,3 +270,50 @@ def test_learn_takes_the_reseller_of_the_xml(ws, xml53):
     cid = customers.add_customer(ws, "Richy", "From Richy")
     res = learn_from_xml(ws, cid, _xml(xml53, "From Richy"))
     assert res["reseller"] == "9" and customers.get(ws, cid)["reseller"] == "9"
+
+
+def test_products_by_item_number_each_with_its_own_settings(ws, xml53, tmp_path):
+    cid = customers.add_customer(ws, "Richy", "From Richy", reseller="9")
+    men = customers.add_product(ws, cid, "Thobe men", "91001")             # the sample's Item Number
+    kids = customers.add_product(ws, cid, "Thobe kids", "92002")
+    assert [p["id"] for p in customers.products(ws, cid)] == [men, kids]
+    assert customers.names(ws)[men] == "Richy / Thobe men"
+    out = ws.import_data(_xml(xml53, "From Richy"), "Order-richy.xml")
+    rid = out.lines[0]["revision_id"]
+    assert out.status == "imported" and ws.customer_of(rid) == men       # customer, then product by its Item
+    customers.set_patterns(ws, [{"variation": "Athlete1", "mdl": str(tmp_path / "men.mdl")}], men)
+    customers.set_patterns(ws, [{"variation": "Athlete1", "mdl": str(tmp_path / "kids.mdl")}], kids)
+    assert customers.pattern_for(ws, rid) == (str(tmp_path / "men.mdl"), "")   # the product's own patterns
+    with ws.for_customer(men):
+        pk_men = ws.active("catalog")[0]
+    with ws.for_customer(kids):
+        pk_kids = ws.active("catalog")[0]
+    assert pk_men != pk_kids                                             # own tables
+    other = _xml(xml53, "From Richy").replace(b'Item Number="91001"', b'Item Number="55555"')
+    bad = ws.import_data(other, "Order-other.xml")
+    assert bad.status == "failed" and "55555" in bad.message            # an unknown item: never guessed
+    with pytest.raises(WorkflowError):
+        customers.add_product(ws, cid, "Again", "91001")
+    customers.update_customer(ws, cid, reference="From Richy 2")        # the products follow the customer
+    assert customers.get(ws, men)["reference"] == "From Richy 2"
+    with ws.for_customer(men):
+        assert ws.active("mapping")[1]["detect"]["attributes"]["Reference"] == "From Richy 2"
+
+
+def test_customers_page_lists_products_under_their_customer(ws):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    a = customers.add_customer(ws, "Richy", "From Richy")
+    customers.add_customer(ws, "Other", "From Other")
+    customers.add_product(ws, a, "Thobe men", "1001001001")
+    win = MainWindow(ws)
+    win.show()
+    win.goto("Customers")
+    app.processEvents()
+    t = win.pages["Customers"].t
+    col0 = [t.item(i, 0).text().strip() for i in range(t.rowCount())]
+    assert col0[1].endswith("Richy") and "Thobe men" in col0[2] and col0[2].startswith("↳")   # under Richy
+    assert t.item(2, 3).text() == "1001001001" and col0[3].endswith("Other")
+    assert "Richy / Thobe men" in [win.customer_box.itemText(i) for i in range(win.customer_box.count())]
