@@ -410,6 +410,11 @@ AR = {
         "اكتب بجانب كل X رمز XML الذي يملؤه، مثل FL أو COS,COG. أي X بدون رمز XML غير نشط. الرمز الجديد يُضاف تلقائيًا.",
     "inactive": "غير نشط",
     "Move the XML codes": "نقل رموز XML",
+    "Delete them": "حذفها",
+    "This model's X values have their codes already: delete the codes left on that part":
+        "قيم X في هذا الموديل لها رموزها بالفعل: احذف الرموز المتبقية على ذلك البارت",
+    "Delete the XML codes saved on part {p}? (the rules version before stays in the library)":
+        "حذف رموز XML المحفوظة على البارت {p}؟ (إصدار القواعد السابق يبقى محفوظًا في المكتبة)",
     "for each product": "لكل منتج",
     "{n} patterns": "{n} بترون",
     "click a group to set its values": "اضغط على مجموعة لضبط قيمها",

@@ -2245,6 +2245,10 @@ class XValuesPage(Page):
         b = QPushButton(tr("Move the XML codes"))
         b.clicked.connect(self.carry_codes)
         cl.addWidget(b)
+        b = QPushButton(tr("Delete them"))
+        b.setToolTip(tr("This model's X values have their codes already: delete the codes left on that part"))
+        b.clicked.connect(self.drop_codes)
+        cl.addWidget(b)
         self.carry.hide()
         lay.addWidget(self.carry)
         top = QHBoxLayout()
@@ -2324,6 +2328,23 @@ class XValuesPage(Page):
         self.carry_to.clear()
         for num, name in sorted(self.part_names.items()):
             self.carry_to.addItem(f"{num:03d} {name.strip()}", num)
+
+    def drop_codes(self):
+        from ..services.xtable import drop_codes
+        src = self.carry_from.currentData()
+        if src is None:
+            return
+        if QMessageBox.question(self, tr("Delete them"), tr("Delete the XML codes saved on part {p}? (the rules "
+                                                            "version before stays in the library)").format(p=src)) \
+                != QMessageBox.Yes:
+            return
+        try:
+            out = drop_codes(self.ws, src)
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(self, tr("Error"), str(e))
+            return
+        reread_held_question(self, f"{tr('Saved')}: {tr('Rules')} {out['catalog_version']}")
+        self.refresh()
 
     def carry_codes(self):
         from ..services.xtable import carry_codes

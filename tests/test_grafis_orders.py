@@ -280,3 +280,22 @@ def test_codes_on_a_part_the_model_lacks_are_carried_over(ws):
     assert {r["x"]: r["codes"] for r in x_table(ws, MDL, 2)} == before
     assert codes_elsewhere(ws, MDL) == {}
     assert carry_codes(ws, MDL, "007", 2)["moved"] == []
+
+
+@needs_mdl
+def test_codes_left_on_a_part_the_model_lacks_are_deleted(ws):
+    import copy
+
+    from level7mtm.services.xtable import codes_elsewhere, drop_codes, x_table
+    _, cat = ws.active("catalog")
+    cat = copy.deepcopy(cat)
+    st = next(iter(next(iter(cat["products"].values()))["styles"].values()))
+    st["rules"] += [dict(copy.deepcopy(r), id=r["id"] + "_old", target=dict(r["target"], piece="009"))
+                    for r in st["rules"] if r["source"]["type"] == "measurement"][:3]
+    cat["version"] = "9.0.0"
+    ws.set_active("catalog", ws.save_document("catalog", cat, "test"))
+    before = x_table(ws, MDL, 2)
+    assert codes_elsewhere(ws, MDL) == {"009": 3}
+    assert drop_codes(ws, "009")["removed"] == 3
+    assert codes_elsewhere(ws, MDL) == {} and x_table(ws, MDL, 2) == before     # this model's codes untouched
+    assert drop_codes(ws, "009") == {"removed": 0, "catalog_version": None}

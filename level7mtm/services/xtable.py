@@ -201,3 +201,19 @@ def carry_codes(ws, mdl_path: str, from_piece: str, to_part: int, note: str | No
                                                                          f"to part {piece}"))
     out["catalog_version"] = cat["version"]
     return out
+
+
+def drop_codes(ws, piece: str, note: str | None = None) -> dict:
+    """Delete the XML codes saved on ``piece`` (left over from a copied customer whose model had that part; this
+    model's own X values are set already). Returns {removed, catalog_version}."""
+    _, cat = ws.active("catalog")
+    cat = copy.deepcopy(cat)
+    st = _style(cat)
+    keep = [r for r in st["rules"] if not (r["source"]["type"] == "measurement" and r["target"]["piece"] == piece)]
+    removed = len(st["rules"]) - len(keep)
+    if not removed:
+        return {"removed": 0, "catalog_version": None}
+    st["rules"] = keep
+    cat["version"] = _next_version(ws, "catalog", cat["catalog_id"], str(cat["version"]))
+    ws.set_active("catalog", ws.save_document("catalog", cat, note or f"XML codes of part {piece} deleted"))
+    return {"removed": removed, "catalog_version": cat["version"]}
