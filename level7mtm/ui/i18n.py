@@ -362,6 +362,8 @@ AR = {
     "GRAFIS part": "القطعة في GRAFIS",
     "Part number": "رقم البارت",
     "Pattern to review": "البترون للمراجعة",
+    "The order leaves the list and stays in the log; its XML is moved to the folder 'deleted' in the ERP folder — put it back in the ERP folder to read it again. Its files can be deleted too (order model, PLT / ISO / DXF / L7N).":
+        "يخرج الطلب من القائمة ويبقى في السجل، وينتقل ملف XML الخاص به إلى المجلد 'deleted' داخل مجلد ERP — أعده إلى مجلد ERP ليُقرأ من جديد. ويمكن حذف ملفاته أيضًا (موديل الطلب، PLT / ISO / DXF / L7N).",
     "not in the GRAFIS model": "غير موجود في موديل GRAFIS",
     "The GRAFIS parts every order has (always in the marker). The parts a design option of the XML chooses are set next to its value in Piece options setup.":
         "بارتات GRAFIS الموجودة في كل طلب (تظهر دائمًا في الماركر). أما البارتات التي يختارها خيار التصميم في XML فتُكتب بجوار قيمته في «ضبط اختيارات القطع».",

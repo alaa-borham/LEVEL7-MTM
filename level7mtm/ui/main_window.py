@@ -3843,8 +3843,9 @@ class MainWindow(QMainWindow):
         box.setIcon(QMessageBox.Warning)
         box.setWindowTitle(tr("Delete order…"))
         box.setText(f"{tr('Delete from the order list')}: {names}?")
-        box.setInformativeText(tr("The order is cancelled: it leaves the list and is never processed again; it stays "
-                                  "in the log. Its files can be deleted too (order model, PLT / ISO / DXF / L7N)."))
+        box.setInformativeText(tr("The order leaves the list and stays in the log; its XML is moved to the folder "
+                                  "'deleted' in the ERP folder — put it back in the ERP folder to read it again. "
+                                  "Its files can be deleted too (order model, PLT / ISO / DXF / L7N)."))
         only = box.addButton(tr("Delete from the list only"), QMessageBox.AcceptRole)
         files = box.addButton(tr("Delete with its files"), QMessageBox.DestructiveRole)
         box.addButton(tr("Cancel"), QMessageBox.RejectRole)

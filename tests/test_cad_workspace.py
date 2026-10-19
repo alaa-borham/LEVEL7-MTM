@@ -550,3 +550,36 @@ def test_delete_orders_from_the_list(ws, tmp_path):
     assert res["deleted"] == [str(model)] and not model.exists()
     assert [r["rid"] for r in cad.order_rows(ws)] == [rids[1]]          # gone from the list, the other stays
     assert ws.revision(rids[0])["status"] == "cancelled"                 # kept in the history
+
+
+def test_deleted_orders_come_back_when_their_xml_is_read_again(ws, tmp_path):
+    """Deleting all lines of an XML moves it to deleted/ (else the watched folder would bring it back); put back
+    in the folder, its lines are read again (owner: "why did the system not take the files")."""
+    import shutil
+
+    from level7mtm.services.cleanup import remove_lines
+    from level7mtm.services.watcher import FolderWatcher
+    from level7mtm.ui import cad
+    erp = tmp_path / "erp"
+    erp.mkdir()
+    src = erp / "Order-9-53-1_2.xml"
+    shutil.copy(XML_53, src)
+    t = [0.0]
+    w = FolderWatcher(ws, str(erp), settle_seconds=3, clock=lambda: t[0])
+    w.poll()
+    t[0] = 5
+    assert [o.status for o in w.poll()] == ["imported"]
+    rids = [r["rid"] for r in cad.order_rows(ws)]
+    res = remove_lines(ws, rids)
+    assert not src.exists() and res["moved"] == [str(erp / "deleted" / src.name)]
+    assert cad.order_rows(ws) == []
+    w.poll()                                                            # the watcher forgets the file gone
+    shutil.move(str(erp / "deleted" / src.name), str(src))              # put back by the owner
+    t[0] = 10
+    w.poll()
+    t[0] = 15
+    outs = w.poll()
+    assert [o.status for o in outs] == ["imported"] and [x["action"] for x in outs[0].lines] == ["new", "new"]
+    assert sorted(r["rid"] for r in cad.order_rows(ws)) == sorted(rids)   # back in the list
+    assert ws.revision(rids[0])["status"] in ("ready", "needs_review")
+    assert ws.import_data(src.read_bytes(), src.name).status == "duplicate"   # once back: a duplicate again

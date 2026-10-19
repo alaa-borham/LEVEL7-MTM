@@ -53,7 +53,10 @@ class FolderWatcher:
         """Check the folder once; returns the FileOutcome list of files processed in this poll."""
         results = []
         t = self.clock()
-        for p in self._candidates():
+        here = self._candidates()
+        for gone in [p for p in self.state.done if p not in here]:   # moved away (e.g. its orders deleted): put
+            self.state.done.pop(gone, None)                         # back, it is read again
+        for p in here:
             try:
                 st = os.stat(p)
             except OSError:

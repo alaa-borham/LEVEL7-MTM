@@ -37,6 +37,11 @@ STATUSES = ("imported", "needs_review", "ready", "calculating", "validation_fail
 OPEN_FOR_EDIT = ("imported", "needs_review", "ready", "validation_failed", "ready_for_review")
 
 
+def order_cancelled(c, oid: int) -> bool:
+    r = c.execute("SELECT cancelled_at FROM orders WHERE id=?", (oid,)).fetchone()
+    return bool(r and r["cancelled_at"])
+
+
 class WorkflowError(Exception):
     pass
 
@@ -56,6 +61,7 @@ def _doc_id_key(kind: str, body: dict) -> str:
 
 
 DEFAULT_CUSTOMER = "level7"           # the first customer: the settings made before customers existed
+REMOVED = "removed from the list"     # cancel reason of order lines the owner deleted (their XML read again: back)
 CUSTOMER_KINDS = ("mapping", "catalog")   # each customer has its own XML mapping and rules (size table, options, parts)
 
 
@@ -189,7 +195,7 @@ class Workspace:
     def import_data(self, data: bytes, name: str, source_path: str = "") -> FileOutcome:
         sha = hashlib.sha256(data).hexdigest()
         dup = self.db.one("SELECT id, status FROM import_files WHERE sha256=?", (sha,))
-        if dup and dup["status"] == "imported":
+        if dup and dup["status"] == "imported" and not self._all_removed(dup["id"]):
             return FileOutcome(name, "duplicate", "the same file was already imported; nothing created")
         from .customers import customer_for_xml
         cid, why = customer_for_xml(self, data)
@@ -239,6 +245,14 @@ class Workspace:
                 out.lines.append(self._store_line(c, fid, map_pk, res, ln))
         return out
 
+    def _all_removed(self, fid: int) -> bool:
+        """Every order line of this imported XML was deleted from the list by the owner: reading it again brings
+        them back."""
+        revs = self.db.q("SELECT r.status, o.cancel_reason FROM revisions r JOIN orders o ON o.id=r.order_id "
+                         "WHERE r.import_file=?", (fid,))
+        return bool(revs) and all(r["status"] in ("cancelled", "superseded") for r in revs) and \
+            any(r["cancel_reason"] == REMOVED for r in revs)
+
     def _store_line(self, c, fid, map_pk, res, ln) -> dict:
         raw = {"number": ln.number, "item": ln.item, "quantity": ln.quantity, "fabric_number": ln.fabric_number,
                "fabric_width_mm": ln.fabric_width_mm, "fabric_color": ln.fabric_color,
@@ -266,9 +280,20 @@ class Workspace:
                             ("ERP", line_ref, ln.order_no, ln.reseller, cid, now())).lastrowid
         else:
             oid = order["id"]
+            if order["cancelled_at"] and order["cancel_reason"] == REMOVED:    # deleted from the list: back now
+                c.execute("UPDATE orders SET cancelled_at=NULL, cancel_reason=NULL WHERE id=?", (oid,))
+                self.db.audit(c, self.actor, "order.restored", "order", oid, {"line": ln.number})
+                order = c.execute("SELECT * FROM orders WHERE id=?", (oid,)).fetchone()
             if order["cancelled_at"]:
                 self.db.audit(c, self.actor, "import.after_cancel", "order", oid, {"line": ln.number})
         existing = c.execute("SELECT * FROM revisions WHERE order_id=? AND revision=?", (oid, rev)).fetchone()
+        if existing and existing["status"] == "cancelled" and not order_cancelled(c, oid):
+            status = "needs_review" if ln.needs_review else "ready"     # read anew with today's settings
+            c.execute("UPDATE revisions SET status=?, import_file=?, imported_at=?, raw_line=?, normalized=?, "
+                      "mapping_doc=?, data_sha256=? WHERE id=?",
+                      (status, fid, now(), json.dumps(raw, ensure_ascii=False), json.dumps(norm, ensure_ascii=False),
+                       map_pk, dsha, existing["id"]))
+            return {"line_number": ln.number, "revision_id": existing["id"], "action": "new", "status": status}
         if existing:
             if existing["data_sha256"] == dsha:
                 return {"line_number": ln.number, "revision_id": existing["id"], "action": "unchanged",
