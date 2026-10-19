@@ -320,6 +320,10 @@ def test_customers_page_lists_products_under_their_customer(ws):
     cp = win.pages["Customers"]
     from level7mtm.ui.i18n import tr
     assert t.item(1, 5).text() == tr("for each product")               # the patterns are the products'
+    customers.set_patterns(ws, [{"variation": "Big Size", "mdl": "a.mdl"}, {"variation": "Slim", "mdl": "b.mdl"}],
+                           customers.products(ws, a)[0]["id"])
+    cp.refresh()
+    assert t.item(2, 5).text() == tr("{n} patterns").format(n=2)         # the names only in Patterns
     assert cp.tile_buttons["patterns"].isEnabled()                       # LEVEL7: no products
     t.selectRow(1)
     app.processEvents()

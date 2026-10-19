@@ -360,6 +360,7 @@ AR = {
     "Select a row first": "اختر صفًا أولًا",
     "This row has no marker yet": "لا يوجد ماركر لهذا الصف بعد",
     "GRAFIS part": "القطعة في GRAFIS",
+    "Part number": "رقم البارت",
     "— choose the part —": "— اختر القطعة —",
     "Choose for each design option the GRAFIS parts it needs (* = every order). Exactly these parts are switched to production in the order's model.":
         "اختر لكل خيار تصميم قطع GRAFIS التي يحتاجها (* = لكل الطلبات). هذه القطع فقط تُحوَّل إلى «إنتاج» في موديل الطلب وتنزل إلى الماركر.",
@@ -404,6 +405,7 @@ AR = {
     "inactive": "غير نشط",
     "Move the XML codes": "نقل رموز XML",
     "for each product": "لكل منتج",
+    "{n} patterns": "{n} بترون",
     "click a group to set its values": "اضغط على مجموعة لضبط قيمها",
     "Variations in this customer's XML files without a meaning": "Variations في ملفات XML لهذا العميل بدون معنى",
     "Patterns are set for each product of this customer": "البترونات تُضبط لكل منتج من منتجات هذا العميل",

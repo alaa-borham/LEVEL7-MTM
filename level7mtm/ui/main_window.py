@@ -1755,7 +1755,7 @@ class OptionsPage(Page):
         lay.addWidget(QLabel(tr("Option groups") + " — " + tr("click a group to set its values")))
         self.g = QTableWidget(0, len(self.GCOLS))
         self.g.setHorizontalHeaderLabels([tr(c) for c in self.GCOLS])
-        self.g.horizontalHeader().setStretchLastSection(True)
+        self.g.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)   # no wide empty column
         self.g.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.g.setEditTriggers(QAbstractItemView.NoEditTriggers)     # edited in the group's own window
         self.g.currentCellChanged.connect(lambda r, c, pr, pc: self._switch(pr, r))
@@ -2048,7 +2048,7 @@ class GrafisPartsPage(Page):
     """Design option → GRAFIS part (number, material, normal / mirrored copies). The base model may have no
     production part: exactly the parts chosen here (for the order's options) are produced."""
     title = "GRAFIS parts"
-    COLS = ["Design option", "GRAFIS part", "Material", "Copies", "Mirrored", ""]
+    COLS = ["Design option", "Part number", "Material", "Copies", "Mirrored", ""]
 
     def __init__(self, win):
         super().__init__(win)
@@ -2583,8 +2583,8 @@ class CustomersPage(Page):
                          c.get("reseller") or "—", c.get("item") or ("—" if not c.get("parent") else ""),
                          (f"{os.path.basename(c['mdl'] or '') or tr('not set')}  ({tr('reference for the tables')})"
                           if pats else os.path.basename(c["mdl"] or "") or tr("not set")),
-                         tr("for each product") if c["id"] in with_products else
-                         ", ".join(p["variation"] for p in pats) or "—"])
+                         tr("for each product") if c["id"] in with_products else    # the names: in Patterns
+                         (tr("{n} patterns").format(n=len(pats)) if pats else "—")])
         pb = self.tile_buttons["patterns"]
         pb.setEnabled(cur not in with_products)
         pb.setToolTip(tr("Patterns are set for each product of this customer") if cur in with_products else "")
