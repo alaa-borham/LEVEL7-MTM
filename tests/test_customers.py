@@ -317,3 +317,13 @@ def test_customers_page_lists_products_under_their_customer(ws):
     assert col0[1].endswith("Richy") and "Thobe men" in col0[2] and col0[2].startswith("↳")   # under Richy
     assert t.item(2, 3).text() == "1001001001" and col0[3].endswith("Other")
     assert "Richy / Thobe men" in [win.customer_box.itemText(i) for i in range(win.customer_box.count())]
+    cp = win.pages["Customers"]
+    from level7mtm.ui.i18n import tr
+    assert t.item(1, 5).text() == tr("for each product")               # the patterns are the products'
+    assert cp.tile_buttons["patterns"].isEnabled()                       # LEVEL7: no products
+    t.selectRow(1)
+    app.processEvents()
+    assert ws.customer() == a and not cp.tile_buttons["patterns"].isEnabled()
+    t.selectRow(2)
+    app.processEvents()
+    assert cp.tile_buttons["patterns"].isEnabled()                       # the product has its own

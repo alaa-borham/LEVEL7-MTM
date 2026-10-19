@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
                                QGridLayout, QSizePolicy, QToolButton,
                                QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
                                QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QSplitter,
-                               QStackedWidget, QTabBar, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
+                               QTabBar, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
 from .. import ENGINE_VERSION, __version__
 from ..services.watcher import FolderWatcher
@@ -2473,14 +2473,21 @@ class CustomersPage(Page):
                 cs += [p for p in every if p.get("parent") == c["id"]]
         cur = self.ws.customer()
         rows = []
+        with_products = {c["parent"] for c in every if c.get("parent")}
         for c in cs:
-            pats = patterns(self.ws, c["id"])
+            # a customer with products: his XML lines are read with the product of their Item Number, so the
+            # patterns are the products' — none in front of the customer
+            pats = [] if c["id"] in with_products else patterns(self.ws, c["id"])
             mark = "● " if c["id"] == cur else ""
             rows.append([(f"      ↳ {mark}" if c.get("parent") else mark) + c["name"], c["reference"],
                          c.get("reseller") or "—", c.get("item") or ("—" if not c.get("parent") else ""),
                          (f"{os.path.basename(c['mdl'] or '') or tr('not set')}  ({tr('reference for the tables')})"
                           if pats else os.path.basename(c["mdl"] or "") or tr("not set")),
+                         tr("for each product") if c["id"] in with_products else
                          ", ".join(p["variation"] for p in pats) or "—"])
+        pb = self.tile_buttons["patterns"]
+        pb.setEnabled(cur not in with_products)
+        pb.setToolTip(tr("Patterns are set for each product of this customer") if cur in with_products else "")
         self.t.blockSignals(True)
         fill(self.t, rows, None, [c["id"] for c in cs])
         k = next((i for i, c in enumerate(cs) if c["id"] == cur), 0)

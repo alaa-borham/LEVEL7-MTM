@@ -403,6 +403,8 @@ AR = {
         "اكتب بجانب كل X رمز XML الذي يملؤه، مثل FL أو COS,COG. أي X بدون رمز XML غير نشط. الرمز الجديد يُضاف تلقائيًا.",
     "inactive": "غير نشط",
     "Move the XML codes": "نقل رموز XML",
+    "for each product": "لكل منتج",
+    "Patterns are set for each product of this customer": "البترونات تُضبط لكل منتج من منتجات هذا العميل",
     "XML codes are saved on part {parts}, which is not in this model — move them to the part of this model:":
         "رموز XML محفوظة على البارت {parts} وهو غير موجود في هذا الموديل — انقلها إلى بارت هذا الموديل:",
     "{n} X moved": "تم نقل {n} X",
