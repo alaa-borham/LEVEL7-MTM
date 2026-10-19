@@ -248,9 +248,29 @@ def reread_held_question(page, msg: str) -> None:
                                                                    "now?") + f" ({n})") == QMessageBox.Yes:
         page.win.run(lambda: reread_held(page.ws), lambda outs: (
             page.win.refresh_cad(force=True),
-            QMessageBox.information(page, tr("Saved"), "\n".join(
-                f"{o.file_name}: {tr(o.status)} " + ", ".join(f"{x['line_number']} → {tr(x['status'])}"
-                                                            for x in o.lines) for o in outs))))
+            QMessageBox.information(page, tr("Saved"), reread_report(page.ws, outs))))
+
+
+def reread_report(ws, outs) -> str:
+    """Each file read again, its lines' status and — for a line still held — why (each reason once)."""
+    out = []
+    for o in outs:
+        out.append(f"{o.file_name}: {tr(o.status)} " + ", ".join(f"{x['line_number']} → {tr(x['status'])}"
+                                                                for x in o.lines))
+        if o.message:
+            out.append("  " + tr_msg(o.message))
+        why: list[str] = []
+        for x in o.lines:
+            if x["status"] == "ready" or not x.get("revision_id"):
+                continue
+            for p in ws.revision(x["revision_id"])["normalized"].get("problems") or []:
+                m = tr_msg(p["message"])
+                if m not in why:
+                    why.append(m)
+        out += [f"  • {m}" for m in why[:15]]
+        if len(why) > 15:
+            out.append(f"  … (+{len(why) - 15})")
+    return "\n".join(out)
 
 
 def _mdl_or_none(ws):
@@ -1842,18 +1862,19 @@ class OptionsPage(Page):
                          "parts_text": t(4)})
         self.groups[self.cur]["values"] = vals
 
-    def _parts_of_values(self) -> dict[str, str]:
-        """{"group=value": "007 front1, 012 pocket"} — the GRAFIS part numbers each value produces."""
-        from ..services.gparts import parts_table
+    def _part_names(self) -> dict[int, str]:
         try:
-            names = {n: v[0] for n, v in _grafis_model_parts(self.ws).items()}
+            return {n: str(v[0]).strip() for n, v in _grafis_model_parts(self.ws).items()}
         except Exception:  # noqa: BLE001 - names are a help only
-            names = {}
+            return {}
+
+    def _parts_of_values(self) -> dict[str, str]:
+        """{"group=value": "7, 12"} — the GRAFIS part numbers each value produces, as the owner types them (the
+        names of the parts are in the tooltip)."""
+        from ..services.gparts import parts_table
         out: dict[str, list[str]] = {}
         for r in parts_table(self.ws):
-            n = int(r.get("part") or 0)
-            label = f"{n:03d} {str(names.get(n, '')).strip()}".strip()
-            out.setdefault(r.get("option") or "*", []).append(label)
+            out.setdefault(r.get("option") or "*", []).append(str(int(r.get("part") or 0)))
         return {k: ", ".join(v) for k, v in out.items()}
 
     def _switch(self, prev, row):
@@ -1866,15 +1887,16 @@ class OptionsPage(Page):
         gr = self.groups[row]
         self.vlabel.setText(f"{tr('Values of')} {gr['label'].get('ar') or gr['group']} ({gr['group']})")
         self.v.setRowCount(len(gr["values"]))
-        parts = self._parts_of_values()
+        parts, pnames = self._parts_of_values(), self._part_names()
         for i, val in enumerate(gr["values"]):
             made = val.get("parts_text", parts.get(f"{gr['group']}={val['value']}", ""))
             for j, x in enumerate([val["value"], val["label"].get("ar", ""), val["label"].get("en", ""),
                                    "; ".join(val["erp_names"]), made]):
                 it = QTableWidgetItem(x)
                 if j == 4:                                # the parts of the MDL this Variation chooses
-                    it.setToolTip(tr("The GRAFIS part numbers this value produces, e.g. 36 or 36, 37 "
-                                     "(kept in Fixed pieces)"))
+                    named = [f"{int(m)}: {pnames[int(m)]}" for m in re.findall(r"\d+", x) if int(m) in pnames]
+                    it.setToolTip("\n".join([tr("The GRAFIS part numbers this value produces, e.g. 36 or 36, 37 "
+                                                 "(kept in Fixed pieces)")] + named))
                 self.v.setItem(i, j, it)
         self.v.resizeColumnsToContents()
 

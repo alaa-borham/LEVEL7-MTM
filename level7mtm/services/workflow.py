@@ -215,6 +215,10 @@ class Workspace:
         map_pk, profile = self.active("mapping")
         res: ImportResult = import_bytes(data, profile)
         res.customer = cid
+        from .customers import _plain, patterns
+        pats = {_plain(p["variation"]) for p in patterns(self, cid)}
+        for ln in res.lines:                            # a pattern's Variation chooses the model: not an option
+            ln.problems = [p for p in ln.problems if not (p.code == "option.unknown" and _plain(p.field or "") in pats)]
         status = "imported" if res.ok else "failed"
         msg = "; ".join(p.message for p in res.problems if p.severity == "error")
         out = FileOutcome(name, status, msg)

@@ -249,7 +249,7 @@ def test_part_numbers_typed_next_to_an_option_value(ws, monkeypatch):
     page.g.setCurrentCell(gi, 0)
     app.processEvents()
     vi = next(i for i in range(page.v.rowCount()) if page.v.item(i, 0).text() == "saada")
-    assert page.v.item(vi, 4).text().startswith("036")                 # shown with the part names
+    assert page.v.item(vi, 4).text() == "36, 37"                        # the numbers only, as typed
 
 
 def test_customer_matched_by_reference_and_reseller(ws, xml53):
@@ -327,3 +327,15 @@ def test_customers_page_lists_products_under_their_customer(ws):
     t.selectRow(2)
     app.processEvents()
     assert cp.tile_buttons["patterns"].isEnabled()                       # the product has its own
+
+
+def test_reread_says_why_a_line_is_still_held(ws, xml53):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.services.customers import reread_held
+    from level7mtm.ui.main_window import reread_report
+    data = open(xml53, "rb").read().replace(b"Collar Square", b"Collar Round")
+    out = ws.import_data(data, "Order-r.xml")
+    assert out.lines[0]["status"] == "needs_review"
+    text = reread_report(ws, reread_held(ws))
+    assert "Collar Round" in text and "•" in text                       # the Variation still without a meaning
