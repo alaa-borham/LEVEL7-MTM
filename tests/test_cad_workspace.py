@@ -532,3 +532,21 @@ def test_owner_arranges_the_ribbon(ws):
     from PySide6.QtTest import QTest
     QTest.mouseClick(win.ribbon.brand_mark, Qt.LeftButton)
     assert win.current_page().title == "Home"
+
+
+def test_delete_orders_from_the_list(ws, tmp_path):
+    from level7mtm.services.cleanup import remove_lines
+    from level7mtm.ui import cad
+    ws.import_file(XML_53)
+    rids = [r["rid"] for r in cad.order_rows(ws)]
+    assert len(rids) == 2
+    model = tmp_path / "m.mdl"
+    model.write_text("x")
+    from level7mtm.storage.db import now
+    with ws.db.tx() as c:
+        c.execute("INSERT INTO grafis_orders(revision_id, created_at, status, path, template_sha256, info) "
+                  "VALUES (?,?,?,?,?,?)", (rids[0], now(), "written", str(model), "t", "{}"))
+    res = remove_lines(ws, [rids[0]], delete_files=True)
+    assert res["deleted"] == [str(model)] and not model.exists()
+    assert [r["rid"] for r in cad.order_rows(ws)] == [rids[1]]          # gone from the list, the other stays
+    assert ws.revision(rids[0])["status"] == "cancelled"                 # kept in the history

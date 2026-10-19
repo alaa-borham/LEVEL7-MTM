@@ -9,7 +9,7 @@ import zipfile
 from PySide6.QtCore import QByteArray, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (QBrush, QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF,
                            QTransform)
-from PySide6.QtWidgets import (QFrame, QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsView, QGridLayout,
+from PySide6.QtWidgets import (QAbstractItemView, QFrame, QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsView, QGridLayout,
                                QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy, QToolButton,
                                QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
@@ -1262,6 +1262,7 @@ class Ribbon(QFrame):
 class OrderBrowser(QWidget):
     """Order lines as a tree: line → the pieces of its marker; coloured by where the line is in the chain."""
     selected = Signal(object)
+    remove = Signal(list)                              # right click → remove: the order lines (revision ids)
 
     def __init__(self):
         super().__init__()
@@ -1290,6 +1291,9 @@ class OrderBrowser(QWidget):
         self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
         self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.tree.currentItemChanged.connect(self._changed)
+        self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection)   # Ctrl / Shift: several orders
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._menu)
         lay.addWidget(self.tree, 1)
         self.rows: list[dict] = []
 
@@ -1409,6 +1413,22 @@ class OrderBrowser(QWidget):
                 bar.setValue(int(b["progress"] * 100))
                 lab.setText(f"{text} {int(b['progress'] * 100)}%")
         self._bars = bars
+
+    def selected_rids(self) -> list[int]:
+        return [it.data(0, Qt.UserRole) for it in self.tree.selectedItems() if it.data(0, Qt.UserRole) is not None]
+
+    def _menu(self, pos):
+        from PySide6.QtWidgets import QMenu
+        it = self.tree.itemAt(pos)
+        if it is not None and it.data(0, Qt.UserRole) is not None and not it.isSelected():
+            self.tree.setCurrentItem(it)
+        rids = self.selected_rids()
+        if not rids:
+            return
+        m = QMenu(self)
+        m.addAction(tr("Delete order…") if len(rids) == 1 else f"{tr('Delete orders…')} ({len(rids)})",
+                    lambda: self.remove.emit(rids))
+        m.exec(self.tree.viewport().mapToGlobal(pos))
 
     def _filter(self, text):
         t = text.strip().lower()

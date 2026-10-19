@@ -3240,6 +3240,7 @@ class MainWindow(QMainWindow):
         self.browser = cad.OrderBrowser()
         self.browser.setMinimumWidth(210)
         self.browser.selected.connect(self.select_row)
+        self.browser.remove.connect(self.remove_orders)
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
         self.tabs.setTabsClosable(True)
@@ -3594,6 +3595,7 @@ class MainWindow(QMainWindow):
         if sig == self._cad_sig and not force:
             return
         self._cad_sig = sig
+        self._rows = rows
         keep = self.sel_row["rid"] if self.sel_row else None
         self.browser.set_rows(rows, keep=keep)
         if keep is not None and not any(r["rid"] == keep for r in rows):
@@ -3622,6 +3624,39 @@ class MainWindow(QMainWindow):
                 msg += "\n\n⚠ " + tr("Folder watch is off: the robot and the saved GRAFIS files wait. "
                                         "Click «Folder watch» in the status bar to switch it on.")
         self.marker.set_marker(marker, row, msg)
+
+    def remove_orders(self, rids: list[int]):
+        """Right click → Delete order…: the order lines leave the list (cancelled, kept in the log); their files
+        are deleted too if asked."""
+        from ..services.cleanup import remove_lines
+        rows = {r["rid"]: r for r in getattr(self, "_rows", [])}
+        names = ", ".join(str(rows[r]["line"]) if r in rows else str(r) for r in rids[:6]) + \
+            (" …" if len(rids) > 6 else "")
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle(tr("Delete order…"))
+        box.setText(f"{tr('Delete from the order list')}: {names}?")
+        box.setInformativeText(tr("The order is cancelled: it leaves the list and is never processed again; it stays "
+                                  "in the log. Its files can be deleted too (order model, PLT / ISO / DXF / L7N)."))
+        only = box.addButton(tr("Delete from the list only"), QMessageBox.AcceptRole)
+        files = box.addButton(tr("Delete with its files"), QMessageBox.DestructiveRole)
+        box.addButton(tr("Cancel"), QMessageBox.RejectRole)
+        box.exec()
+        if box.clickedButton() not in (only, files):
+            return
+        res = self.guard(lambda: remove_lines(self.ws, rids, delete_files=box.clickedButton() is files))
+        if res is None:
+            return
+        self.sel_row = None
+        self.refresh_cad(force=True)
+        msg = f"{tr('Deleted')}: {res['lines']}"
+        if res["deleted"]:
+            msg += f" — {tr('files deleted')}: {len(res['deleted'])}"
+        if res["failed"]:
+            msg += "\n" + tr("Not deleted (open in another program?)") + ":\n" + "\n".join(res["failed"][:8])
+        self.status(msg)
+        if res["failed"]:
+            QMessageBox.warning(self, tr("Delete order…"), msg)
 
     def _need_row(self):
         if self.sel_row is None:
