@@ -2421,7 +2421,8 @@ class CustomersPage(Page):
             mark = "● " if c["id"] == cur else ""
             rows.append([(f"      ↳ {mark}" if c.get("parent") else mark) + c["name"], c["reference"],
                          c.get("reseller") or "—", c.get("item") or ("—" if not c.get("parent") else ""),
-                         os.path.basename(c["mdl"] or "") or tr("not set"),
+                         (f"{os.path.basename(c['mdl'] or '') or tr('not set')}  ({tr('reference for the tables')})"
+                          if pats else os.path.basename(c["mdl"] or "") or tr("not set")),
                          ", ".join(p["variation"] for p in pats) or "—"])
         self.t.blockSignals(True)
         fill(self.t, rows, None, [c["id"] for c in cs])

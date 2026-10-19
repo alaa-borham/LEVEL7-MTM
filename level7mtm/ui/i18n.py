@@ -26,6 +26,7 @@ AR = {
     "Customers": "العملاء",
     "Patterns": "البترونات",
     "Save and close": "حفظ وإغلاق",
+    "reference for the tables": "مرجع للجداول فقط — الطلبات من البترونات",
     "Delete order…": "حذف الطلب…",
     "Delete orders…": "حذف الطلبات…",
     "Delete from the order list": "حذف من قائمة الطلبات",
