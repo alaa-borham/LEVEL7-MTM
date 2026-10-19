@@ -2515,16 +2515,15 @@ class CustomersPage(Page):
     def __init__(self, win):
         super().__init__(win)
         lay = QVBoxLayout(self)
-        info = QLabel(tr("Each customer has his own name in the XML (Reference), his own size table, piece "
-                         "options, fixed pieces and GRAFIS model. An XML is read with the settings of the customer "
-                         "it names; an XML naming no customer goes to ER."))
-        info.setWordWrap(True)
-        lay.addWidget(info)
+        self.setToolTip(tr("Each customer has his own name in the XML (Reference), his own size table, piece "
+                           "options, fixed pieces and GRAFIS model. An XML is read with the settings of the customer "
+                           "it names; an XML naming no customer goes to ER."))
+        body = QHBoxLayout()                          # the list on one side (full height), the settings beside it
+        left = QVBoxLayout()
         self.t = table(["Customer / product", "XML name (Reference)", "Reseller in the XML", "Item Number",
                         "Patterns"])
-        self.t.setMaximumHeight(170)
         self.t.itemSelectionChanged.connect(self._picked)
-        lay.addWidget(self.t)
+        left.addWidget(self.t, 1)
         bar = QHBoxLayout()
         for text, fn in (("Add customer…", self.add), ("Add product…", self.add_product), ("Edit…", self.edit),
                          ("Learn from an XML file…", self.learn_xml)):
@@ -2532,31 +2531,36 @@ class CustomersPage(Page):
             b.clicked.connect(fn)
             bar.addWidget(b)
         bar.addStretch()
-        lay.addLayout(bar)
+        left.addLayout(bar)
+        body.addLayout(left, 1)
+        side = QVBoxLayout()
         self.head = QLabel()
         self.head.setObjectName("pageTitle")
+        self.head.setWordWrap(True)
         self.head.setStyleSheet("font-size: 13pt; font-weight: 800; padding-top: 6px;")
-        lay.addWidget(self.head)
-        tiles = QHBoxLayout()                        # each setting opens in its own window: save and close
+        side.addWidget(self.head)
+        tiles = QGridLayout()                         # each setting opens in its own window: save and close
         self.tile_buttons = {}
-        for key, ic, label_ in (("patterns", "nest", "Patterns"), ("X values for GRAFIS", "xvalues", "Size table setup"),
-                                ("Design options", "options", "Piece options setup"),
-                                ("GRAFIS parts", "parts", "Fixed pieces")):
-            from . import cad
+        from . import cad
+        from . import themes as _th
+        for n, (key, ic, label_) in enumerate((("patterns", "nest", "Patterns"),
+                                               ("X values for GRAFIS", "xvalues", "Size table setup"),
+                                               ("Design options", "options", "Piece options setup"),
+                                               ("GRAFIS parts", "parts", "Fixed pieces"))):
             b = QToolButton()
             b.setObjectName("ribbonButton")
             b.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
-            from . import themes as _th
             b.setIcon(cad.icon(ic, _th.colour("accent")))
-            b.setIconSize(QSize(30, 30))
+            b.setIconSize(QSize(28, 28))
             b.setText(tr(label_))
-            b.setMinimumSize(150, 84)
+            b.setMinimumSize(140, 80)
             b.clicked.connect(lambda _=False, k=key: self.open_editor(k))
             self.tile_buttons[key] = b
-            tiles.addWidget(b)
-        tiles.addStretch()
-        lay.addLayout(tiles)
-        lay.addStretch()
+            tiles.addWidget(b, n // 2, n % 2)
+        side.addLayout(tiles)
+        side.addStretch()
+        body.addLayout(side)
+        lay.addLayout(body, 1)
         self.editor_dialog = None
         self.editor_page = None
         self.editor_key = None
