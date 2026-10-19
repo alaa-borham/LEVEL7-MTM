@@ -37,6 +37,34 @@ def settings(ws) -> dict:
             "enabled": bool(ws.db.get_setting("grafis.auto_mdl", True))}
 
 
+def archive_folder(ws) -> str:
+    """Where a copy of every order model is kept as a reference (owner: "for later, when there is an error"):
+    chosen in the settings, else MDL-ARCHIVE next to the GRAFIS input folder."""
+    chosen = ws.db.get_setting("grafis.mdl_archive")
+    if chosen:
+        return chosen
+    inp = ws.db.get_setting("grafis.input")
+    return os.path.join(os.path.dirname(inp.rstrip("/\\")), "MDL-ARCHIVE") if inp else \
+        os.path.join(ws.folder, "grafis", "archive")
+
+
+def archive_mdl(ws, path: str) -> str | None:
+    """Copy the order model into the archive folder (the newer copy replaces the older: as written, then as
+    GRAFIS saved it). Returns the copy, None when it could not be made (never stops the chain)."""
+    import shutil
+    if not path or not os.path.isfile(path):
+        return None
+    dest_dir = archive_folder(ws)
+    try:
+        os.makedirs(dest_dir, exist_ok=True)
+        dest = os.path.join(dest_dir, os.path.basename(path))
+        if os.path.normcase(os.path.abspath(dest)) != os.path.normcase(os.path.abspath(path)):
+            shutil.copy2(path, dest)
+        return dest
+    except OSError:
+        return None
+
+
 def mdl_name(ws, rev) -> str:
     f = ws.db.one("SELECT file_name FROM import_files WHERE id=?", (rev["import_file"],))
     stem = os.path.splitext(f["file_name"])[0] if f else f"Order-{rev['line_number']}"
@@ -186,6 +214,7 @@ def _order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = 
     with open(path, "rb") as fh:                   # recognises the file as written (before GRAFIS saves it)
         res["sha256"] = hashlib.sha256(fh.read()).hexdigest()
     res.update(status="written", path=path)
+    res["archive"] = archive_mdl(ws, path)          # kept as a reference
     return _save(ws, res, tsha)
 
 

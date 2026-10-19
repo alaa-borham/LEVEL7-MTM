@@ -319,11 +319,11 @@ def test_customers_page_lists_products_under_their_customer(ws):
     assert "Richy / Thobe men" in [win.customer_box.itemText(i) for i in range(win.customer_box.count())]
     cp = win.pages["Customers"]
     from level7mtm.ui.i18n import tr
-    assert t.item(1, 6).text() == tr("for each product")               # the patterns are the products'
+    assert t.item(1, 7).text() == tr("for each product")               # the patterns are the products'
     customers.set_patterns(ws, [{"variation": "Big Size", "mdl": "a.mdl"}, {"variation": "Slim", "mdl": "b.mdl"}],
                            customers.products(ws, a)[0]["id"])
     cp.refresh()
-    assert t.item(2, 6).text() == tr("{n} patterns").format(n=2)         # the names only in Patterns
+    assert t.item(2, 7).text() == tr("{n} patterns").format(n=2)         # the names only in Patterns
     assert cp.tile_buttons["patterns"].isEnabled()                       # LEVEL7: no products
     t.selectRow(1)
     app.processEvents()
@@ -428,3 +428,32 @@ def test_rereading_after_saving_reads_only_that_customers_orders(ws, xml53):
     th.start()
     th.join()
     assert [o.file_name for o in got] == ["r.xml"]                     # LEVEL7's order is not touched
+
+
+def test_cutting_format_per_customer_and_product(ws):
+    from level7mtm.services.auto_cut import KNOWN_FORMATS, customer_formats, export_formats, settings
+    assert export_formats(ws) == KNOWN_FORMATS                          # no LEVEL7 Nesting here: PLT / ISO / DXF
+    cid = customers.add_customer(ws, "Richy", "From Richy")
+    pid = customers.add_product(ws, cid, "Thobe", "91001")
+    assert customer_formats(ws, pid) is None and settings(ws, pid)["formats"] == ["plt", "iso"]   # markers page
+    ws.db.set_setting(f"cutting.formats@{cid}", ["iso"])
+    assert settings(ws, pid)["formats"] == ["iso"]                       # the product follows its customer
+    ws.db.set_setting(f"cutting.formats@{pid}", ["dxf"])
+    assert settings(ws, pid)["formats"] == ["dxf"] and settings(ws, cid)["formats"] == ["iso"]
+    assert settings(ws)["formats"] == ["plt", "iso"]                     # other customers: as before
+
+
+def test_every_order_model_is_kept_in_the_archive(ws, tmp_path):
+    from level7mtm.services.grafis_orders import archive_folder, archive_mdl
+    ws.db.set_setting("grafis.input", str(tmp_path / "A" / "MDL"))
+    assert archive_folder(ws) == str(tmp_path / "A" / "MDL-ARCHIVE")      # next to the GRAFIS input folder
+    m = tmp_path / "A" / "MDL" / "Order-1.mdl"
+    m.parent.mkdir(parents=True)
+    m.write_bytes(b"written")
+    assert archive_mdl(ws, str(m)) == str(tmp_path / "A" / "MDL-ARCHIVE" / "Order-1.mdl")
+    m.write_bytes(b"saved by GRAFIS")
+    archive_mdl(ws, str(m))
+    assert (tmp_path / "A" / "MDL-ARCHIVE" / "Order-1.mdl").read_bytes() == b"saved by GRAFIS"   # newest copy
+    ws.db.set_setting("grafis.mdl_archive", str(tmp_path / "mine"))
+    assert archive_mdl(ws, str(m)) == str(tmp_path / "mine" / "Order-1.mdl")
+    assert archive_mdl(ws, str(tmp_path / "missing.mdl")) is None

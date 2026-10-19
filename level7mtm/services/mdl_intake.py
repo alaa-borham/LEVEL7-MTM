@@ -131,6 +131,9 @@ def register_mdl(ws, path: str, cut: bool | None = None) -> dict:
         ws.db.audit(c, ws.actor, f"grafis.mdl_saved.{'handed_over' if ok else status}", "file",
                     os.path.basename(path), {"issues": chk.issues})
     out = {"status": "handed_over" if ok else status, "check": chk, "cutting": None}
+    if row is not None:                                  # the model as GRAFIS saved it: the reference copy
+        from .grafis_orders import archive_mdl
+        archive_mdl(ws, path)
     if cut is None:
         cut = settings(ws)["enabled"]
     if ok and cut:

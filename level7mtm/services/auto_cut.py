@@ -48,8 +48,41 @@ def nesting_command(ws) -> tuple[list[str], dict]:
                                "GRAFIS markers screen")
 
 
-def settings(ws) -> dict:
-    return {"formats": ws.db.get_setting("cutting.formats", ["plt", "iso"]),
+KNOWN_FORMATS = ["plt", "iso", "dxf"]
+
+
+def export_formats(ws) -> list[str]:
+    """The cutting file formats LEVEL7 Nesting can write (``export --help``: --format {plt,iso,dxf,…}); a newer
+    LEVEL7 Nesting with more formats shows them too. Falls back to PLT / ISO / DXF."""
+    try:
+        cmd, env = nesting_command(ws)
+        p = subprocess.run(cmd + ["export", "--help"], env=env, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=60, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        m = re.search(r"--format\s+\{([A-Za-z0-9_,]+)\}", p.stdout + p.stderr)
+        if m:
+            got = [f.strip().lower() for f in m.group(1).split(",") if f.strip()]
+            ws.db.set_setting("nesting.formats", got)
+            return got
+    except (NestingNotConfigured, OSError, subprocess.SubprocessError, ValueError):
+        pass
+    return ws.db.get_setting("nesting.formats") or list(KNOWN_FORMATS)
+
+
+def customer_formats(ws, cid: str) -> list[str] | None:
+    """The cutting formats chosen for the customer / product (a product without its own: its customer's);
+    None = as on the markers page."""
+    from .customers import get
+    c = get(ws, cid)
+    for one in [cid] + ([c["parent"]] if c and c.get("parent") else []):
+        got = ws.db.get_setting(f"cutting.formats@{one}")
+        if got:
+            return list(got)
+    return None
+
+
+def settings(ws, cid: str | None = None) -> dict:
+    return {"formats": (customer_formats(ws, cid) if cid else None) or ws.db.get_setting("cutting.formats",
+                                                                                          ["plt", "iso"]),
             "plt_preset": ws.db.get_setting("cutting.plt_preset", "algotex_grafis"),
             "iso_preset": ws.db.get_setting("cutting.iso_preset", "bullmer_grafis"),
             "time": float(ws.db.get_setting("cutting.time_s", 60)),
@@ -106,7 +139,8 @@ def _auto_cut(ws, chk, scb_path: str, force: bool = False) -> dict:
 
 
 def _auto_cut_inner(ws, chk, scb_path: str, force: bool = False) -> dict:
-    st = settings(ws)
+    custs = {ws.customer_of(ln["revision_id"]) for ln in chk.lines}
+    st = settings(ws, custs.pop() if len(custs) == 1 else None)   # the formats of the order's customer
     dup = ws.db.one("SELECT * FROM cutting_jobs WHERE sha256=? AND status='done'", (chk.sha256,))
     if dup and not force and all(os.path.isfile(p) for p in json.loads(dup["outputs"])):
         return {"status": "duplicate", "outputs": json.loads(dup["outputs"]), "log": []}

@@ -228,6 +228,28 @@ def customer_bar(page) -> QWidget:
     return w
 
 
+def format_box(ws, cid: str | None) -> QComboBox:
+    """Drop-down of the cutting file formats LEVEL7 Nesting can write; the first entry: as on the markers page."""
+    from ..services.auto_cut import export_formats
+    box = QComboBox()
+    box.addItem(tr("As on the markers page"), None)
+    for f in export_formats(ws):
+        box.addItem(f.upper(), f)
+    own = ws.db.get_setting(f"cutting.formats@{cid}") if cid else None
+    if own:
+        i = box.findData(own[0])
+        if i < 0:
+            box.addItem(own[0].upper(), own[0])
+            i = box.count() - 1
+        box.setCurrentIndex(i)
+    box.setToolTip(tr("The cutting file written for this customer's orders by LEVEL7 Nesting"))
+    return box
+
+
+def save_format(ws, cid: str, box: QComboBox) -> None:
+    ws.db.set_setting(f"cutting.formats@{cid}", [box.currentData()] if box.currentData() else None)
+
+
 def _few(values: list[str], n: int = 4) -> str:
     return ", ".join(values[:n]) + (f" … (+{len(values) - n})" if len(values) > n else "") if values else "—"
 
@@ -1107,7 +1129,8 @@ class GrafisPage(Page):
         step("folders", 2, "Folders", "One main folder with MDL (models for GRAFIS), SCB, ER (errors) and CUT "
                                       "(cutting files); each can also be chosen alone.",
              (("Folders MDL / SCB / ER / CUT…", self.choose_folders), ("GRAFIS input folder…", self.choose_input),
-              ("Errors folder (ER)…", self.choose_errors), ("Cutting files folder…", self.choose_out)))
+              ("Errors folder (ER)…", self.choose_errors), ("Cutting files folder…", self.choose_out),
+              ("Order models archive…", self.choose_archive)))
         step("nesting", 3, "LEVEL7 Nesting", "The nesting program that writes the marker and the cutting files.",
              (("LEVEL7 Nesting program…", self.choose_cli),))
 
@@ -1512,13 +1535,14 @@ class GrafisPage(Page):
             return
         sub = {}
         chosen = self.ws.db.get_setting("cutting.output_chosen", False)
-        for name in ("MDL", "SCB", "ER") + (() if chosen else ("CUT",)):
+        for name in ("MDL", "SCB", "ER", "MDL-ARCHIVE") + (() if chosen else ("CUT",)):
             have = next((e for e in os.listdir(d) if e.lower() == name.lower() and os.path.isdir(os.path.join(d, e))),
                         None)
             sub[name] = os.path.join(d, have or name)
             os.makedirs(sub[name], exist_ok=True)
         self.ws.db.set_setting("grafis.input", sub["MDL"])
         self.ws.db.set_setting("errors.folder", sub["ER"])
+        self.ws.db.set_setting("grafis.mdl_archive", sub["MDL-ARCHIVE"])
         if not chosen:                                  # a cutting folder the owner chose stays
             from ..services.auto_cut import settings
             old = settings(self.ws)["out"]
@@ -1532,7 +1556,9 @@ class GrafisPage(Page):
         self.start(sub["SCB"])
         self.refresh()
         QMessageBox.information(self, "GRAFIS", f"MDL: {sub['MDL']}\nSCB: {sub['SCB']} ({tr('watching')})\n"
-                                                f"ER: {sub['ER']}\nCUT ({tr('Cutting files')}): {sub['CUT']}")
+                                                f"ER: {sub['ER']}\nCUT ({tr('Cutting files')}): {sub['CUT']}\n"
+                                                f"MDL-ARCHIVE ({tr('Order models archive…').rstrip('…')}): "
+                                                f"{sub['MDL-ARCHIVE']}")
 
     def choose_errors(self):
         d = QFileDialog.getExistingDirectory(self, tr("Errors folder (ER)…"), self.ws.db.get_setting("errors.folder") or "")
@@ -1655,6 +1681,14 @@ class GrafisPage(Page):
             os.startfile(l7n)
         else:
             QMessageBox.information(self, "LEVEL7 Nesting", l7n)
+
+    def choose_archive(self):
+        """The folder where a copy of every order model (MDL) is kept as a reference."""
+        from ..services.grafis_orders import archive_folder
+        d = QFileDialog.getExistingDirectory(self, tr("Order models archive…"), archive_folder(self.ws))
+        if d:
+            self.ws.db.set_setting("grafis.mdl_archive", d)
+            self.refresh()
 
     def choose_out(self):
         from ..services.auto_cut import settings
@@ -2556,7 +2590,7 @@ class CustomersPage(Page):
         body = QHBoxLayout()                          # the list on one side (full height), the settings beside it
         left = QVBoxLayout()
         self.t = table(["Customer / product", "XML name (Reference)", "Reseller in the XML", "Item Number",
-                        "Measurement table (XML)", "Basic-Size in the XML", "Patterns"])
+                        "Measurement table (XML)", "Basic-Size in the XML", "Cutting file", "Patterns"])
         self.t.itemSelectionChanged.connect(self._picked)
         left.addWidget(self.t, 1)
         bar = QHBoxLayout()
@@ -2648,6 +2682,7 @@ class CustomersPage(Page):
             self.win.customer_changed()               # refreshes this page with his settings
 
     def refresh(self):
+        from ..services.auto_cut import customer_formats
         from ..services.customers import basic_sizes_seen, list_customers, measurement_table, patterns
         every = list_customers(self.ws)
         cs = []                                          # each customer, his products under him
@@ -2667,6 +2702,8 @@ class CustomersPage(Page):
                          c.get("reseller") or "—", c.get("item") or ("—" if not c.get("parent") else ""),
                          measurement_table(self.ws, c["id"]) or "—",
                          _few(basic_sizes_seen(self.ws, c["id"])),
+                         ", ".join(f.upper() for f in customer_formats(self.ws, c["id"]) or []) or
+                         tr("As on the markers page"),
                          tr("for each product") if c["id"] in with_products else    # the names: in Patterns
                          (tr("{n} patterns").format(n=len(pats)) if pats else "—")])
         pb = self.tile_buttons["patterns"]
@@ -2724,7 +2761,7 @@ class CustomersPage(Page):
             self.ws.db.set_setting("ui.customer", pid)
             self.win.customer_changed()
 
-    def _dialog(self, title, name="", ref="", copy_choices=None, reseller="", table=None):
+    def _dialog(self, title, name="", ref="", copy_choices=None, reseller="", table=None, cid=None):
         d = QDialog(self)
         d.setWindowTitle(title)
         d.setMinimumWidth(420)
@@ -2740,6 +2777,9 @@ class CustomersPage(Page):
         if table is not None:                             # editing: his Measurement-Table-Name too
             e_table.setPlaceholderText("Thobe_Measurments_Full")
             f.addRow(tr("Measurement table (XML)") + ":", e_table)
+        fmt = format_box(self.ws, cid)
+        f.addRow(tr("Cutting file") + ":", fmt)
+        self._fmt = fmt
         src = None
         if copy_choices:
             src = QComboBox()
@@ -2761,6 +2801,7 @@ class CustomersPage(Page):
             name, ref, src, res, _ = got
             cid = self.win.guard(lambda: add_customer(self.ws, name, ref, copy_from=src, reseller=res))
             if cid:
+                save_format(self.ws, cid, self._fmt)
                 self.ws.db.set_setting("ui.customer", cid)
                 self.win.customer_changed()
                 QMessageBox.information(self, tr("Customers"), tr("Customer added with a copy of the settings of the "
@@ -2786,6 +2827,8 @@ class CustomersPage(Page):
             f.addRow(tr("Product") + ":", e_name)
             f.addRow(tr("Item Number") + ":", e_item)
             f.addRow(tr("Measurement table (XML)") + ":", e_table)
+            fmt = format_box(self.ws, cid)
+            f.addRow(tr("Cutting file") + ":", fmt)
             bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
             bb.accepted.connect(d.accept)
             bb.rejected.connect(d.reject)
@@ -2793,10 +2836,13 @@ class CustomersPage(Page):
             if d.exec() == QDialog.Accepted:
                 self.win.guard(lambda: update_customer(self.ws, cid, name=e_name.text(), item=e_item.text()))
                 self.win.guard(lambda: set_measurement_table(self.ws, cid, e_table.text()))
+                save_format(self.ws, cid, fmt)
                 self.win.customer_changed()
             return
-        got = self._dialog(tr("Edit…"), c["name"], c["reference"], reseller=c.get("reseller", ""), table=table_now)
+        got = self._dialog(tr("Edit…"), c["name"], c["reference"], reseller=c.get("reseller", ""), table=table_now,
+                           cid=cid)
         if got:
+            save_format(self.ws, cid, self._fmt)
             self.win.guard(lambda: update_customer(self.ws, cid, name=got[0], reference=got[1], reseller=got[3]))
             self.win.guard(lambda: set_measurement_table(self.ws, cid, got[4]))
             self.win.customer_changed()
