@@ -432,7 +432,8 @@ def test_rereading_after_saving_reads_only_that_customers_orders(ws, xml53):
 
 def test_cutting_format_per_customer_and_product(ws):
     from level7mtm.services.auto_cut import KNOWN_FORMATS, customer_formats, export_formats, settings
-    assert export_formats(ws) == KNOWN_FORMATS                          # no LEVEL7 Nesting here: PLT / ISO / DXF
+    got = export_formats(ws)            # read from LEVEL7 Nesting when it is there (e.g. plt, dxf, iso, scb)
+    assert {"plt", "iso"} <= set(got) and (got == KNOWN_FORMATS or ws.db.get_setting("nesting.formats") == got)
     cid = customers.add_customer(ws, "Richy", "From Richy")
     pid = customers.add_product(ws, cid, "Thobe", "91001")
     assert customer_formats(ws, pid) is None and settings(ws, pid)["formats"] == ["plt", "iso"]   # markers page
