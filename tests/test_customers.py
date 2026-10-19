@@ -319,11 +319,11 @@ def test_customers_page_lists_products_under_their_customer(ws):
     assert "Richy / Thobe men" in [win.customer_box.itemText(i) for i in range(win.customer_box.count())]
     cp = win.pages["Customers"]
     from level7mtm.ui.i18n import tr
-    assert t.item(1, 5).text() == tr("for each product")               # the patterns are the products'
+    assert t.item(1, 4).text() == tr("for each product")               # the patterns are the products'
     customers.set_patterns(ws, [{"variation": "Big Size", "mdl": "a.mdl"}, {"variation": "Slim", "mdl": "b.mdl"}],
                            customers.products(ws, a)[0]["id"])
     cp.refresh()
-    assert t.item(2, 5).text() == tr("{n} patterns").format(n=2)         # the names only in Patterns
+    assert t.item(2, 4).text() == tr("{n} patterns").format(n=2)         # the names only in Patterns
     assert cp.tile_buttons["patterns"].isEnabled()                       # LEVEL7: no products
     t.selectRow(1)
     app.processEvents()
@@ -343,3 +343,24 @@ def test_reread_says_why_a_line_is_still_held(ws, xml53):
     assert out.lines[0]["status"] == "needs_review"
     text = reread_report(ws, reread_held(ws))
     assert "Collar Round" in text and "•" in text                       # the Variation still without a meaning
+
+
+def test_tables_reviewed_on_one_of_the_patterns(ws, tmp_path):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    a, b = str(tmp_path / "athlete.mdl"), str(tmp_path / "big.mdl")
+    customers.set_patterns(ws, [{"variation": "Style Athlete", "mdl": a}, {"variation": "Big Size", "mdl": b}])
+    assert ws.grafis_mdl() == a                                          # the first pattern, by itself
+    win = MainWindow(ws)
+    page = win.pages["GRAFIS parts"]
+    page.refresh()
+    assert [page.pattern_box.itemData(i) for i in range(page.pattern_box.count())] == [a, b]
+    assert page.pattern_pick.isHidden()                                  # no file chooser with patterns
+    page.pattern_box.setCurrentIndex(1)
+    page.pattern_box.activated.emit(1)
+    assert ws.grafis_mdl() == b
+    customers.set_patterns(ws, [])
+    page.refresh()
+    assert not page.pattern_pick.isHidden()                             # no patterns: choose the model file

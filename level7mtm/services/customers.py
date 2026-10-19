@@ -253,6 +253,8 @@ def set_patterns(ws, rows: list[dict], cid: str | None = None) -> None:
         clean.append({"variation": v, "mdl": m})
     with ws.for_customer(cid or ws.customer()):
         ws.db.set_setting(ws._key("grafis.patterns"), clean)
+        if clean and ws.grafis_mdl() not in [p["mdl"] for p in clean]:
+            ws.db.set_setting(ws._key("grafis.mdl"), clean[0]["mdl"])     # the tables are reviewed on a pattern
         _, prof = ws.active("mapping")
         omap = prof.get("options", {}).get("map", {})
         known = {_plain(k) for k in omap}

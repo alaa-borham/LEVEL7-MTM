@@ -228,6 +228,54 @@ def customer_bar(page) -> QWidget:
     return w
 
 
+def pattern_bar(page) -> QWidget:
+    """"Pattern to review: [..]" — the model the size table / fixed pieces are shown on: one of the customer's
+    patterns. A customer without patterns chooses a GRAFIS model file instead."""
+    w = QWidget()
+    h = QHBoxLayout(w)
+    h.setContentsMargins(0, 0, 0, 4)
+    h.addWidget(QLabel(tr("Pattern to review") + ":"))
+    box = QComboBox()
+    box.setMinimumWidth(260)
+    h.addWidget(box)
+    pick = QPushButton(tr("GRAFIS model (MDL)…"))
+    h.addWidget(pick)
+    h.addStretch()
+    page.pattern_box, page.pattern_pick = box, pick
+
+    def chosen(_i):
+        if box.currentData():
+            page.ws.set_grafis_mdl(box.currentData())
+            page.refresh()
+
+    def choose_file():
+        p, _ = QFileDialog.getOpenFileName(page, tr("GRAFIS model (MDL)…"), page.ws.grafis_mdl() or "",
+                                           "GRAFIS (*.mdl *.MDL)")
+        if p:
+            page.ws.set_grafis_mdl(p)
+            page.refresh()
+    box.activated.connect(chosen)
+    pick.clicked.connect(choose_file)
+    return w
+
+
+def fill_pattern_box(page) -> None:
+    from ..services.customers import patterns
+    pats = patterns(page.ws)
+    box, cur = page.pattern_box, page.ws.grafis_mdl()
+    box.blockSignals(True)
+    box.clear()
+    for p in pats:
+        box.addItem(f"{p['variation']}  —  {os.path.basename(p['mdl'])}", p["mdl"])
+    if pats and box.findData(cur) < 0 and cur:
+        box.addItem(f"{os.path.basename(cur)}", cur)
+    box.setCurrentIndex(max(box.findData(cur), 0))
+    box.blockSignals(False)
+    box.setVisible(bool(pats))
+    page.pattern_box.parentWidget().layout().itemAt(0).widget().setVisible(bool(pats))
+    page.pattern_pick.setVisible(not pats)              # no patterns: the customer's model file
+
+
 def fill_customer_box(ws, box) -> None:
     from ..services.customers import names
     box.blockSignals(True)
@@ -2057,6 +2105,7 @@ class GrafisPartsPage(Page):
         self.info = QLabel()
         self.info.setWordWrap(True)
         lay.addWidget(self.info)
+        lay.addWidget(pattern_bar(self))
         self.t = QTableWidget(0, len(self.COLS))
         self.t.setHorizontalHeaderLabels([tr(c) for c in self.COLS])
         self.t.horizontalHeader().setStretchLastSection(True)
@@ -2079,6 +2128,7 @@ class GrafisPartsPage(Page):
 
     def refresh(self):
         fill_customer_box(self.ws, self.customer_box)
+        fill_pattern_box(self)
         from ..services.gparts import model_parts, option_choices, parts_table
         mdl = self._mdl()
         self.info.setText(tr("The GRAFIS parts every order has (always in the marker). The parts a design option "
@@ -2197,10 +2247,10 @@ class XValuesPage(Page):
         self.part = QComboBox()
         self.part.currentIndexChanged.connect(self.load)
         top.addWidget(self.part, 1)
-        for text, fn in (("GRAFIS model (MDL)…", self.choose_mdl), ("Save", self.save)):
-            b = QPushButton(tr(text))
-            b.clicked.connect(fn)
-            top.addWidget(b)
+        b = QPushButton(tr("Save"))
+        b.clicked.connect(self.save)
+        top.addWidget(b)
+        lay.addWidget(pattern_bar(self))
         lay.addLayout(top)
         self.t = QTableWidget(0, len(self.COLS))
         self.t.setHorizontalHeaderLabels([tr(c) for c in self.COLS])
@@ -2217,15 +2267,9 @@ class XValuesPage(Page):
         m = self.ws.grafis_mdl()                         # the base model of the customer being edited
         return m if m and os.path.isfile(m) else None
 
-    def choose_mdl(self):
-        p, _ = QFileDialog.getOpenFileName(self, tr("GRAFIS model (MDL)…"), self.ws.grafis_mdl() or "",
-                                           "GRAFIS (*.mdl *.MDL)")
-        if p:
-            self.ws.set_grafis_mdl(p)                    # for the customer being edited
-            self.refresh()
-
     def refresh(self):
         fill_customer_box(self.ws, self.customer_box)
+        fill_pattern_box(self)
         from ..services.xtable import x_parts
         mdl = self._mdl()
         _, cat = self.ws.active("catalog")
@@ -2477,13 +2521,13 @@ class CustomersPage(Page):
         info.setWordWrap(True)
         lay.addWidget(info)
         self.t = table(["Customer / product", "XML name (Reference)", "Reseller in the XML", "Item Number",
-                        "GRAFIS model (MDL)", "Patterns"])
+                        "Patterns"])
         self.t.setMaximumHeight(170)
         self.t.itemSelectionChanged.connect(self._picked)
         lay.addWidget(self.t)
         bar = QHBoxLayout()
         for text, fn in (("Add customer…", self.add), ("Add product…", self.add_product), ("Edit…", self.edit),
-                         ("GRAFIS model (MDL)…", self.choose_mdl), ("Learn from an XML file…", self.learn_xml)):
+                         ("Learn from an XML file…", self.learn_xml)):
             b = QPushButton(tr(text))
             b.clicked.connect(fn)
             bar.addWidget(b)
@@ -2582,8 +2626,6 @@ class CustomersPage(Page):
             mark = "● " if c["id"] == cur else ""
             rows.append([(f"      ↳ {mark}" if c.get("parent") else mark) + c["name"], c["reference"],
                          c.get("reseller") or "—", c.get("item") or ("—" if not c.get("parent") else ""),
-                         (f"{os.path.basename(c['mdl'] or '') or tr('not set')}  ({tr('reference for the tables')})"
-                          if pats else os.path.basename(c["mdl"] or "") or tr("not set")),
                          tr("for each product") if c["id"] in with_products else    # the names: in Patterns
                          (tr("{n} patterns").format(n=len(pats)) if pats else "—")])
         pb = self.tile_buttons["patterns"]
@@ -2692,16 +2734,6 @@ class CustomersPage(Page):
         got = self._dialog(tr("Edit…"), c["name"], c["reference"], reseller=c.get("reseller", ""))
         if got:
             self.win.guard(lambda: update_customer(self.ws, cid, name=got[0], reference=got[1], reseller=got[3]))
-            self.win.customer_changed()
-
-    def choose_mdl(self):
-        from ..services.customers import get, update_customer
-        cid = self._cid() or self.ws.customer()
-        c = get(self.ws, cid)
-        p, _ = QFileDialog.getOpenFileName(self, f"{tr('GRAFIS model (MDL)…')} — {c['name']}", c["mdl"] or "",
-                                           "GRAFIS (*.mdl *.MDL)")
-        if p:
-            self.win.guard(lambda: update_customer(self.ws, cid, mdl=p))
             self.win.customer_changed()
 
     def learn_xml(self):
