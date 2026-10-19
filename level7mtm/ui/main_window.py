@@ -1818,7 +1818,7 @@ class OptionsPage(Page):
         lay.addLayout(bg)
         # the window of one group: its names, required / default, its values and their Variation names
         self.gd = QDialog(self)
-        self.gd.resize(1050, 640)
+        self.gd.resize(720, 640)
         dl = QVBoxLayout(self.gd)
         form = QFormLayout()
         self.gf = {k: QLineEdit() for k in ("group", "ar", "en", "default")}
@@ -2108,7 +2108,7 @@ class GrafisPartsPage(Page):
         lay.addWidget(pattern_bar(self))
         self.t = QTableWidget(0, len(self.COLS))
         self.t.setHorizontalHeaderLabels([tr(c) for c in self.COLS])
-        self.t.horizontalHeader().setStretchLastSection(True)
+        self.t.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)    # the part takes the width
         self.t.verticalHeader().setVisible(False)
         self.t.setColumnHidden(0, True)                  # fixed pieces are for every order; the parts an option
         lay.addWidget(self.t, 1)                         # chooses are typed in Piece options setup
@@ -2583,7 +2583,7 @@ class CustomersPage(Page):
                 b.hide()
         d = QDialog(self)
         d.setWindowTitle(f"{tr(self.LABELS[key])} — {names(self.ws).get(self.ws.customer(), '')}")
-        d.resize(1150, 720)
+        d.resize(1150 if key == "X values for GRAFIS" else 720, 720)   # narrow but for the size table
         v = QVBoxLayout(d)
         v.addWidget(page, 1)
         bb = QDialogButtonBox()
