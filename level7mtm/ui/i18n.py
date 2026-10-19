@@ -361,6 +361,8 @@ AR = {
     "This row has no marker yet": "لا يوجد ماركر لهذا الصف بعد",
     "GRAFIS part": "القطعة في GRAFIS",
     "Part number": "رقم البارت",
+    "The GRAFIS parts every order has (always in the marker). The parts a design option of the XML chooses are set next to its value in Piece options setup.":
+        "بارتات GRAFIS الموجودة في كل طلب (تظهر دائمًا في الماركر). أما البارتات التي يختارها خيار التصميم في XML فتُكتب بجوار قيمته في «ضبط اختيارات القطع».",
     "— choose the part —": "— اختر القطعة —",
     "Choose for each design option the GRAFIS parts it needs (* = every order). Exactly these parts are switched to production in the order's model.":
         "اختر لكل خيار تصميم قطع GRAFIS التي يحتاجها (* = لكل الطلبات). هذه القطع فقط تُحوَّل إلى «إنتاج» في موديل الطلب وتنزل إلى الماركر.",

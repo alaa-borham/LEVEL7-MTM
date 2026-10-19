@@ -2061,7 +2061,8 @@ class GrafisPartsPage(Page):
         self.t.setHorizontalHeaderLabels([tr(c) for c in self.COLS])
         self.t.horizontalHeader().setStretchLastSection(True)
         self.t.verticalHeader().setVisible(False)
-        lay.addWidget(self.t, 1)
+        self.t.setColumnHidden(0, True)                  # fixed pieces are for every order; the parts an option
+        lay.addWidget(self.t, 1)                         # chooses are typed in Piece options setup
         bar = QHBoxLayout()
         for text, fn in (("Add row", lambda: self.add_row({})), ("Remove row", self.remove_row), ("Save", self.save)):
             b = QPushButton(tr(text))
@@ -2080,8 +2081,8 @@ class GrafisPartsPage(Page):
         fill_customer_box(self.ws, self.customer_box)
         from ..services.gparts import model_parts, option_choices, parts_table
         mdl = self._mdl()
-        self.info.setText(tr("Choose for each design option the GRAFIS parts it needs (* = every order). Exactly "
-                             "these parts are switched to production in the order's model.") +
+        self.info.setText(tr("The GRAFIS parts every order has (always in the marker). The parts a design option "
+                             "of the XML chooses are set next to its value in Piece options setup.") +
                           f"\n{tr('GRAFIS model (MDL)')}: {mdl or '⚠ ' + tr('not set')}")
         try:
             self.parts = model_parts(mdl) if mdl else {}
@@ -2091,16 +2092,15 @@ class GrafisPartsPage(Page):
         self.options = option_choices(self.ws)
         self.t.setRowCount(0)
         for r in parts_table(self.ws):
-            self.add_row(r)
+            if r["option"] == "*":
+                self.add_row(r)
         self.t.resizeColumnsToContents()
 
     def add_row(self, r: dict):
         i = self.t.rowCount()
         self.t.insertRow(i)
         oc = QComboBox()
-        for key, lab in self.options:
-            oc.addItem(tr("always") + " (*)" if key == "*" else lab, key)
-        oc.setCurrentIndex(max(oc.findData(r.get("option") or "*"), 0))
+        oc.addItem(tr("always") + " (*)", "*")
         pc = QComboBox()
         pc.addItem(tr("— choose the part —"), None)         # nothing picked by itself
         for n, (name, mat) in sorted(self.parts.items()):
@@ -2150,9 +2150,10 @@ class GrafisPartsPage(Page):
         return out
 
     def save(self):
-        from ..services.gparts import save_parts
+        from ..services.gparts import parts_table, save_parts
+        chosen = [r for r in parts_table(self.ws) if r["option"] != "*"]     # kept: set in Piece options setup
         try:
-            ver = save_parts(self.ws, self.rows(), self._mdl())
+            ver = save_parts(self.ws, self.rows() + chosen, self._mdl())
         except Exception as e:  # noqa: BLE001
             QMessageBox.warning(self, tr("Error"), str(e))
             return False

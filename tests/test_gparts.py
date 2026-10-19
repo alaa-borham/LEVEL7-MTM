@@ -52,7 +52,7 @@ def test_parts_table_switches_exactly_those_parts_on(ws, tmp_path, base_off):
 
 
 @needs_mdl
-def test_parts_page_round_trip(ws, base_off):
+def test_parts_page_round_trip(ws, base_off, monkeypatch):
     QtWidgets = pytest.importorskip("PySide6.QtWidgets")
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from level7mtm.ui.main_window import MainWindow
@@ -61,20 +61,26 @@ def test_parts_page_round_trip(ws, base_off):
     win = MainWindow(ws)
     page = win.pages["GRAFIS parts"]
     page.refresh()
+    save_parts(ws, [{"option": "jabzour=splender", "part": 17, "material": "F", "copies": 1, "mirrored": 0}],
+               base_off)
+    page.refresh()
+    assert page.t.rowCount() == 0                                     # an option's parts: in Piece options only
     page.add_row({})
     w = [page.t.cellWidget(0, j) for j in range(5)]
-    w[0].setCurrentIndex(w[0].findData("jabzour=splender"))
     w[1].setCurrentIndex(w[1].findData(17))
     assert w[2].currentText() == "F"                                  # the part's own material
     w[4].setValue(0)
-    assert page.rows() == [{"option": "jabzour=splender", "part": 17, "material": "F", "copies": 1, "mirrored": 0}]
+    assert page.rows() == [{"option": "*", "part": 17, "material": "F", "copies": 1, "mirrored": 0}]
     page.add_row({})                                                  # a new row picks no part by itself
     assert len(page.rows()) == 1
     page.add_row({"option": "*", "part": 7, "material": "O", "copies": 1, "mirrored": 0})
     page.t.cellWidget(1, 5).click()                                   # ✕ of the empty row
     assert [r["part"] for r in page.rows()] == [17, 7] and page.t.rowCount() == 2
-    save_parts(ws, page.rows(), base_off)
-    page.refresh()
-    assert page.rows()[0]["part"] == 17
+    monkeypatch.setattr("level7mtm.ui.main_window.reread_held_question", lambda *a: None)
+    assert page.save()
+    from level7mtm.services.gparts import parts_table
+    assert sorted((r["option"], r["part"]) for r in parts_table(ws)) == [("*", 7), ("*", 17),
+                                                                         ("jabzour=splender", 17)]   # kept
+    assert [r["part"] for r in page.rows()] == [17, 7]
     win.close()
     app.processEvents()
