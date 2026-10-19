@@ -293,13 +293,14 @@ def fill_customer_box(ws, box) -> None:
 def reread_held_question(page, msg: str) -> None:
     """After the customer's settings were saved: read his held orders again (they may pass now)."""
     from ..services.customers import held_files, reread_held
-    n = len(held_files(page.ws))
+    cid = page.ws.customer()                             # the customer edited (in the background: no screen choice)
+    n = len(held_files(page.ws, cid))
     if not n:
         QMessageBox.information(page, tr("Saved"), msg)
         return
     if QMessageBox.question(page, tr("Saved"), msg + "\n\n" + tr("Read this customer's held XML files again "
                                                                    "now?") + f" ({n})") == QMessageBox.Yes:
-        page.win.run(lambda: reread_held(page.ws), lambda outs: (
+        page.win.run(lambda: reread_held(page.ws, cid), lambda outs: (
             page.win.refresh_cad(force=True),
             QMessageBox.information(page, tr("Saved"), reread_report(page.ws, outs))))
 

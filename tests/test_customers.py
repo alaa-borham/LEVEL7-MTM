@@ -411,3 +411,20 @@ def test_orders_read_before_the_product_are_read_again_with_it(ws, xml53):
     outs, skipped = reread_lines(ws, [rid])
     assert not skipped and outs[0].status == "imported"
     assert ws.customer_of(outs[0].lines[0]["revision_id"]) == pid         # now read with the product
+
+
+def test_rereading_after_saving_reads_only_that_customers_orders(ws, xml53):
+    """The re-read runs in the background, where no customer is chosen on the screen: it must still read the held
+    files of the customer whose settings were saved, never another customer's."""
+    import threading
+
+    from level7mtm.services.customers import reread_held
+    cid = customers.add_customer(ws, "Richy", "From Richy")
+    mine = ws.import_data(_xml(xml53, "From Richy").replace(b"Collar Square", b"Collar Round"), "r.xml")
+    other = ws.import_data(open(xml53, "rb").read().replace(b"Collar Square", b"Collar Round"), "l.xml")
+    assert mine.lines[0]["status"] == other.lines[0]["status"] == "needs_review"
+    got = []
+    th = threading.Thread(target=lambda: got.extend(reread_held(ws, cid)))
+    th.start()
+    th.join()
+    assert [o.file_name for o in got] == ["r.xml"]                     # LEVEL7's order is not touched
