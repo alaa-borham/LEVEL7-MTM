@@ -457,3 +457,43 @@ def reread_held(ws, cid: str | None = None) -> list:
                     out.grafis.append(order_mdl(ws, ln["revision_id"]))
         outs.append(out)
     return outs
+
+
+def measurement_table(ws, cid: str | None = None) -> str:
+    """The Measurement-Table-Name his XML files must have ("" = not checked)."""
+    with ws.for_customer(cid or ws.customer()):
+        _, prof = ws.active("mapping")
+        return prof.get("measurements", {}).get("measurement_table") or ""
+
+
+def set_measurement_table(ws, cid: str, name: str) -> bool:
+    """Set the Measurement-Table-Name of the customer / product (a new mapping version; an order whose XML has
+    another name waits for review). Returns True when changed."""
+    from .xtable import _next_version
+    name = (name or "").strip()
+    with ws.for_customer(cid):
+        _, prof = ws.active("mapping")
+        if (prof.get("measurements", {}).get("measurement_table") or "") == name:
+            return False
+        prof = copy.deepcopy(prof)
+        if name:
+            prof["measurements"]["measurement_table"] = name
+        else:
+            prof["measurements"].pop("measurement_table", None)
+        prof["version"] = _next_version(ws, "mapping", prof["profile_id"], prof["version"])
+        ws.set_active("mapping", ws.save_document("mapping", prof, f"Measurement-Table-Name: {name or '(any)'}"))
+    return True
+
+
+def basic_sizes_seen(ws, cid: str | None = None) -> list[str]:
+    """The Basic-Size values that came in the XML of the customer's / product's orders (shown only)."""
+    import json
+    cid = cid or ws.customer()
+    seen: list[str] = []
+    for r in ws.db.q("SELECT raw_line, normalized FROM revisions ORDER BY id DESC LIMIT 2000"):
+        if (json.loads(r["normalized"]).get("customer") or DEFAULT_CUSTOMER) != cid:
+            continue
+        b = json.loads(r["raw_line"]).get("basic_size")
+        if b and b not in seen:
+            seen.append(str(b))
+    return seen

@@ -228,6 +228,10 @@ def customer_bar(page) -> QWidget:
     return w
 
 
+def _few(values: list[str], n: int = 4) -> str:
+    return ", ".join(values[:n]) + (f" … (+{len(values) - n})" if len(values) > n else "") if values else "—"
+
+
 def pattern_bar(page) -> QWidget:
     """"Pattern to review: [..]" — the model the size table / fixed pieces are shown on: one of the customer's
     patterns. A customer without patterns chooses a GRAFIS model file instead."""
@@ -650,8 +654,8 @@ class OrderPage(Page):
         raw = r["raw_line"]
         self.head.setText(f"<b>{r['line_number']}</b> — {tr('Status')}: {tr(r['status'])} — {tr('Quantity')}: "
                           f"{r['quantity']} — Fabric {raw.get('fabric_number')} / {raw.get('fabric_width_mm')} mm — "
-                          f"{raw.get('measurement_table')} / Basic-Size {raw.get('basic_size')} "
-                          f"(Basic-Size not used: open question) — {raw.get('order_date')}")
+                          f"{raw.get('measurement_table')} / Basic-Size {raw.get('basic_size')} — "
+                          f"{raw.get('order_date')}")
         ms = r["normalized"]["measurements"]
         fill(self.meas, [[k, label(v["label"]), v["source_value"], v["source_unit"],
                           "—" if v["value_mm"] is None else f"{v['value_mm']:.1f}" + (" ✎" if v.get("manual") else ""),
@@ -2547,7 +2551,7 @@ class CustomersPage(Page):
         body = QHBoxLayout()                          # the list on one side (full height), the settings beside it
         left = QVBoxLayout()
         self.t = table(["Customer / product", "XML name (Reference)", "Reseller in the XML", "Item Number",
-                        "Patterns"])
+                        "Measurement table (XML)", "Basic-Size in the XML", "Patterns"])
         self.t.itemSelectionChanged.connect(self._picked)
         left.addWidget(self.t, 1)
         bar = QHBoxLayout()
@@ -2639,7 +2643,7 @@ class CustomersPage(Page):
             self.win.customer_changed()               # refreshes this page with his settings
 
     def refresh(self):
-        from ..services.customers import list_customers, patterns
+        from ..services.customers import basic_sizes_seen, list_customers, measurement_table, patterns
         every = list_customers(self.ws)
         cs = []                                          # each customer, his products under him
         for c in every:
@@ -2656,6 +2660,8 @@ class CustomersPage(Page):
             mark = "● " if c["id"] == cur else ""
             rows.append([(f"      ↳ {mark}" if c.get("parent") else mark) + c["name"], c["reference"],
                          c.get("reseller") or "—", c.get("item") or ("—" if not c.get("parent") else ""),
+                         measurement_table(self.ws, c["id"]) or "—",
+                         _few(basic_sizes_seen(self.ws, c["id"])),
                          tr("for each product") if c["id"] in with_products else    # the names: in Patterns
                          (tr("{n} patterns").format(n=len(pats)) if pats else "—")])
         pb = self.tile_buttons["patterns"]
@@ -2686,10 +2692,14 @@ class CustomersPage(Page):
         d.setWindowTitle(f"{tr('Add product…')} — {pc['name']}")
         d.setMinimumWidth(420)
         f = QFormLayout(d)
-        e_name, e_item = QLineEdit(), QLineEdit()
+        e_name, e_item, e_table = QLineEdit(), QLineEdit(), QLineEdit()
         e_item.setPlaceholderText("1001001001")
+        e_table.setPlaceholderText("Thobe_Measurments_Full")
+        e_table.setToolTip(tr("Measurement-Table-Name in the XML; another name makes the order wait for review "
+                              "(empty: any)"))
         f.addRow(tr("Product") + ":", e_name)
         f.addRow(tr("Item Number") + ":", e_item)
+        f.addRow(tr("Measurement table (XML)") + ":", e_table)
         src = QComboBox()
         for x in [pc] + products(self.ws, parent):
             src.addItem(x["name"], x["id"])
@@ -2702,11 +2712,14 @@ class CustomersPage(Page):
             return
         pid = self.win.guard(lambda: add_product(self.ws, parent, e_name.text(), e_item.text(),
                                                  copy_from=src.currentData()))
+        if pid and e_table.text().strip():
+            from ..services.customers import set_measurement_table
+            self.win.guard(lambda: set_measurement_table(self.ws, pid, e_table.text()))
         if pid:
             self.ws.db.set_setting("ui.customer", pid)
             self.win.customer_changed()
 
-    def _dialog(self, title, name="", ref="", copy_choices=None, reseller=""):
+    def _dialog(self, title, name="", ref="", copy_choices=None, reseller="", table=None):
         d = QDialog(self)
         d.setWindowTitle(title)
         d.setMinimumWidth(420)
@@ -2718,6 +2731,10 @@ class CustomersPage(Page):
         f.addRow(tr("Customer") + ":", e_name)
         f.addRow(tr("XML name (Reference)") + ":", e_ref)
         f.addRow(tr("Reseller in the XML") + ":", e_res)
+        e_table = QLineEdit(table or "")
+        if table is not None:                             # editing: his Measurement-Table-Name too
+            e_table.setPlaceholderText("Thobe_Measurments_Full")
+            f.addRow(tr("Measurement table (XML)") + ":", e_table)
         src = None
         if copy_choices:
             src = QComboBox()
@@ -2730,13 +2747,13 @@ class CustomersPage(Page):
         f.addRow(bb)
         if d.exec() != QDialog.Accepted:
             return None
-        return e_name.text(), e_ref.text(), (src.currentData() if src else None), e_res.text()
+        return e_name.text(), e_ref.text(), (src.currentData() if src else None), e_res.text(), e_table.text()
 
     def add(self):
         from ..services.customers import add_customer, list_customers
         got = self._dialog(tr("Add customer…"), copy_choices=[(c["id"], c["name"]) for c in list_customers(self.ws)])
         if got:
-            name, ref, src, res = got
+            name, ref, src, res, _ = got
             cid = self.win.guard(lambda: add_customer(self.ws, name, ref, copy_from=src, reseller=res))
             if cid:
                 self.ws.db.set_setting("ui.customer", cid)
@@ -2752,18 +2769,31 @@ class CustomersPage(Page):
         c = get(self.ws, cid) if cid else None
         if c is None:
             return
-        if c.get("parent"):                               # a product: its name and Item Number
-            name, ok = QInputDialog.getText(self, tr("Edit…"), tr("Product"), text=c["name"])
-            if not ok:
-                return
-            item, ok = QInputDialog.getText(self, tr("Edit…"), tr("Item Number"), text=c.get("item", ""))
-            if ok:
-                self.win.guard(lambda: update_customer(self.ws, cid, name=name, item=item))
+        from ..services.customers import measurement_table, set_measurement_table
+        table_now = measurement_table(self.ws, cid)
+        if c.get("parent"):                               # a product: its name, Item Number and measurement table
+            d = QDialog(self)
+            d.setWindowTitle(f"{tr('Edit…')} — {c['name']}")
+            d.setMinimumWidth(420)
+            f = QFormLayout(d)
+            e_name, e_item, e_table = QLineEdit(c["name"]), QLineEdit(c.get("item", "")), QLineEdit(table_now)
+            e_table.setPlaceholderText("Thobe_Measurments_Full")
+            f.addRow(tr("Product") + ":", e_name)
+            f.addRow(tr("Item Number") + ":", e_item)
+            f.addRow(tr("Measurement table (XML)") + ":", e_table)
+            bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            bb.accepted.connect(d.accept)
+            bb.rejected.connect(d.reject)
+            f.addRow(bb)
+            if d.exec() == QDialog.Accepted:
+                self.win.guard(lambda: update_customer(self.ws, cid, name=e_name.text(), item=e_item.text()))
+                self.win.guard(lambda: set_measurement_table(self.ws, cid, e_table.text()))
                 self.win.customer_changed()
             return
-        got = self._dialog(tr("Edit…"), c["name"], c["reference"], reseller=c.get("reseller", ""))
+        got = self._dialog(tr("Edit…"), c["name"], c["reference"], reseller=c.get("reseller", ""), table=table_now)
         if got:
             self.win.guard(lambda: update_customer(self.ws, cid, name=got[0], reference=got[1], reseller=got[3]))
+            self.win.guard(lambda: set_measurement_table(self.ws, cid, got[4]))
             self.win.customer_changed()
 
     def learn_xml(self):

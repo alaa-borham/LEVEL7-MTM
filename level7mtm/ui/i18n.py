@@ -362,6 +362,11 @@ AR = {
     "GRAFIS part": "القطعة في GRAFIS",
     "Part number": "رقم البارت",
     "Pattern to review": "البترون للمراجعة",
+    "Measurement table (XML)": "جدول القياس في XML",
+    "Basic-Size in the XML": "Basic-Size في XML",
+    "Basic-Size": "المقاس الأساسي",
+    "Measurement-Table-Name in the XML; another name makes the order wait for review (empty: any)":
+        "Measurement-Table-Name في XML؛ أي اسم آخر يجعل الطلب ينتظر المراجعة (فارغ: أي اسم)",
     "The order leaves the list and stays in the log; its XML is moved to the folder 'deleted' in the ERP folder — put it back in the ERP folder to read it again. Its files can be deleted too (order model, PLT / ISO / DXF / L7N).":
         "يخرج الطلب من القائمة ويبقى في السجل، وينتقل ملف XML الخاص به إلى المجلد 'deleted' داخل مجلد ERP — أعده إلى مجلد ERP ليُقرأ من جديد. ويمكن حذف ملفاته أيضًا (موديل الطلب، PLT / ISO / DXF / L7N).",
     "not in the GRAFIS model": "غير موجود في موديل GRAFIS",

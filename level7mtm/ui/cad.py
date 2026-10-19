@@ -204,6 +204,7 @@ def order_rows(ws, limit: int = 300) -> list[dict]:
         row = {"rid": rid, "line": rev["line_number"], "stage": "new", "problems": [], "imported": rev["imported_at"],
                "customer": names.get(cust, cust),
                "fabric": raw.get("fabric_number") or "", "width": norm.get("fabric_width_mm"),
+               "basic_size": raw.get("basic_size") or "", "table": raw.get("measurement_table") or "",
                "quantity": rev["quantity"], "times": {"new": rev["imported_at"]}, "x_rows": [], "mdl": None,
                "result": None, "l7n": None, "outputs": [], "length_mm": None, "efficiency_pct": None,
                "placed": None, "status": rev["status"], "robot_failed": False}
@@ -1484,8 +1485,8 @@ class Inspector(QScrollArea):
             self.buttons[key] = b
             self.lay.addWidget(b)
         self.kv: dict[str, QLabel] = {}
-        self._section(tr("The order"), [("customer", "Customer"), ("fabric", "Fabric"), ("width", "Width"),
-                                         ("quantity", "Quantity"), ("imported", "Imported")])
+        self._section(tr("The order"), [("customer", "Customer"), ("basic_size", "Basic-Size"), ("fabric", "Fabric"),
+                                         ("width", "Width"), ("quantity", "Quantity"), ("imported", "Imported")])
         self.lay.addWidget(self._sec_title(tr("Nesting")))
         nr = QHBoxLayout()
         self.ring = Ring()
@@ -1562,6 +1563,8 @@ class Inspector(QScrollArea):
         self.pill.setText(tr(STAGE_TEXT[r["stage"]]))
         self.pill.setStyleSheet(f"color: {col.name()}; border-color: {col.name()};")
         self.kv["customer"].setText(r.get("customer") or "—")
+        self.kv["basic_size"].setText(str(r.get("basic_size") or "—"))
+        self.kv["basic_size"].setToolTip(r.get("table") or "")
         self.kv["fabric"].setText(str(r["fabric"] or "—"))
         self.kv["width"].setText(f"{r['width']:g} mm" if r["width"] else "—")
         self.kv["quantity"].setText(str(r["quantity"] or "—"))

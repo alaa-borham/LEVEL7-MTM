@@ -319,11 +319,11 @@ def test_customers_page_lists_products_under_their_customer(ws):
     assert "Richy / Thobe men" in [win.customer_box.itemText(i) for i in range(win.customer_box.count())]
     cp = win.pages["Customers"]
     from level7mtm.ui.i18n import tr
-    assert t.item(1, 4).text() == tr("for each product")               # the patterns are the products'
+    assert t.item(1, 6).text() == tr("for each product")               # the patterns are the products'
     customers.set_patterns(ws, [{"variation": "Big Size", "mdl": "a.mdl"}, {"variation": "Slim", "mdl": "b.mdl"}],
                            customers.products(ws, a)[0]["id"])
     cp.refresh()
-    assert t.item(2, 4).text() == tr("{n} patterns").format(n=2)         # the names only in Patterns
+    assert t.item(2, 6).text() == tr("{n} patterns").format(n=2)         # the names only in Patterns
     assert cp.tile_buttons["patterns"].isEnabled()                       # LEVEL7: no products
     t.selectRow(1)
     app.processEvents()
@@ -364,3 +364,31 @@ def test_tables_reviewed_on_one_of_the_patterns(ws, tmp_path):
     customers.set_patterns(ws, [])
     page.refresh()
     assert not page.pattern_pick.isHidden()                             # no patterns: choose the model file
+
+
+def test_product_measurement_table_and_basic_size(ws, xml53):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.services.customers import basic_sizes_seen, measurement_table, set_measurement_table
+    from level7mtm.ui.main_window import MainWindow
+    import re
+    cid = customers.add_customer(ws, "Richy", "From Richy")
+    data = _xml(xml53, "From Richy")
+    item = re.search(rb'Item Number="(\d+)"', data).group(1).decode()
+    table = re.search(rb'Measurement-Table-Name="([^"]+)"', data).group(1).decode()
+    pid = customers.add_product(ws, cid, "Thobe", item)
+    assert set_measurement_table(ws, pid, "Other_Table") and measurement_table(ws, pid) == "Other_Table"
+    out = ws.import_data(data, "Order-r.xml")
+    assert out.lines[0]["status"] == "needs_review"                     # another table name: waits for review
+    rev = ws.revision(out.lines[0]["revision_id"])
+    assert any(p["code"] == "measure.table" for p in rev["normalized"]["problems"])
+    assert basic_sizes_seen(ws, pid) == [rev["raw_line"]["basic_size"]]
+    set_measurement_table(ws, pid, table)
+    assert not set_measurement_table(ws, pid, table)                     # unchanged: no new version
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    win = MainWindow(ws)
+    win.goto("Customers")
+    app.processEvents()
+    t = win.pages["Customers"].t
+    row = next(i for i in range(t.rowCount()) if "Thobe" in t.item(i, 0).text())
+    assert t.item(row, 4).text() == table and t.item(row, 5).text() == rev["raw_line"]["basic_size"]
