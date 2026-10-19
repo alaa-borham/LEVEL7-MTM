@@ -1264,6 +1264,7 @@ class OrderBrowser(QWidget):
     """Order lines as a tree: line → the pieces of its marker; coloured by where the line is in the chain."""
     selected = Signal(object)
     remove = Signal(list)                              # right click → remove: the order lines (revision ids)
+    reread = Signal(list)                              # right click → read their XML again with today's settings
 
     def __init__(self):
         super().__init__()
@@ -1427,6 +1428,8 @@ class OrderBrowser(QWidget):
         if not rids:
             return
         m = QMenu(self)
+        m.addAction(tr("Read again with the current settings"), lambda: self.reread.emit(rids))
+        m.addSeparator()
         m.addAction(tr("Delete order…") if len(rids) == 1 else f"{tr('Delete orders…')} ({len(rids)})",
                     lambda: self.remove.emit(rids))
         m.exec(self.tree.viewport().mapToGlobal(pos))

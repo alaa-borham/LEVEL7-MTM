@@ -392,3 +392,22 @@ def test_product_measurement_table_and_basic_size(ws, xml53):
     t = win.pages["Customers"].t
     row = next(i for i in range(t.rowCount()) if "Thobe" in t.item(i, 0).text())
     assert t.item(row, 4).text() == table and t.item(row, 5).text() == rev["raw_line"]["basic_size"]
+
+
+def test_orders_read_before_the_product_are_read_again_with_it(ws, xml53):
+    """Orders read with the customer's settings (before his product was added) are read again with the
+    product's: after saving its settings (held files of the family) or by right click → Read again."""
+    import re
+
+    from level7mtm.services.customers import held_files, reread_lines
+    cid = customers.add_customer(ws, "Richy", "From Richy")
+    data = _xml(xml53, "From Richy").replace(b"Collar Square", b"Collar Round")
+    out = ws.import_data(data, "Order-r.xml")
+    rid = out.lines[0]["revision_id"]
+    assert ws.customer_of(rid) == cid and out.lines[0]["status"] == "needs_review"
+    item = re.search(rb'Item Number="(\d+)"', data).group(1).decode()
+    pid = customers.add_product(ws, cid, "Thobe", item)
+    assert held_files(ws, pid)                                            # the customer's held file: his product's too
+    outs, skipped = reread_lines(ws, [rid])
+    assert not skipped and outs[0].status == "imported"
+    assert ws.customer_of(outs[0].lines[0]["revision_id"]) == pid         # now read with the product

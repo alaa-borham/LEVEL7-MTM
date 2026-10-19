@@ -3499,6 +3499,7 @@ class MainWindow(QMainWindow):
         self.browser.setMinimumWidth(210)
         self.browser.selected.connect(self.select_row)
         self.browser.remove.connect(self.remove_orders)
+        self.browser.reread.connect(self.reread_orders)
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
         self.tabs.setTabsClosable(True)
@@ -3882,6 +3883,20 @@ class MainWindow(QMainWindow):
                 msg += "\n\n⚠ " + tr("Folder watch is off: the robot and the saved GRAFIS files wait. "
                                         "Click «Folder watch» in the status bar to switch it on.")
         self.marker.set_marker(marker, row, msg)
+
+    def reread_orders(self, rids: list[int]):
+        """Right click → Read again: the XML of these lines is read with today's settings of its customer /
+        product (after the size table, piece options … were corrected)."""
+        from ..services.customers import reread_lines
+
+        def done(res):
+            outs, skipped = res
+            self.refresh_cad(force=True)
+            text = reread_report(self.ws, outs) if outs else ""
+            if skipped:
+                text += ("\n\n" if text else "") + "\n".join(tr_msg(x) for x in skipped)
+            QMessageBox.information(self, tr("Read again with the current settings"), text or tr("Nothing to read"))
+        self.run(lambda: reread_lines(self.ws, rids), done)
 
     def remove_orders(self, rids: list[int]):
         """Right click → Delete order…: the order lines leave the list (cancelled, kept in the log); their files

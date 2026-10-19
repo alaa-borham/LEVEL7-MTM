@@ -430,33 +430,63 @@ def _take_back(ws, fid: int, name: str) -> None:
         ws.db.audit(c, ws.actor, "import.reread", "import_file", fid, {"file": name, "lines": [r["id"] for r in revs]})
 
 
+def _family(ws, cid: str) -> set[str]:
+    """The customer, his products and (for a product) its customer: an XML of one of them may now be read with
+    another (e.g. orders read before the products were added)."""
+    every = list_customers(ws)
+    me = next((c for c in every if c["id"] == cid), None)
+    top = (me or {}).get("parent") or cid
+    return {top} | {c["id"] for c in every if c.get("parent") == top}
+
+
 def held_files(ws, cid: str | None = None) -> list[int]:
-    """Imported XML files of the customer whose order lines all wait for review (nothing went further)."""
+    """Imported XML files of the customer (or his products) whose order lines all wait (nothing went further)."""
     import json
-    cid = cid or ws.customer()
+    fam = _family(ws, cid or ws.customer())
     out = []
     for f in ws.db.q("SELECT DISTINCT import_file AS id FROM revisions WHERE status='needs_review'"):
         revs = ws.db.q("SELECT status, normalized FROM revisions WHERE import_file=?", (f["id"],))
         if revs and all(r["status"] in HELD for r in revs) and all(
-                (json.loads(r["normalized"]).get("customer") or DEFAULT_CUSTOMER) == cid for r in revs):
+                (json.loads(r["normalized"]).get("customer") or DEFAULT_CUSTOMER) in fam for r in revs):
             out.append(f["id"])
     return out
 
 
 def reread_held(ws, cid: str | None = None) -> list:
     """Read the customer's held XML files again with his current settings (models written as on import)."""
-    from .grafis_orders import order_mdl, settings
+    return [_reread(ws, fid) for fid in held_files(ws, cid)]
+
+
+def reread_lines(ws, rids: list[int]) -> tuple[list, list[str]]:
+    """Read the XML files of these order lines again with today's settings (right click → Read again). A file
+    with a line that went further (model written to GRAFIS, nested) is not read again. Returns (outcomes,
+    skipped reasons)."""
+    fids, skipped = [], []
+    for rid in rids:
+        r = ws.db.one("SELECT import_file FROM revisions WHERE id=?", (rid,))
+        if r and r["import_file"] and r["import_file"] not in fids:
+            fids.append(r["import_file"])
     outs = []
-    for fid in held_files(ws, cid):
-        f = ws.db.one("SELECT file_name, source_path, raw FROM import_files WHERE id=?", (fid,))
-        _take_back(ws, fid, f["file_name"])
-        out = ws.import_data(bytes(f["raw"]), f["file_name"], f["source_path"] or "")
-        if settings(ws)["enabled"] and out.status == "imported":
-            for ln in out.lines:
-                if ln["action"] in ("new", "new_revision"):
-                    out.grafis.append(order_mdl(ws, ln["revision_id"]))
-        outs.append(out)
-    return outs
+    for fid in fids:
+        revs = ws.db.q("SELECT status FROM revisions WHERE import_file=?", (fid,))
+        if any(r["status"] not in HELD for r in revs):
+            name = ws.db.one("SELECT file_name FROM import_files WHERE id=?", (fid,))["file_name"]
+            skipped.append(f"{name}: has order lines that went further, not read again")
+            continue
+        outs.append(_reread(ws, fid))
+    return outs, skipped
+
+
+def _reread(ws, fid: int):
+    from .grafis_orders import order_mdl, settings
+    f = ws.db.one("SELECT file_name, source_path, raw FROM import_files WHERE id=?", (fid,))
+    _take_back(ws, fid, f["file_name"])
+    out = ws.import_data(bytes(f["raw"]), f["file_name"], f["source_path"] or "")
+    if settings(ws)["enabled"] and out.status == "imported":
+        for ln in out.lines:
+            if ln["action"] in ("new", "new_revision"):
+                out.grafis.append(order_mdl(ws, ln["revision_id"]))
+    return out
 
 
 def measurement_table(ws, cid: str | None = None) -> str:
