@@ -76,14 +76,24 @@ def set_option_parts(ws, wanted: dict[str, list[int]], mdl_path: str | None = No
     rows = parts_table(ws)
     mats = {n: (v[1] or "O") for n, v in model_parts(mdl_path).items()} if mdl_path else {}
     changed = False
-    for opt, nums in wanted.items():
+    for opt, w in wanted.items():
+        # [numbers], or {parts: [numbers], copies, mirrored} — the count of each part and its mirrored copies
+        nums, copies, mirrored = (w, None, None) if isinstance(w, list) else \
+            (w["parts"], w.get("copies"), w.get("mirrored"))
         have = [r for r in rows if r["option"] == opt]
-        if sorted(int(r["part"]) for r in have) == sorted(nums):
+        keep = {int(r["part"]): r for r in have}
+        new = []
+        for n in nums:
+            r = dict(keep.get(n) or {"option": opt, "part": n, "material": mats.get(n, "O"), "copies": 1,
+                                     "mirrored": 0})
+            if copies is not None:
+                r["copies"] = int(copies)
+            if mirrored is not None:
+                r["mirrored"] = int(mirrored)
+            new.append(r)
+        if sorted((int(r["part"]), int(r["copies"]), int(r["mirrored"])) for r in have) == \
+                sorted((int(r["part"]), int(r["copies"]), int(r["mirrored"])) for r in new):
             continue
         changed = True
-        keep = {int(r["part"]): r for r in have}
-        rows = [r for r in rows if r["option"] != opt]
-        for n in nums:
-            rows.append(keep.get(n) or {"option": opt, "part": n, "material": mats.get(n, "O"), "copies": 1,
-                                        "mirrored": 0})
+        rows = [r for r in rows if r["option"] != opt] + new
     return save_parts(ws, rows, mdl_path, note) if changed else None

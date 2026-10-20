@@ -1865,7 +1865,8 @@ class OptionsPage(Page):
     """Design option groups (collar, sleeve …), their values and the Variation name(s) in the XML that select them."""
     title = "Design options"
     GCOLS = ["Group code", "Name (ar)", "Name (en)", "Required", "Default value"]
-    VCOLS = ["Value code", "Name (ar)", "Name (en)", "Name in the XML (Variation)", "Part numbers"]
+    VCOLS = ["Value code", "Name (ar)", "Name (en)", "Name in the XML (Variation)", "Part numbers", "Copies",
+             "Mirrored"]
 
     def __init__(self, win):
         super().__init__(win)
@@ -2015,7 +2016,7 @@ class OptionsPage(Page):
                 continue
             vals.append({"value": code(t(0) or t(3)), "label": {"ar": t(1) or t(0), "en": t(2) or t(0)},
                          "erp_names": [n.strip() for n in re.split(r"[;\n]", t(3)) if n.strip()],
-                         "parts_text": t(4)})
+                         "parts_text": t(4), "copies_text": t(5), "mirrored_text": t(6)})
         self.groups[self.cur]["values"] = vals
 
     def _part_names(self) -> dict[int, str]:
@@ -2029,8 +2030,11 @@ class OptionsPage(Page):
         names of the parts are in the tooltip)."""
         from ..services.gparts import parts_table
         out: dict[str, list[str]] = {}
+        self._counts: dict[str, tuple[int, int]] = {}      # the copies / mirrored of the value's (first) part
         for r in parts_table(self.ws):
-            out.setdefault(r.get("option") or "*", []).append(str(int(r.get("part") or 0)))
+            k = r.get("option") or "*"
+            out.setdefault(k, []).append(str(int(r.get("part") or 0)))
+            self._counts.setdefault(k, (int(r.get("copies", 1)), int(r.get("mirrored", 0))))
         return {k: ", ".join(v) for k, v in out.items()}
 
     def _switch(self, prev, row):
@@ -2045,14 +2049,20 @@ class OptionsPage(Page):
         self.v.setRowCount(len(gr["values"]))
         parts, pnames = self._parts_of_values(), self._part_names()
         for i, val in enumerate(gr["values"]):
-            made = val.get("parts_text", parts.get(f"{gr['group']}={val['value']}", ""))
+            key = f"{gr['group']}={val['value']}"
+            made = val.get("parts_text", parts.get(key, ""))
+            cp, mi = getattr(self, "_counts", {}).get(key, (1, 0)) if made else ("", "")
+            cp, mi = val.get("copies_text", str(cp)), val.get("mirrored_text", str(mi))
             for j, x in enumerate([val["value"], val["label"].get("ar", ""), val["label"].get("en", ""),
-                                   "; ".join(val["erp_names"]), made]):
+                                   "; ".join(val["erp_names"]), made, cp, mi]):
                 it = QTableWidgetItem(x)
                 if j == 4:                                # the parts of the MDL this Variation chooses
                     named = [f"{int(m)}: {pnames[int(m)]}" for m in re.findall(r"\d+", x) if int(m) in pnames]
                     it.setToolTip("\n".join([tr("The GRAFIS part numbers this value produces, e.g. 36 or 36, 37 "
                                                  "(kept in Fixed pieces)")] + named))
+                elif j in (5, 6):                         # how many of each part, how many of them mirrored
+                    it.setToolTip(tr("Copies of each part of this value") if j == 5 else
+                                  tr("Mirrored copies of each part of this value"))
                 self.v.setItem(i, j, it)
         self.v.resizeColumnsToContents()
 
@@ -2139,8 +2149,9 @@ class OptionsPage(Page):
         self._read_values()
         for i in range(len(self.groups)):
             self._read_group_row(i)
-        return [{**g, "values": [{k: x for k, x in v.items() if k != "parts_text"} for v in g.get("values", [])]}
-                for g in self.groups]
+        return [{**g, "values": [{k: x for k, x in v.items() if k not in ("parts_text", "copies_text",
+                                                                           "mirrored_text")}
+                                 for v in g.get("values", [])]} for g in self.groups]
 
     def save(self):
         from ..services.gparts import set_option_parts
@@ -2151,8 +2162,11 @@ class OptionsPage(Page):
             for v in gr.get("values", []):
                 text = v.get("parts_text")
                 if text is not None:
-                    wanted[f"{gr['group']}={v['value']}"] = [
-                        int(m.group(1)) for m in (re.match(r"\s*(\d+)", x) for x in re.split(r"[,،;]", text)) if m]
+                    nums = [int(m.group(1)) for m in (re.match(r"\s*(\d+)", x) for x in re.split(r"[,،;]", text))
+                            if m]
+                    num = lambda t: int(t) if (t or "").strip().isdigit() else None   # noqa: E731
+                    wanted[f"{gr['group']}={v['value']}"] = {"parts": nums, "copies": num(v.get("copies_text")),
+                                                             "mirrored": num(v.get("mirrored_text"))}
         try:
             out = save_options(self.ws, groups)
             parts_ver = set_option_parts(self.ws, wanted, _mdl_or_none(self.ws))

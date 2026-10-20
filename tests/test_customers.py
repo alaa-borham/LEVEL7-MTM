@@ -242,14 +242,17 @@ def test_part_numbers_typed_next_to_an_option_value(ws, monkeypatch):
     app.processEvents()
     vi = next(i for i in range(page.v.rowCount()) if page.v.item(i, 0).text() == "saada")
     page.v.item(vi, 4).setText("36, 37")                              # the parts this Variation chooses
+    page.v.item(vi, 5).setText("2")                                   # two of each, one of them mirrored
+    page.v.item(vi, 6).setText("1")
     assert page.save()
-    got = sorted(int(r["part"]) for r in parts_table(ws) if r["option"] == "sleeve=saada")
-    assert got == [36, 37]
+    got = sorted((int(r["part"]), r["copies"], r["mirrored"]) for r in parts_table(ws) if r["option"] == "sleeve=saada")
+    assert got == [(36, 2, 1), (37, 2, 1)]
     gi = next(i for i, g in enumerate(page.groups) if g["group"] == "sleeve")
     page.g.setCurrentCell(gi, 0)
     app.processEvents()
     vi = next(i for i in range(page.v.rowCount()) if page.v.item(i, 0).text() == "saada")
     assert page.v.item(vi, 4).text() == "36, 37"                        # the numbers only, as typed
+    assert (page.v.item(vi, 5).text(), page.v.item(vi, 6).text()) == ("2", "1")
 
 
 def test_customer_matched_by_reference_and_reseller(ws, xml53):
