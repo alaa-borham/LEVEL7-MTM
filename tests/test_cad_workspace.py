@@ -596,13 +596,21 @@ def test_an_order_in_grafis_says_why_it_waits(ws, tmp_path):
     for rid in rids:
         m = tmp_path / f"{rid}.mdl"
         m.write_text("x")
+        import hashlib
         with ws.db.tx() as c:
             c.execute("INSERT INTO grafis_orders(revision_id, created_at, status, path, template_sha256, info) "
-                      "VALUES (?,?,?,?,?,?)", (rid, now(), "written", str(m), "t", json.dumps({"sha256": "s"})))
+                      "VALUES (?,?,?,?,?,?)", (rid, now(), "written", str(m), "t",
+                                               json.dumps({"sha256": hashlib.sha256(b"x").hexdigest()})))
     rows = {r["rid"]: r for r in cad.order_rows(ws)}
-    assert rows[rids[0]]["stage"] == "grafis" and tr("is off") in rows[rids[0]]["waiting"] or \
-        "robot is off" in rows[rids[0]]["waiting"] or "متوقف" in rows[rids[0]]["waiting"]
+    assert rows[rids[0]]["stage"] == "grafis"
+    assert rows[rids[0]]["waiting"].startswith(tr("The GRAFIS robot is off: switch it on (GRAFIS page → Robot) or "
+                                                  "open the model in GRAFIS, run Test Run All Parts and save")[:20])
     ws.db.set_setting("robot.enabled", True)
     rows = {r["rid"]: r for r in cad.order_rows(ws)}
     assert rows[rids[0]]["waiting"] == tr("Waiting for the GRAFIS robot")
     assert rows[rids[1]]["waiting"].endswith(f"1 {tr('models before it')}")    # its place in the queue
+    (tmp_path / f"{rids[0]}.mdl").write_text("saved by GRAFIS")
+    rows = {r["rid"]: r for r in cad.order_rows(ws)}
+    assert "MDL" in rows[rids[0]]["waiting"]                              # saved: waits to be read
+    (tmp_path / f"{rids[0]}.mdl").unlink()
+    assert "MDL" in {r["rid"]: r for r in cad.order_rows(ws)}[rids[0]]["waiting"]   # gone from the folder

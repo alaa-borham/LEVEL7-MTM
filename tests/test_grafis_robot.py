@@ -252,3 +252,28 @@ def test_one_robot_at_a_time_and_a_broken_report_never_retries(ws, monkeypatch, 
     r = grafis_robot.run_one(ws, job, drv=NoGrafis(), sleep=lambda s: None)
     assert r["status"] == "failed" and r["message"].startswith("TimeoutError")   # a reason, never empty
     assert ws.db.one("SELECT id FROM robot_jobs WHERE path=?", (job["path"],))     # recorded: not run again
+
+
+def test_a_model_written_again_with_the_same_content_is_tried_again(ws, tmp_path):
+    """Orders read again write the same model again: an old robot try (before this writing) must not keep it
+    waiting for ever (owner: "it says waiting for the robot and the robot is on")."""
+    import hashlib
+    import json
+
+    from conftest import XML_53
+
+    from level7mtm.services import grafis_robot as robot
+    rid = ws.import_file(XML_53).lines[0]["revision_id"]
+    m = tmp_path / "Order-1.mdl"
+    m.write_bytes(b"model")
+    sha = hashlib.sha256(b"model").hexdigest()
+    with ws.db.tx() as c:
+        c.execute("INSERT INTO grafis_orders(revision_id, created_at, status, path, template_sha256, info) "
+                  "VALUES (?, '2026-10-19T09:00:00', 'written', ?, 't', ?)", (rid, str(m), json.dumps({"sha256": sha})))
+        c.execute("INSERT INTO robot_jobs(sha256, path, at, status, message) VALUES (?,?,?,?,?)",
+                  (sha, str(m), "2026-10-19T09:05:00", "failed", "GRAFIS was closed"))
+    assert robot.pending(ws) == []                                        # tried for this writing
+    with ws.db.tx() as c:
+        c.execute("INSERT INTO grafis_orders(revision_id, created_at, status, path, template_sha256, info) "
+                  "VALUES (?, '2026-10-20T09:00:00', 'written', ?, 't', ?)", (rid, str(m), json.dumps({"sha256": sha})))
+    assert [j["path"] for j in robot.pending(ws)] == [str(m)]             # written again: a new job

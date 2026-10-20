@@ -370,6 +370,8 @@ AR = {
     "The GRAFIS robot is off: switch it on (GRAFIS page → Robot) or open the model in GRAFIS, run Test Run All Parts and save":
         "روبوت GRAFIS متوقف: شغّله (صفحة GRAFIS ← الروبوت) أو افتح الموديل في GRAFIS ونفّذ Test Run All Parts ثم احفظ",
     "Waiting for the GRAFIS robot": "ينتظر روبوت GRAFIS",
+    "The order model is not in the MDL folder any more (moved or deleted?): write it again":
+        "موديل الطلب لم يعد في مجلد MDL (نُقل أو حُذف؟): اكتبه من جديد",
     "models before it": "موديلات قبله",
     "As on the markers page": "كما في صفحة الماركرات",
     "The cutting file written for this customer's orders by LEVEL7 Nesting": "ملف القص الذي يكتبه LEVEL7 Nesting لطلبات هذا العميل",

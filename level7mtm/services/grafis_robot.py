@@ -411,7 +411,10 @@ def pending(ws) -> list[dict]:
                 continue
         except OSError:                                # being written / locked: looked at next time
             continue
-        if ws.db.one("SELECT id FROM robot_jobs WHERE sha256=? AND path=?", (info["sha256"], p)):
+        # tried already for THIS writing of the model; a model written again with the same content (e.g. its order
+        # read again) is a new job — an old try must not keep it waiting for ever
+        if ws.db.one("SELECT id FROM robot_jobs WHERE sha256=? AND path=? AND at>=?",
+                     (info["sha256"], p, r["created_at"])):
             continue
         out.append({"path": p, "sha256": info["sha256"], "line_number": info.get("line_number")})
     return out

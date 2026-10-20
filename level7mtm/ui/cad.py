@@ -182,6 +182,14 @@ def _grafis_wait(db, go, rj) -> str:
     and waiting to be read from the MDL folder."""
     if rj and rj["status"] == "done" and rj["at"] >= go["created_at"]:
         return tr("GRAFIS saved the model: waiting for it to be read from the MDL folder (is the folder watched?)")
+    import hashlib
+    try:
+        with open(go["path"], "rb") as fh:
+            changed = hashlib.sha256(fh.read()).hexdigest() != json.loads(go["info"]).get("sha256")
+    except OSError:
+        return tr("The order model is not in the MDL folder any more (moved or deleted?): write it again")
+    if changed:
+        return tr("GRAFIS saved the model: waiting for it to be read from the MDL folder (is the folder watched?)")
     if not db.get_setting("robot.enabled", False):
         return tr("The GRAFIS robot is off: switch it on (GRAFIS page → Robot) or open the model in GRAFIS, run "
                   "Test Run All Parts and save")
