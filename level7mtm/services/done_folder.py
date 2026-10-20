@@ -84,6 +84,55 @@ def move_xml_to_er(ws, src: str, problems: list[str], kind: str, fid=None) -> st
     return _move(ws, fid, src, er, "xml.error")
 
 
+def _locate(ws, fid, erp: str | None) -> str | None:
+    """Where the XML of this import is now inside the ERP folder (or its error folder): where it was read, else
+    by its name — the owner may have moved the files (e.g. into process) after they were read."""
+    import hashlib
+    f = ws.db.one("SELECT source_path, file_name, sha256 FROM import_files WHERE id=?", (fid,))
+    if not f or not erp or not os.path.isdir(erp):
+        return None
+    src = f["source_path"] or ""
+    if src and os.path.isfile(src) and _in_erp(src, erp):
+        return src
+    name = os.path.basename(src) or f["file_name"]
+    for cand in (os.path.join(erp, name), os.path.join(xml_dirs(erp)[1], name)):
+        try:
+            if os.path.isfile(cand):
+                with open(cand, "rb") as fh:
+                    if hashlib.sha256(fh.read()).hexdigest() == f["sha256"]:
+                        with ws.db.tx() as c:
+                            c.execute("UPDATE import_files SET source_path=? WHERE id=?", (cand, fid))
+                        return cand
+        except OSError:
+            continue
+    return None
+
+
+def sweep_finished(ws) -> list[str]:
+    """XML files still in the ERP folder (or error) whose order lines all have their cutting files: on to done
+    (e.g. finished while the folder was elsewhere, or moved by hand). Run when the folder watch starts."""
+    import hashlib
+    erp = ws.db.get_setting("watch.folder")
+    if not ws.db.get_setting("watch.move_done", True) or not erp or not os.path.isdir(erp):
+        return []
+    fids = []
+    for d in (erp, xml_dirs(erp)[1]):
+        for n in os.listdir(d):
+            p = os.path.join(d, n)
+            if not n.lower().endswith(".xml") or not os.path.isfile(p):
+                continue
+            try:
+                with open(p, "rb") as fh:
+                    sha = hashlib.sha256(fh.read()).hexdigest()
+            except OSError:
+                continue
+            f = ws.db.one("SELECT id FROM import_files WHERE sha256=? AND status='imported'", (sha,))
+            if f:
+                fids.append(f["id"])
+    rids = [r["id"] for fid in fids for r in ws.db.q("SELECT id FROM revisions WHERE import_file=?", (fid,))]
+    return move_finished(ws, rids) if rids else []
+
+
 def move_failed(ws, revision_ids, problems: list[str], kind: str) -> list[str]:
     """The XML of these order lines into <ERP>/ER (one of its lines has an error)."""
     out = []
@@ -107,9 +156,8 @@ def move_finished(ws, revision_ids) -> list[str]:
     files = {r["import_file"] for r in (ws.db.one("SELECT import_file FROM revisions WHERE id=?", (rid,))
                                         for rid in revision_ids) if r and r["import_file"]}
     for fid in files:
-        f = ws.db.one("SELECT id, source_path FROM import_files WHERE id=?", (fid,))
-        src = f["source_path"] if f else ""
-        if not src or not os.path.isfile(src) or not erp or not _in_erp(src, erp):
+        src = _locate(ws, fid, erp)
+        if not src:
             continue
         lines = ws.db.q("SELECT status FROM revisions WHERE import_file=? AND status NOT IN (?,?)", (fid,) + OPEN)
         if not lines or any(ln["status"] != "completed" for ln in lines):

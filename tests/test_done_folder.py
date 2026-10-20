@@ -102,3 +102,21 @@ def test_choosing_the_main_folder_reads_its_process_folder(ws, tmp_path):
     win.watcher = None
     win.close()
     app.processEvents()
+
+
+def test_finished_xml_moved_by_hand_into_process_still_goes_to_done(ws, tmp_path):
+    """The owner moved the XML files into process after they were read: when cutting is done (or the watch starts)
+    the file is found there by its name and goes to done."""
+    from level7mtm.services.done_folder import sweep_finished
+    main = tmp_path / "ERP XML"
+    proc = main / "process"
+    proc.mkdir(parents=True)
+    src = main / "Order-9-53-1_2.xml"
+    shutil.copy(XML_53, src)
+    ws.import_file(str(src))                                           # read from the main folder
+    shutil.move(str(src), str(proc / src.name))                        # moved by hand into process
+    ws.db.set_setting("watch.folder", str(proc))
+    assert sweep_finished(ws) == []                                    # not finished yet: stays
+    with ws.db.tx() as c:
+        c.execute("UPDATE revisions SET status='completed'")
+    assert sweep_finished(ws) == [str(main / "done" / src.name)] and not (proc / src.name).exists()
