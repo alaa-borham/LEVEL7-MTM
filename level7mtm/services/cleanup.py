@@ -76,7 +76,9 @@ def remove_lines(ws, rids: list[int], delete_files: bool = False, reason: str | 
         f = ws.db.one("SELECT source_path FROM import_files WHERE id=?", (fid,))   # put it back to read it again
         src = f["source_path"] if f else None
         if src and os.path.isfile(src) and ws._all_removed(fid):
-            dest_dir = os.path.join(os.path.dirname(src), "deleted")
+            here = os.path.dirname(src)                   # process / done / error layout: deleted beside them
+            dest_dir = os.path.join(os.path.dirname(here) if os.path.basename(here).lower() in ("process", "error")
+                                    else here, "deleted")
             try:
                 os.makedirs(dest_dir, exist_ok=True)
                 dest = os.path.join(dest_dir, os.path.basename(src))

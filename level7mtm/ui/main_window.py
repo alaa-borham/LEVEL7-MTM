@@ -3798,8 +3798,8 @@ class MainWindow(QMainWindow):
         erp = self.ws.db.get_setting("watch.folder")
         d = None
         if erp and os.path.isdir(erp):
-            from ..services.done_folder import _sub
-            d = _sub(erp, "done")
+            from ..services.done_folder import xml_dirs
+            d = xml_dirs(erp)[0]
         self._open_folder(d, tr("Finished XML (done)"))
 
     def _show_chain(self):
@@ -4406,6 +4406,10 @@ class MainWindow(QMainWindow):
 
     def start_watch(self, folder):
         from ..services.grafis_orders import import_and_prepare
+        sub = next((os.path.join(folder, e) for e in (os.listdir(folder) if os.path.isdir(folder) else [])
+                    if e.lower() == "process" and os.path.isdir(os.path.join(folder, e))), None)
+        if sub:                                              # the main folder chosen: XML are read from process
+            folder = sub
         self.watcher = FolderWatcher(self.ws, folder, settle_seconds=3, handler=lambda p: import_and_prepare(self.ws, p),
                                      known=self.ws.already_read)     # files read before stay read
         self.ws.db.set_setting("watch.folder", folder)

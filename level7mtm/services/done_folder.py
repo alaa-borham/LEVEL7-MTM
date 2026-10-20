@@ -1,4 +1,6 @@
-"""ERP XML files go to folders next to them (owner): every order line has its cutting files -> "done"
+"""ERP XML files go to folders next to them (owner): read from "process", every order line has its cutting files
+-> "done", an error -> "error" (process / done / error side by side; an older ERP folder keeps done and ER inside).
+Every order line has its cutting files -> "done"
 ("when the files are finished successfully they move straight to the DONE folder"); a line with an error ->
 "ER" ("if error it goes to ER"), with the reason in a .txt beside it. A file in ER whose lines are later all
 finished (after "try again") goes on to done. Only files of the watched ERP folder (or its ER) are moved."""
@@ -22,9 +24,27 @@ def _sub(erp: str, name: str) -> str:
     return d
 
 
+def _is_process(erp: str) -> bool:
+    return os.path.basename(os.path.normpath(erp)).lower() == "process"
+
+
+def xml_dirs(erp: str) -> tuple[str, str]:
+    """(done, error) folders of the ERP XML files. The owner's layout: process (read from) / done / error side by
+    side; else (older layout) done and ER inside the watched folder."""
+    if _is_process(erp):
+        parent = os.path.dirname(os.path.normpath(erp))
+        return _sub(parent, "done"), _sub(parent, "error")
+    return _sub(erp, "done"), _sub(erp, "ER")
+
+
 def _in_erp(src: str, erp: str) -> bool:
     d = os.path.dirname(src)
-    return _same(d, erp) or (os.path.basename(d).lower() == "er" and _same(os.path.dirname(d), erp))
+    if _same(d, erp):
+        return True
+    if _is_process(erp):
+        return os.path.basename(d).lower() == "error" and _same(os.path.dirname(d),
+                                                                 os.path.dirname(os.path.normpath(erp)))
+    return os.path.basename(d).lower() == "er" and _same(os.path.dirname(d), erp)
 
 
 def _move(ws, fid, src: str, folder: str, action: str) -> str | None:
@@ -50,7 +70,7 @@ def move_xml_to_er(ws, src: str, problems: list[str], kind: str, fid=None) -> st
     if not ws.db.get_setting("watch.move_done", True) or not erp or not src or not os.path.isfile(src) \
             or not _in_erp(src, erp):
         return None
-    er = _sub(erp, "ER")
+    er = xml_dirs(erp)[1]
     stem = os.path.splitext(os.path.basename(src))[0]
     try:
         with open(os.path.join(er, stem + ".txt"), "w", encoding="utf-8-sig") as fh:
@@ -94,10 +114,10 @@ def move_finished(ws, revision_ids) -> list[str]:
         lines = ws.db.q("SELECT status FROM revisions WHERE import_file=? AND status NOT IN (?,?)", (fid,) + OPEN)
         if not lines or any(ln["status"] != "completed" for ln in lines):
             continue                                       # a line still on its way or with an error: stays
-        target = _move(ws, fid, src, _sub(erp, "done"), "xml.done")
+        target = _move(ws, fid, src, xml_dirs(erp)[0], "xml.done")
         if target:
             reason = os.path.join(os.path.dirname(src), os.path.splitext(os.path.basename(src))[0] + ".txt")
-            if os.path.basename(os.path.dirname(src)).lower() == "er" and os.path.isfile(reason):
+            if os.path.basename(os.path.dirname(src)).lower() in ("er", "error") and os.path.isfile(reason):
                 try:
                     os.remove(reason)                      # the error is over
                 except OSError:

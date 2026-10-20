@@ -63,3 +63,42 @@ def test_xml_with_an_error_goes_to_er_then_to_done_once_finished(ws, tmp_path):
         c.execute("UPDATE revisions SET status='completed'")
     assert move_finished(ws, [rid]) == [str(erp / "done" / "Order-9-53-1_2.xml")]
     assert not reason.exists() and not (erp / "ER" / "Order-9-53-1_2.xml").exists()
+
+
+def test_process_done_error_side_by_side(ws, tmp_path):
+    """The owner's layout: XML are read from process; an error goes to error, a finished file to done, both beside
+    process (not inside it)."""
+    from level7mtm.services.done_folder import move_failed, move_finished
+    main = tmp_path / "ERP"
+    proc = main / "process"
+    proc.mkdir(parents=True)
+    src = proc / "Order-9-53-1_2.xml"
+    shutil.copy(XML_53, src)
+    ws.db.set_setting("watch.folder", str(proc))
+    ws.import_file(str(src))
+    rid = ws.list_revisions()[0]["id"]
+    assert move_failed(ws, [rid], ["robot"], "GRAFIS robot") == [str(main / "error" / "Order-9-53-1_2.xml")]
+    assert (main / "error" / "Order-9-53-1_2.txt").exists() and not src.exists()
+    with ws.db.tx() as c:
+        c.execute("UPDATE revisions SET status='completed'")
+    assert move_finished(ws, [rid]) == [str(main / "done" / "Order-9-53-1_2.xml")]   # from error on to done
+    assert not (main / "error" / "Order-9-53-1_2.txt").exists()
+
+
+def test_choosing_the_main_folder_reads_its_process_folder(ws, tmp_path):
+    import os
+
+    import pytest
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    (tmp_path / "ERP" / "Process").mkdir(parents=True)
+    win = MainWindow(ws)
+    win.start_watch(str(tmp_path / "ERP"))
+    assert win.watcher.folder == str(tmp_path / "ERP" / "Process")
+    assert ws.db.get_setting("watch.folder") == str(tmp_path / "ERP" / "Process")
+    win.timer.stop()
+    win.watcher = None
+    win.close()
+    app.processEvents()

@@ -102,8 +102,11 @@ class FolderWatcher:
         self.state.done.pop(path, None)
         self.state.failed.pop(path, None)
         if not os.path.isfile(path):                   # a failed ERP file was moved to the ER folder
-            moved = os.path.join(os.path.dirname(path), "ER", os.path.basename(path))
-            if not os.path.isfile(moved):
+            d, name = os.path.dirname(path), os.path.basename(path)
+            moved = next((m for m in (os.path.join(d, "ER", name),                  # done / ER inside the folder
+                                      os.path.join(os.path.dirname(d), "error", name))   # process / error
+                          if os.path.isfile(m)), None)
+            if moved is None:
                 return None                            # gone (deleted or moved by hand): nothing to retry
             path = moved
         out = self.handler(path)
