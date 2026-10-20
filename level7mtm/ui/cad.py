@@ -182,10 +182,9 @@ def _grafis_wait(db, go, rj) -> str:
     and waiting to be read from the MDL folder."""
     if rj and rj["status"] == "done" and rj["at"] >= go["created_at"]:
         return tr("Saved by GRAFIS: waiting for nesting")
-    import hashlib
+    from ..services.grafis_robot import file_sha
     try:
-        with open(go["path"], "rb") as fh:
-            changed = hashlib.sha256(fh.read()).hexdigest() != json.loads(go["info"]).get("sha256")
+        changed = file_sha(go["path"]) != json.loads(go["info"]).get("sha256")
     except OSError:
         return tr("The order model is not in the MDL folder any more (moved or deleted?): write it again")
     if changed:
@@ -199,7 +198,7 @@ def _grafis_wait(db, go, rj) -> str:
     return tr("Waiting for the GRAFIS robot") + (f" — {ahead} {tr('models before it')}" if ahead else "")
 
 
-def order_rows(ws, limit: int = 300) -> list[dict]:
+def order_rows(ws, limit: int = 2000) -> list[dict]:
     """Every open order line with where it is in the chain (XML → GRAFIS model → GRAFIS → nesting → cutting files)."""
     db = ws.db
     results: dict[int, dict] = {}
@@ -1342,12 +1341,12 @@ class OrderBrowser(QWidget):
 
     def set_rows(self, rows: list[dict], keep: int | None = None):
         self.rows = rows
-        if not hasattr(self, "closed"):
-            self.closed: set[str] = set()
-        for g in range(self.tree.topLevelItemCount()):       # remember which lists the owner closed
+        if not hasattr(self, "opened"):
+            self.opened: set[str] = set()                     # every list closed until the owner opens it
+        for g in range(self.tree.topLevelItemCount()):       # remember which lists the owner opened
             grp = self.tree.topLevelItem(g)
             key = grp.data(0, Qt.UserRole + 1)
-            (self.closed.discard if grp.isExpanded() else self.closed.add)(key)
+            (self.opened.add if grp.isExpanded() else self.opened.discard)(key)
         self.tree.blockSignals(True)
         self.tree.clear()
         self._bars = {}
@@ -1381,15 +1380,15 @@ class OrderBrowser(QWidget):
                 it.setFont(1, f2)
                 it.setToolTip(0, "\n".join([r["line"]] + [tr_msg(m) for m in r["problems"][:5]]))
                 grp.addChild(it)
-                first = first or it
+                if key in self.opened:
+                    first = first or it
                 if r["rid"] == keep:
                     current = it
-            grp.setExpanded(key not in self.closed)
+            grp.setExpanded(key in self.opened)
         self.tree.blockSignals(False)
         self.count.setText(str(len(rows)))
         self._filter(self.find.text())
-        if current is not None:
-            current.parent().setExpanded(True)
+        if current is not None and current.parent().isExpanded():      # a closed list stays closed
             self.tree.setCurrentItem(current)
         elif first is not None and keep is None:
             self.tree.setCurrentItem(first)

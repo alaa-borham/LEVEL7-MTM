@@ -261,9 +261,26 @@ class Win32:
 
 
 # ------------------------------------------------------------------ robot
+_SHA_CACHE: dict = {}                             # path -> ((size, mtime), sha): hundreds of models, read once
+
+
 def _sha(path):
+    st = os.stat(path)
+    key = (st.st_size, st.st_mtime_ns)
+    hit = _SHA_CACHE.get(path)
+    if hit and hit[0] == key:
+        return hit[1]
     with open(path, "rb") as fh:
-        return hashlib.sha256(fh.read()).hexdigest()
+        sha = hashlib.sha256(fh.read()).hexdigest()
+    if len(_SHA_CACHE) > 5000:
+        _SHA_CACHE.clear()
+    _SHA_CACHE[path] = (key, sha)
+    return sha
+
+
+def file_sha(path) -> str:
+    """SHA-256 of a file, remembered while its size and time stay the same."""
+    return _sha(path)
 
 
 def shows_file(title: str, path: str) -> bool:
@@ -399,8 +416,9 @@ def _answer_dialogs(drv, st, notes: list) -> None:
                 notes.append(note)
 
 
-def pending(ws) -> list[dict]:
-    """Order models written by this program and still not saved by GRAFIS (and not tried by the robot)."""
+def pending(ws, first: bool = False) -> list[dict]:
+    """Order models written by this program and still not saved by GRAFIS (and not tried by the robot); ``first``:
+    only the next one (the robot needs no more)."""
     out = []
     for r in ws.db.q("SELECT * FROM grafis_orders WHERE status='written' AND archived=0 AND id IN "
                      "(SELECT MAX(id) FROM grafis_orders GROUP BY revision_id) ORDER BY id"):
@@ -417,6 +435,8 @@ def pending(ws) -> list[dict]:
                      (info["sha256"], p, r["created_at"])):
             continue
         out.append({"path": p, "sha256": info["sha256"], "line_number": info.get("line_number")})
+        if first:
+            break
     return out
 
 
@@ -532,7 +552,7 @@ def step(ws, drv=None) -> dict | None:
     """One robot step from the watch timer: the next pending model, if the robot is on."""
     if not settings(ws)["enabled"]:
         return None
-    jobs = pending(ws)
+    jobs = pending(ws, first=True)
     return run_one(ws, jobs[0], drv) if jobs else None
 
 

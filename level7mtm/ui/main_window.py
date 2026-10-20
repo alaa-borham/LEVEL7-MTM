@@ -4437,20 +4437,36 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(500, self.poll_watch)              # look at once, then on the owner's timer
         self._tick()
 
+    ERP_BATCH = 25                     # XML files per look: 500 at once go in turns, the window stays free
+
     def poll_watch(self):
+        """Look at the ERP folder in the background (reading an XML also writes its GRAFIS models): a big drop of
+        files never freezes the window; they are taken ERP_BATCH at a time, one batch right after the other."""
         if not self.watcher or getattr(self, "_polling", False):
             return                                            # never twice at once (e.g. under an error box)
         self._polling = True
-        try:
-            self._poll_watch()
-        finally:
-            self._polling = False
+        w = self.watcher
 
-    def _poll_watch(self):
+        def done(outs):
+            self._polling = False
+            self._after_poll(w, outs or [])
+
+        def failed(msg):
+            self._polling = False
+            self.status(msg[:200])
+        job = Worker(lambda: w.poll(limit=self.ERP_BATCH))
+        job.signals.done.connect(done)
+        job.signals.failed.connect(failed)
+        self.pool.start(job)
+
+    def _after_poll(self, w, outs):
         from .. storage.db import now
-        outs = self.guard(self.watcher.poll) or []
         self.ws.db.set_setting("watch.last_check", now())
-        if self.watcher.state.seen and not getattr(self, "_settle_pending", False):
+        if w is not self.watcher:                             # stopped / changed meanwhile
+            return
+        if w.more:                                            # files left over from a big drop: next batch now
+            QTimer.singleShot(200, self.poll_watch)
+        elif w.state.seen and not getattr(self, "_settle_pending", False):
             self._settle_pending = True                       # a new file still being copied: look again in 4 s,
             QTimer.singleShot(4000, self._settled_poll)       # not only at the next timer
         if outs:

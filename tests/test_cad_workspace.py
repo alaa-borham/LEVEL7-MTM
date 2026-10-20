@@ -689,3 +689,39 @@ def test_robot_works_while_a_nesting_runs(ws, tmp_path, monkeypatch):
     assert seen == []                                                     # GRAFIS has it open: not now
     win.close()
     app.processEvents()
+
+
+def test_a_big_drop_of_xml_files_goes_in_batches(ws, tmp_path):
+    """500 XML at once: read 25 at a time in the background, one batch right after the other."""
+    from level7mtm.services.watcher import FolderWatcher
+    for i in range(60):
+        (tmp_path / f"o{i}.xml").write_text("x")
+    got = []
+    t = [0.0]
+    w = FolderWatcher(ws, str(tmp_path), settle_seconds=3, clock=lambda: t[0],
+                      handler=lambda p: got.append(p) or {"status": "imported"})
+    w.poll(limit=25)
+    t[0] = 5
+    w.poll(limit=25)
+    assert len(got) == 25 and w.more
+    w.poll(limit=25)
+    w.poll(limit=25)
+    assert len(got) == 60 and not w.more and len(set(got)) == 60
+
+
+def test_order_lists_stay_closed_until_opened(ws):
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ws.import_file(XML_53)
+    win = MainWindow(ws)
+    win.show()
+    app.processEvents()
+    tree = win.browser.tree
+    assert all(not tree.topLevelItem(i).isExpanded() for i in range(tree.topLevelItemCount()))
+    tree.topLevelItem(2).setExpanded(True)                              # the owner opens one
+    win.refresh_cad(force=True)
+    app.processEvents()
+    assert [tree.topLevelItem(i).isExpanded() for i in range(tree.topLevelItemCount())] == [False, False, True, False]
+    win.close()
+    app.processEvents()

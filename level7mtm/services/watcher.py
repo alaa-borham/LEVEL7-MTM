@@ -33,6 +33,7 @@ class FolderWatcher:
         self.settle = settle_seconds
         self.clock = clock
         self.state = WatchState()
+        self.more = False
         self.known = known              # path -> True: read before (the program was closed and opened again)
         self.skip = skip                # path -> True: not now (e.g. GRAFIS is writing it); looked at next time
 
@@ -51,9 +52,11 @@ class FolderWatcher:
                 out.append(p)
         return out
 
-    def poll(self) -> list:
-        """Check the folder once; returns the FileOutcome list of files processed in this poll."""
-        results = []
+    def poll(self, limit: int | None = None) -> list:
+        """Check the folder once; returns the FileOutcome list of files processed in this poll. ``limit``: at most
+        that many files are read now (``more`` says that others are ready and waiting)."""
+        results, handled = [], 0
+        self.more = False
         t = self.clock()
         here = self._candidates()
         if self.known is not None:                     # first look after a start: files read before stay read
@@ -84,8 +87,12 @@ class FolderWatcher:
                 continue
             if t - prev[2] < self.settle or st.st_size == 0:
                 continue
+            if limit is not None and handled >= limit:
+                self.more = True                                # ready, read in the next batch
+                continue
             self.state.done[p] = sig
             self.state.seen.pop(p, None)
+            handled += 1
             try:
                 out = self.handler(p)
             except Exception as e:  # noqa: BLE001 - one bad file never stops the files after it
