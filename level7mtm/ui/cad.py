@@ -177,6 +177,20 @@ def transform(pts, rotation: float, mirrored: bool, dx: float, dy: float, sx: fl
     return out
 
 
+def _grafis_wait(db, go, rj) -> str:
+    """Why an order model is still in GRAFIS: the robot off, its place in the robot's queue, or saved by GRAFIS
+    and waiting to be read from the MDL folder."""
+    if rj and rj["status"] == "done" and rj["at"] >= go["created_at"]:
+        return tr("GRAFIS saved the model: waiting for it to be read from the MDL folder (is the folder watched?)")
+    if not db.get_setting("robot.enabled", False):
+        return tr("The GRAFIS robot is off: switch it on (GRAFIS page → Robot) or open the model in GRAFIS, run "
+                  "Test Run All Parts and save")
+    ahead = db.one("SELECT COUNT(*) AS n FROM grafis_orders g WHERE g.status='written' AND g.archived=0 AND g.id<? "
+                   "AND g.id IN (SELECT MAX(id) FROM grafis_orders GROUP BY revision_id) AND NOT EXISTS "
+                   "(SELECT 1 FROM robot_jobs j WHERE j.path=g.path AND j.at>=g.created_at)", (go["id"],))["n"]
+    return tr("Waiting for the GRAFIS robot") + (f" — {ahead} {tr('models before it')}" if ahead else "")
+
+
 def order_rows(ws, limit: int = 300) -> list[dict]:
     """Every open order line with where it is in the chain (XML → GRAFIS model → GRAFIS → nesting → cutting files)."""
     db = ws.db
@@ -207,7 +221,7 @@ def order_rows(ws, limit: int = 300) -> list[dict]:
                "basic_size": raw.get("basic_size") or "", "table": raw.get("measurement_table") or "",
                "quantity": rev["quantity"], "times": {"new": rev["imported_at"]}, "x_rows": [], "mdl": None,
                "result": None, "l7n": None, "outputs": [], "length_mm": None, "efficiency_pct": None,
-               "placed": None, "status": rev["status"], "robot_failed": False}
+               "placed": None, "status": rev["status"], "robot_failed": False, "waiting": ""}
         if go:
             info = json.loads(go["info"])
             row["x_rows"] = info.get("rows", [])
@@ -221,6 +235,8 @@ def order_rows(ws, limit: int = 300) -> list[dict]:
                 if rj and rj["status"] == "failed" and rj["at"] >= go["created_at"]:
                     row["robot_failed"] = True                # stays until "Robot: try again" (never silent)
                     row["problems"].append(f"{tr('GRAFIS robot')}: {rj['message']}")
+                else:
+                    row["waiting"] = _grafis_wait(db, go, rj)  # why it is still in GRAFIS (never silent)
         res = results.get(rid)
         if res:
             row["result"] = res["path"]
@@ -1480,6 +1496,12 @@ class Inspector(QScrollArea):
                                     f"background: rgba({bad.red()},{bad.green()},{bad.blue()},0.10);")
         self.problems.hide()
         self.lay.addWidget(self.problems)
+        self.waiting = QLabel()                           # not an error: why the order waits (e.g. robot off)
+        self.waiting.setWordWrap(True)
+        warn = themes.colour("warn")
+        self.waiting.setStyleSheet(f"color: {warn.name()}; border: 1px solid {warn.name()}; padding: 6px;")
+        self.waiting.hide()
+        self.lay.addWidget(self.waiting)
         self.buttons = {}                                 # the actions right under it, never scrolled away
         for key, text, primary in actions:
             b = QPushButton(text)
@@ -1560,6 +1582,7 @@ class Inspector(QScrollArea):
             self.ring.set_value(None)
             self.problems.setText("")
             self.problems.hide()
+            self.waiting.hide()
             return
         self.title.setText(ltr(r["line"]))
         col = c[STAGE_COLOUR[r["stage"]]]
@@ -1609,6 +1632,9 @@ class Inspector(QScrollArea):
             self.stages.addWidget(tm, i, 2)
         self.problems.setText("\n".join("⚠ " + tr_msg(p) for p in r["problems"][:6]))
         self.problems.setVisible(bool(r["problems"]))
+        wait = r.get("waiting") if r["stage"] == "grafis" else ""
+        self.waiting.setText("⏳ " + wait if wait else "")
+        self.waiting.setVisible(bool(wait))
         self.buttons.get("open_cut") and self.buttons["open_cut"].setEnabled(bool(r["outputs"]))
         self.buttons.get("renest") and self.buttons["renest"].setEnabled(bool(r["result"]))
         self.buttons.get("nesting") and self.buttons["nesting"].setEnabled(bool(r["l7n"]))

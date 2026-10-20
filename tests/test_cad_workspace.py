@@ -583,3 +583,26 @@ def test_deleted_orders_come_back_when_their_xml_is_read_again(ws, tmp_path):
     assert sorted(r["rid"] for r in cad.order_rows(ws)) == sorted(rids)   # back in the list
     assert ws.revision(rids[0])["status"] in ("ready", "needs_review")
     assert ws.import_data(src.read_bytes(), src.name).status == "duplicate"   # once back: a duplicate again
+
+
+def test_an_order_in_grafis_says_why_it_waits(ws, tmp_path):
+    import json
+
+    from level7mtm.storage.db import now
+    from level7mtm.ui import cad
+    from level7mtm.ui.i18n import tr
+    ws.import_file(XML_53)
+    rids = [r["rid"] for r in cad.order_rows(ws)]
+    for rid in rids:
+        m = tmp_path / f"{rid}.mdl"
+        m.write_text("x")
+        with ws.db.tx() as c:
+            c.execute("INSERT INTO grafis_orders(revision_id, created_at, status, path, template_sha256, info) "
+                      "VALUES (?,?,?,?,?,?)", (rid, now(), "written", str(m), "t", json.dumps({"sha256": "s"})))
+    rows = {r["rid"]: r for r in cad.order_rows(ws)}
+    assert rows[rids[0]]["stage"] == "grafis" and tr("is off") in rows[rids[0]]["waiting"] or \
+        "robot is off" in rows[rids[0]]["waiting"] or "متوقف" in rows[rids[0]]["waiting"]
+    ws.db.set_setting("robot.enabled", True)
+    rows = {r["rid"]: r for r in cad.order_rows(ws)}
+    assert rows[rids[0]]["waiting"] == tr("Waiting for the GRAFIS robot")
+    assert rows[rids[1]]["waiting"].endswith(f"1 {tr('models before it')}")    # its place in the queue

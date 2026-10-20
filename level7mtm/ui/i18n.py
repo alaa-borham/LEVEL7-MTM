@@ -365,6 +365,12 @@ AR = {
     "Read again with the current settings": "إعادة القراءة بالإعدادات الحالية",
     "Nothing to read": "لا يوجد ما يُقرأ",
     "Cutting file": "ملف القص",
+    "GRAFIS saved the model: waiting for it to be read from the MDL folder (is the folder watched?)":
+        "GRAFIS حفظ الموديل: ينتظر قراءته من مجلد MDL (هل مراقبة المجلد تعمل؟)",
+    "The GRAFIS robot is off: switch it on (GRAFIS page → Robot) or open the model in GRAFIS, run Test Run All Parts and save":
+        "روبوت GRAFIS متوقف: شغّله (صفحة GRAFIS ← الروبوت) أو افتح الموديل في GRAFIS ونفّذ Test Run All Parts ثم احفظ",
+    "Waiting for the GRAFIS robot": "ينتظر روبوت GRAFIS",
+    "models before it": "موديلات قبله",
     "As on the markers page": "كما في صفحة الماركرات",
     "The cutting file written for this customer's orders by LEVEL7 Nesting": "ملف القص الذي يكتبه LEVEL7 Nesting لطلبات هذا العميل",
     "Order models archive…": "أرشيف موديلات الطلبات…",
