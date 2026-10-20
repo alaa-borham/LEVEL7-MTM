@@ -89,7 +89,7 @@ def test_window_shows_the_selected_marker(ws, tmp_path):
     win.show()
     groups = {win.browser.tree.topLevelItem(i).data(0, 0x0101): win.browser.tree.topLevelItem(i)
               for i in range(win.browser.tree.topLevelItemCount())}
-    assert list(groups) == ["work", "err", "cut"]                                 # three separate lists
+    assert list(groups) == ["grafis", "nest", "err", "cut"]              # GRAFIS and nesting each in its own list
     item = next(it for it in win.browser._order_items() if it.data(0, 0x0100) == rev["id"])
     assert item.parent() is groups["cut"] and groups["cut"].text(1) == "1"
     win.browser.tree.setCurrentItem(item)

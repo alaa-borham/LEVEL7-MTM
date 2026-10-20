@@ -378,6 +378,8 @@ AR = {
         "روبوت GRAFIS متوقف: شغّله (صفحة GRAFIS ← الروبوت) أو افتح الموديل في GRAFIS ونفّذ Test Run All Parts ثم احفظ",
     "Waiting for the GRAFIS robot": "ينتظر روبوت GRAFIS",
     "Waiting for nesting": "ينتظر التعشيق",
+    "In progress — GRAFIS": "قيد العمل — GRAFIS",
+    "In progress — Nesting": "قيد العمل — التعشيق",
     "Copies of each part of this value": "عدد النسخ من كل بارت لهذه القيمة",
     "Mirrored copies of each part of this value": "عدد النسخ المعكوسة (ميرور) من كل بارت لهذه القيمة",
     "Order models (MDL, saved)": "موديلات الطلبات المحفوظة (MDL)",

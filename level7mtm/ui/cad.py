@@ -1327,8 +1327,10 @@ class OrderBrowser(QWidget):
         lay.addWidget(self.tree, 1)
         self.rows: list[dict] = []
 
-    # three lists, so a line that needs attention never holds up the others
-    GROUPS = (("work", "In progress", ("new", "grafis", "nest"), "accent"),
+    # separate lists, so a line that needs attention never holds up the others; work in GRAFIS and in the nesting
+    # each in its own list (they run side by side)
+    GROUPS = (("grafis", "In progress — GRAFIS", ("new", "grafis"), "warn"),
+              ("nest", "In progress — Nesting", ("nest",), "accent"),
               ("err", "Needs attention", ("err",), "bad"),
               ("cut", "Ready to cut", ("cut",), "ok"))
 
@@ -1435,6 +1437,8 @@ class OrderBrowser(QWidget):
                 it.setExpanded(True)
                 have = bars[rid] = (ch, bar, lab)
             _, bar, lab = have
+            if b["what"] == "nesting":                     # it is nested now, not waiting any more
+                it.setText(1, tr(STAGE_TEXT["nest"]))
             text = tr(self.BUSY_TEXT.get(b["what"], "Working…"))
             if b["progress"] is None:
                 bar.setRange(0, 0)                         # moving: no estimate
