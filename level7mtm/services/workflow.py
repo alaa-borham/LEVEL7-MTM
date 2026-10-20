@@ -245,6 +245,17 @@ class Workspace:
                 out.lines.append(self._store_line(c, fid, map_pk, res, ln))
         return out
 
+    def already_read(self, path: str) -> bool:
+        """This XML was imported before and its orders are still on the list (reading it again would only say
+        "duplicate"): a folder watch started again leaves it alone."""
+        try:
+            with open(path, "rb") as fh:
+                sha = hashlib.sha256(fh.read()).hexdigest()
+        except OSError:
+            return False
+        f = self.db.one("SELECT id, status FROM import_files WHERE sha256=?", (sha,))
+        return bool(f) and f["status"] == "imported" and not self._all_removed(f["id"])
+
     def _all_removed(self, fid: int) -> bool:
         """Every order line of this imported XML was deleted from the list by the owner: reading it again brings
         them back."""

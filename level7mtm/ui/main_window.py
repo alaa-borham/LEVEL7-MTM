@@ -1253,7 +1253,8 @@ class GrafisPage(Page):
         self.mdl_watcher = None
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll)
-        self.auto_start()
+        if getattr(win, "chain_on", False):           # started (Start pressed) before a theme / language switch
+            self.auto_start()
 
     def auto_start(self):
         """The chain runs by itself as soon as the program is open — nobody presses the robot: the robot takes
@@ -3474,10 +3475,8 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
         self.resize(1440, 900)
         self.setMinimumSize(900, 560)
+        self.chain_on = False             # nothing runs by itself after opening: the owner presses Start
         self.build()
-        folder = ws.db.get_setting("watch.folder")
-        if folder and ws.db.get_setting("watch.enabled", False) and os.path.isdir(folder):
-            self.start_watch(folder)
         self.cad_timer.start(5000)
 
     # ---- building
@@ -3729,6 +3728,11 @@ class MainWindow(QMainWindow):
         now_b.setStyleSheet("padding: 1px 8px;")
         col.addWidget(self.erp_spin)
         col.addWidget(now_b)
+        self.start_b = QPushButton()                  # Start / Stop: the whole chain (ERP, GRAFIS, robot, nesting)
+        self.start_b.setMinimumSize(86, 52)
+        self.start_b.clicked.connect(self.toggle_chain)
+        self._show_chain()
+        h.addWidget(self.start_b)
         h.addWidget(self.erp_clock)
         h.addLayout(col)
         if not hasattr(self, "tick_timer"):
@@ -3736,6 +3740,45 @@ class MainWindow(QMainWindow):
             self.tick_timer.timeout.connect(self._tick)
             self.tick_timer.start(1000)
         return w
+
+    def _show_chain(self):
+        from . import themes
+        b = getattr(self, "start_b", None)
+        if b is None:
+            return
+        on = getattr(self, "chain_on", False)
+        col = themes.colour("bad" if on else "ok").name()
+        b.setText(("■  " + tr("Stop")) if on else ("▶  " + tr("Start")))
+        b.setToolTip(tr("Stop reading ERP orders, the robot and the nesting") if on else
+                     tr("Start: read the ERP folder, the robot drives GRAFIS, nesting writes the cutting files"))
+        b.setStyleSheet(f"font-weight: 800; font-size: 11pt; color: {col}; border: 2px solid {col}; "
+                        f"border-radius: 6px; padding: 4px 10px;")
+
+    def toggle_chain(self):
+        """Start: the ERP folder is read on the timer, the GRAFIS folders are watched, the robot and the nesting
+        work. Stop: all of it waits. After opening the program nothing runs until Start."""
+        gp = self.pages.get("GRAFIS markers")
+        if getattr(self, "chain_on", False):
+            self.chain_on = False
+            self.timer.stop()
+            self.watcher = None
+            if gp is not None:
+                gp.timer.stop()
+                gp.watcher = gp.mdl_watcher = None
+            self.status(tr("Stopped"))
+        else:
+            self.chain_on = True
+            folder = self.ws.db.get_setting("watch.folder")
+            if folder and os.path.isdir(folder):
+                self.start_watch(folder)
+            else:                                          # no ERP folder yet: the red clock sets it up
+                self.status(tr("ERP XML folder…") + " — " + tr("not set"))
+            if gp is not None and not gp.running():
+                gp.auto_start()
+            self.status(tr("Started"))
+        self._show_chain()
+        self._tick()
+        self.refresh_cad(force=True)
 
     def _erp_clock_clicked(self):
         if self.watcher is None:
@@ -4302,7 +4345,8 @@ class MainWindow(QMainWindow):
 
     def start_watch(self, folder):
         from ..services.grafis_orders import import_and_prepare
-        self.watcher = FolderWatcher(self.ws, folder, settle_seconds=3, handler=lambda p: import_and_prepare(self.ws, p))
+        self.watcher = FolderWatcher(self.ws, folder, settle_seconds=3, handler=lambda p: import_and_prepare(self.ws, p),
+                                     known=self.ws.already_read)     # files read before stay read
         self.ws.db.set_setting("watch.folder", folder)
         self.ws.db.set_setting("watch.enabled", True)
         self.timer.start(self.watch_interval_s() * 1000)

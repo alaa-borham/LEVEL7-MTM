@@ -134,9 +134,15 @@ def test_window_shows_the_selected_marker(ws, tmp_path):
     scb.mkdir()
     ws.db.set_setting("grafis.watch.folder", str(scb))
     gp = win.pages["GRAFIS markers"]
-    assert gp.running()                                  # automatic from the start: robot + MDL folder, no click
+    from level7mtm.ui.i18n import tr as tr_
+    assert not gp.running() and not win.chain_on         # after opening nothing runs until Start
+    win.toggle_chain()                                    # Start: robot + MDL folder (+ ERP when set up)
+    assert gp.running() and win.chain_on and tr_("Stop") in win.start_b.text()
+    win.toggle_chain()                                    # Stop: all waits
+    assert not gp.running() and win.watcher is None and tr_("Start") in win.start_b.text()
+    win.toggle_chain()
     gp.timer.stop()
-    gp.mdl_watcher = None
+    gp.watcher = gp.mdl_watcher = None
     assert not gp.running()
     win._light_clicked("watch")                                                    # red light clicked: on again
     assert gp.running() and gp.watcher is not None and ws.db.get_setting("grafis.watch.enabled")
@@ -614,3 +620,27 @@ def test_an_order_in_grafis_says_why_it_waits(ws, tmp_path):
     assert "MDL" in rows[rids[0]]["waiting"]                              # saved: waits to be read
     (tmp_path / f"{rids[0]}.mdl").unlink()
     assert "MDL" in {r["rid"]: r for r in cad.order_rows(ws)}[rids[0]]["waiting"]   # gone from the folder
+
+
+def test_files_read_before_are_not_read_again_when_watching_starts(ws, tmp_path):
+    """Closing and opening the program read every XML of the ERP folder again ("they become duplicates")."""
+    import shutil
+
+    from level7mtm.services.watcher import FolderWatcher
+    erp = tmp_path / "erp"
+    erp.mkdir()
+    shutil.copy(XML_53, erp / "a.xml")
+    assert ws.import_file(str(erp / "a.xml")).status == "imported"
+    seen = []
+    t = [0.0]
+    w = FolderWatcher(ws, str(erp), settle_seconds=3, clock=lambda: t[0], handler=lambda p: seen.append(p) or {"status": "imported"},
+                      known=ws.already_read)
+    w.poll()
+    t[0] = 5
+    w.poll()
+    assert seen == []                                                   # read before: left alone
+    (erp / "b.xml").write_bytes((erp / "a.xml").read_bytes().replace(b"9-53-1_2", b"9-77-1_2"))
+    w.poll()
+    t[0] = 10
+    w.poll()
+    assert seen == [str(erp / "b.xml")]                                 # a new file is read

@@ -25,7 +25,7 @@ class WatchState:
 
 class FolderWatcher:
     def __init__(self, workspace, folder: str, settle_seconds: float = 3.0, clock=time.monotonic,
-                 extensions: tuple[str, ...] = (".xml",), handler=None):
+                 extensions: tuple[str, ...] = (".xml",), handler=None, known=None):
         self.ws = workspace
         self.folder = folder
         self.extensions = extensions
@@ -33,6 +33,7 @@ class FolderWatcher:
         self.settle = settle_seconds
         self.clock = clock
         self.state = WatchState()
+        self.known = known              # path -> True: read before (the program was closed and opened again)
 
     def _candidates(self):
         try:
@@ -54,6 +55,15 @@ class FolderWatcher:
         results = []
         t = self.clock()
         here = self._candidates()
+        if self.known is not None:                     # first look after a start: files read before stay read
+            for p in here:
+                try:
+                    if self.known(p):
+                        st = os.stat(p)
+                        self.state.done[p] = (st.st_size, st.st_mtime)
+                except OSError:
+                    pass
+            self.known = None
         for gone in [p for p in self.state.done if p not in here]:   # moved away (e.g. its orders deleted): put
             self.state.done.pop(gone, None)                         # back, it is read again
         for p in here:

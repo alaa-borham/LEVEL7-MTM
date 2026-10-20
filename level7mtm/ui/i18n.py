@@ -365,6 +365,13 @@ AR = {
     "Read again with the current settings": "إعادة القراءة بالإعدادات الحالية",
     "Nothing to read": "لا يوجد ما يُقرأ",
     "Cutting file": "ملف القص",
+    "Start": "استارت",
+    "Stop": "إيقاف",
+    "Started": "بدأ التشغيل",
+    "Stopped": "تم الإيقاف",
+    "Stop reading ERP orders, the robot and the nesting": "إيقاف قراءة طلبات ERP والروبوت والتعشيق",
+    "Start: read the ERP folder, the robot drives GRAFIS, nesting writes the cutting files":
+        "استارت: قراءة مجلد ERP، الروبوت يشغّل GRAFIS، والتعشيق يكتب ملفات القص",
     "GRAFIS saved the model: waiting for it to be read from the MDL folder (is the folder watched?)":
         "GRAFIS حفظ الموديل: ينتظر قراءته من مجلد MDL (هل مراقبة المجلد تعمل؟)",
     "The GRAFIS robot is off: switch it on (GRAFIS page → Robot) or open the model in GRAFIS, run Test Run All Parts and save":
