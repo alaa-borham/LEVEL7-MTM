@@ -38,6 +38,8 @@ def settings(ws) -> dict:
             # background: never move the mouse (GRAFIS menu commands / clicks sent to the button itself);
             # auto: background where possible, else the mouse as before; mouse: always the real mouse
             "mode": ws.db.get_setting("robot.mode", "auto"),
+            # background mode: GRAFIS stays behind the owner's windows (he keeps working)
+            "behind": bool(ws.db.get_setting("robot.behind", True)),
             "menu": ws.db.get_setting("robot.menu", {}) or {}}
 
 
@@ -60,11 +62,13 @@ class Win32:
         H, U, P, L = wintypes.HWND, wintypes.UINT, ctypes.c_void_p, wintypes.LPARAM    # 64-bit window handles
         for name, args in (("GetAncestor", [H, U]), ("GetWindowTextW", [H, wintypes.LPWSTR, ctypes.c_int]),
                            ("GetClassNameW", [H, wintypes.LPWSTR, ctypes.c_int]), ("IsWindowVisible", [H]),
-                           ("GetWindowRect", [H, P]), ("ShowWindow", [H, ctypes.c_int]),
+                           ("GetWindowRect", [H, P]), ("ShowWindow", [H, ctypes.c_int]), ("IsZoomed", [H]),
                            ("SetForegroundWindow", [H]), ("GetWindowThreadProcessId", [H, P]),
-                           ("SendMessageTimeoutW", [H, U, wintypes.WPARAM, L, U, U, P])):
+                           ("SendMessageTimeoutW", [H, U, wintypes.WPARAM, L, U, U, P]),
+                           ("SetWindowPos", [H, H, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, U])):
             getattr(self.u, name).argtypes = args
         self.u.SendMessageTimeoutW.restype = L
+        self.u.GetForegroundWindow.restype = H
 
     def process_of(self, h) -> str:
         """The program a window belongs to (e.g. werfault.exe), "" when it cannot be read."""
@@ -258,6 +262,20 @@ class Win32:
 
     def open(self, path):
         os.startfile(path)                           # as a double-click: opens in GRAFIS (owner)
+
+    def active_window(self):
+        return self.u.GetForegroundWindow()
+
+    def send_back(self, h, prev=None):
+        """GRAFIS behind the other windows, not maximized over the screen, the owner's window in front again:
+        the robot works on it in the background (menu commands / clicks sent to its controls)."""
+        if self.u.IsZoomed(h):
+            self.u.ShowWindow(h, 4)                  # SW_SHOWNOACTIVATE: not maximized any more
+        self.u.SetWindowPos(h, 1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)    # HWND_BOTTOM, no move/size/activate
+        if prev and prev != h:
+            self.u.keybd_event(0x12, 0, 0, 0)        # ALT: lets this process give the focus back
+            self.u.keybd_event(0x12, 0, 2, 0)
+            self.u.SetForegroundWindow(prev)
 
 
 # ------------------------------------------------------------------ robot
@@ -490,6 +508,8 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
         stem = os.path.splitext(os.path.basename(job["path"]))[0]
         notes: list[str] = []
         _answer_dialogs(drv, st, notes)               # a box left from before (crash, start window) first
+        behind = st["mode"] == "background" and st["behind"] and hasattr(drv, "send_back")
+        prev = drv.active_window() if behind else None
         drv.open(job["path"])
         t0, main = clock(), None
         while clock() - t0 < st["open_timeout"]:
@@ -501,6 +521,8 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
         else:
             raise RobotError(f"GRAFIS did not show {stem} within {st['open_timeout']:g} s — "
                              f"{_seen(drv, btn)}" + (f" — robot: {'; '.join(notes)}" if notes else ""))
+        if behind:
+            drv.send_back(main, prev)                 # the owner keeps working in front
         sleep(2)
         how = [_act(drv, st, main, "test_run", job["path"], True)]
         sleep(st["run_wait"])
@@ -514,6 +536,8 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
             raise RobotError(f"GRAFIS not responding {st['run_timeout']:g} s after Test Run All Parts — "
                              f"{_seen(drv, btn)}" + (f" — robot: {'; '.join(notes)}" if notes else ""))
         _answer_dialogs(drv, st, notes)               # a box after the test run blocks the save
+        if behind:
+            drv.send_back(main, prev)
         how.append(_act(drv, st, main, "save", job["path"], True))
         t0 = clock()
         while clock() - t0 < st["save_timeout"]:

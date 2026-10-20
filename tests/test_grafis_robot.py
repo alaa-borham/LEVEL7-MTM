@@ -126,7 +126,13 @@ class BackgroundGrafis(FakeGrafis):
 
     def __init__(self, menu=True):
         super().__init__()
-        self.menu, self.commands, self.posted = menu, [], []
+        self.menu, self.commands, self.posted, self.backs = menu, [], [], []
+
+    def active_window(self):
+        return 42                                                # the owner's window in front
+
+    def send_back(self, h, prev=None):
+        self.backs.append((h, prev))
 
     def menu_items(self, h):
         return list(self.MENU) if self.menu else []
@@ -160,6 +166,7 @@ def test_robot_works_in_the_background_without_the_mouse(ws, tmp_path):
     g = BackgroundGrafis()                                       # menu commands: nothing taught at all
     r = robot.run_one(ws, robot.pending(ws)[0], g, sleep=lambda s: None, clock=_clock())
     assert r["status"] == "done" and g.commands == [(1, 4711), (1, 57603)]    # "Save as" never chosen
+    assert g.backs == [(1, 42), (1, 42)]          # GRAFIS behind, the owner's window in front again (twice)
     assert "menu Teile > Test Run All Parts" in r["message"]
     # no menu entry for Test Run: the taught button is clicked through its own window (pointer stays)
     ws.db.set_setting("robot.buttons", {"test_run": {"title": "GRAFIS", "cls": "Toolbar", "dx": 470, "dy": 60,

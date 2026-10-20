@@ -378,6 +378,9 @@ AR = {
         "روبوت GRAFIS متوقف: شغّله (صفحة GRAFIS ← الروبوت) أو افتح الموديل في GRAFIS ونفّذ Test Run All Parts ثم احفظ",
     "Waiting for the GRAFIS robot": "ينتظر روبوت GRAFIS",
     "Waiting for nesting": "ينتظر التعشيق",
+    "GRAFIS behind my windows": "GRAFIS خلف نوافذي",
+    "With 'Without the mouse': GRAFIS opens behind your windows (not over the whole screen) and the window you work in stays in front":
+        "مع «بدون الماوس»: يفتح GRAFIS خلف نوافذك (لا يغطي الشاشة كاملة) وتبقى النافذة التي تعمل عليها في المقدمة",
     "In progress — GRAFIS": "قيد العمل — GRAFIS",
     "In progress — Nesting": "قيد العمل — التعشيق",
     "Copies of each part of this value": "عدد النسخ من كل بارت لهذه القيمة",

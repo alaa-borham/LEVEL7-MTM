@@ -1148,9 +1148,15 @@ class GrafisPage(Page):
         self.no_mouse.setChecked(self.ws.db.get_setting("robot.mode", "auto") == "background")
         self.no_mouse.toggled.connect(lambda on: (self.ws.db.set_setting("robot.mode", "background" if on else "auto"),
                                                   self.refresh()))
+        self.behind = QCheckBox(tr("GRAFIS behind my windows"))
+        self.behind.setToolTip(tr("With 'Without the mouse': GRAFIS opens behind your windows (not over the whole "
+                                  "screen) and the window you work in stays in front"))
+        self.behind.setChecked(bool(self.ws.db.get_setting("robot.behind", True)))
+        self.behind.toggled.connect(lambda on: self.ws.db.set_setting("robot.behind", on))
         b_menu = QPushButton(tr("GRAFIS menu commands…"))
         b_menu.clicked.connect(self.choose_menu)
         rl_.addWidget(self.no_mouse)
+        rl_.addWidget(self.behind)
         rl_.addWidget(b_menu)
         rl_.addStretch()
         erp_box = QWidget()
