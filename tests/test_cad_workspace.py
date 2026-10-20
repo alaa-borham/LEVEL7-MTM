@@ -514,8 +514,8 @@ def test_nest_again_button_with_level7_nesting_in_its_arrow(ws):
     b = win.ribbon.buttons["renest"]
     assert b.popupMode() == QtWidgets.QToolButton.InstantPopup and "nesting" not in win.ribbon.buttons
     assert len(b.menu().actions()) == 2
-    f = win.ribbon.buttons["cut"]                                 # cutting files and ER under "Files"
-    assert len(f.menu().actions()) == 2 and "er" not in win.ribbon.buttons
+    f = win.ribbon.buttons["cut"]                                 # cutting files, saved MDL, done XML and ER under "Files"
+    assert len(f.menu().actions()) == 4 and "er" not in win.ribbon.buttons
 
 
 def test_owner_arranges_the_ribbon(ws):
@@ -617,7 +617,7 @@ def test_an_order_in_grafis_says_why_it_waits(ws, tmp_path):
     assert rows[rids[1]]["waiting"].endswith(f"1 {tr('models before it')}")    # its place in the queue
     (tmp_path / f"{rids[0]}.mdl").write_text("saved by GRAFIS")
     rows = {r["rid"]: r for r in cad.order_rows(ws)}
-    assert "MDL" in rows[rids[0]]["waiting"]                              # saved: waits to be read
+    assert rows[rids[0]]["waiting"] == tr("Saved by GRAFIS: waiting for nesting")   # saved: in the nesting queue
     (tmp_path / f"{rids[0]}.mdl").unlink()
     assert "MDL" in {r["rid"]: r for r in cad.order_rows(ws)}[rids[0]]["waiting"]   # gone from the folder
 
@@ -644,3 +644,48 @@ def test_files_read_before_are_not_read_again_when_watching_starts(ws, tmp_path)
     t[0] = 10
     w.poll()
     assert seen == [str(erp / "b.xml")]                                 # a new file is read
+
+
+def test_robot_works_while_a_nesting_runs(ws, tmp_path, monkeypatch):
+    """GRAFIS does not wait for the nesting: the robot step runs beside the folder check + nesting, and the model
+    GRAFIS has open is left alone by the MDL folder."""
+    import threading
+    import time
+
+    from level7mtm.services import grafis_robot
+    from level7mtm.services.watcher import FolderWatcher
+    from level7mtm.ui import main_window as mw
+    from level7mtm.ui.main_window import MainWindow
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ran = threading.Event()
+    monkeypatch.setattr(grafis_robot, "step", lambda ws, drv=None: ran.set() or None)
+    win = MainWindow(ws)
+    gp = win.pages["GRAFIS markers"]
+    gp.mdl_watcher = FolderWatcher(ws, str(tmp_path), extensions=(".mdl",))
+    assert mw._GRAFIS_POLL.acquire(blocking=False)                       # a nesting is running
+    try:
+        gp.poll()
+        t0 = time.monotonic()
+        while not ran.is_set() and time.monotonic() - t0 < 5:
+            app.processEvents()
+            time.sleep(0.02)
+        assert ran.is_set()                                               # the robot did not wait for it
+    finally:
+        mw._GRAFIS_POLL.release()
+    t0 = time.monotonic()
+    while mw._ROBOT_POLL.locked() and time.monotonic() - t0 < 5:
+        app.processEvents()
+        time.sleep(0.02)
+    (tmp_path / "open.mdl").write_text("x")
+    seen = []
+    t = [0.0]
+    w = FolderWatcher(ws, str(tmp_path), settle_seconds=3, clock=lambda: t[0], extensions=(".mdl",),
+                      handler=lambda p: seen.append(p) or {"status": "checked"},
+                      skip=lambda p: p.endswith("open.mdl"))
+    w.poll()
+    t[0] = 5
+    w.poll()
+    assert seen == []                                                     # GRAFIS has it open: not now
+    win.close()
+    app.processEvents()

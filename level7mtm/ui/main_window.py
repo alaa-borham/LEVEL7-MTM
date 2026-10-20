@@ -194,7 +194,8 @@ def ordered_ribbon(groups, cfg: dict) -> list:
     return out
 
 
-_GRAFIS_POLL = threading.Lock()          # one GRAFIS folder poll / robot step at a time
+_GRAFIS_POLL = threading.Lock()          # one GRAFIS folder poll (check + nesting) at a time
+_ROBOT_POLL = threading.Lock()           # one robot step at a time — beside the nesting, not after it
 
 
 def alive(obj) -> bool:
@@ -351,6 +352,10 @@ def reread_report(ws, outs) -> str:
         if len(why) > 15:
             out.append(f"  … (+{len(why) - 15})")
     return "\n".join(out)
+
+
+def _same_path(a, b) -> bool:
+    return bool(a and b) and os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 
 
 def _mdl_or_none(ws):
@@ -1786,17 +1791,49 @@ class GrafisPage(Page):
             os.makedirs(mdl_dir, exist_ok=True)
         except OSError:
             return                                    # folder not reachable (network drive): set it up first
+        from ..services.grafis_robot import current_model
         self.mdl_watcher = FolderWatcher(self.ws, mdl_dir, settle_seconds=3, extensions=(".mdl",),
-                                         handler=lambda p: register_mdl(self.ws, p))
+                                         handler=lambda p: register_mdl(self.ws, p),
+                                         skip=lambda p: _same_path(p, current_model()))   # open in GRAFIS now
         self.timer.start(2000)
 
     def running(self) -> bool:
         return self.timer.isActive() and self.mdl_watcher is not None
 
     def poll(self):
+        """Two workers side by side: the robot drives GRAFIS (next model) while the models GRAFIS saved are checked
+        and nested one after the other (a nesting takes a minute; GRAFIS does not wait for it)."""
+        if not (self.watcher or self.mdl_watcher):
+            return
+        self._poll_robot()
+        self._poll_intake()
+
+    def _poll_robot(self):
+        if not _ROBOT_POLL.acquire(blocking=False):
+            return
+
+        def work():
+            from ..services.grafis_robot import step
+            return step(self.ws)                      # one pending model (if the robot is on)
+
+        def done(r):
+            _ROBOT_POLL.release()
+            if r and alive(self):
+                self.refresh()
+
+        def failed(msg):
+            _ROBOT_POLL.release()
+            if alive(self):
+                self.win.status(msg[:200])
+        w = Worker(work)
+        w.signals.done.connect(done)
+        w.signals.failed.connect(failed)
+        self.win.pool.start(w)
+
+    def _poll_intake(self):
         """Runs in a worker thread: nesting can take a minute and must not freeze the window. One poll at a time
         for the whole program (also across a theme / language switch, which makes this page anew)."""
-        if not (self.watcher or self.mdl_watcher) or not _GRAFIS_POLL.acquire(blocking=False):
+        if not _GRAFIS_POLL.acquire(blocking=False):
             return
         self.busy = True
 
@@ -1810,11 +1847,8 @@ class GrafisPage(Page):
                 self.refresh()
         mw = getattr(self, "mdl_watcher", None)
 
-        def work():
-            from ..services.grafis_robot import step
-            out = (self.watcher.poll() if self.watcher else []) + (mw.poll() if mw else [])
-            r = step(self.ws)                         # robot: one pending model (if switched on)
-            return out + ([r] if r else [])
+        def work():                                   # saved models wait here for their nesting, in turn
+            return (self.watcher.poll() if self.watcher else []) + (mw.poll() if mw else [])
         w = Worker(work)
         w.signals.done.connect(done)
         def failed(msg):
@@ -3530,6 +3564,8 @@ class MainWindow(QMainWindow):
                              ("markers", "nest", tr("Marker name"), lambda: self.goto("GRAFIS markers"))]),
             ("output", tr("Output"), [("cut", "folder", tr("Files"),
                              [(tr("Cutting files"), self.open_cutting),
+                              (tr("Order models (MDL, saved)"), self.open_mdl_archive),
+                              (tr("Finished XML (done)"), self.open_done_xml),
                               (tr("Errors (ER)"), lambda: self.pages["Home"]._open_er())])]),
             ("system", tr("System"), [("setup", "setup", tr("Setup"), self.open_setup),
                             ("log", "log", tr("Log"), lambda: self.goto("Log & backups"))]),
@@ -3740,6 +3776,31 @@ class MainWindow(QMainWindow):
             self.tick_timer.timeout.connect(self._tick)
             self.tick_timer.start(1000)
         return w
+
+    def _open_folder(self, d: str | None, title: str):
+        if d and os.path.isdir(d) and hasattr(os, "startfile"):
+            os.startfile(d)
+        else:
+            QMessageBox.information(self, title, d or tr("not set"))
+
+    def open_mdl_archive(self):
+        """The copy of every order model as GRAFIS saved it (MDL-ARCHIVE): the reference when something is wrong."""
+        from ..services.grafis_orders import archive_folder
+        d = archive_folder(self.ws)
+        try:
+            os.makedirs(d, exist_ok=True)
+        except OSError:
+            pass
+        self._open_folder(d, tr("Order models (MDL, saved)"))
+
+    def open_done_xml(self):
+        """The ERP XML files whose orders have their cutting files (done, inside the ERP folder)."""
+        erp = self.ws.db.get_setting("watch.folder")
+        d = None
+        if erp and os.path.isdir(erp):
+            from ..services.done_folder import _sub
+            d = _sub(erp, "done")
+        self._open_folder(d, tr("Finished XML (done)"))
 
     def _show_chain(self):
         from . import themes

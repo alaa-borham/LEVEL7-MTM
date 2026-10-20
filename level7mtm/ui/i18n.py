@@ -377,6 +377,10 @@ AR = {
     "The GRAFIS robot is off: switch it on (GRAFIS page → Robot) or open the model in GRAFIS, run Test Run All Parts and save":
         "روبوت GRAFIS متوقف: شغّله (صفحة GRAFIS ← الروبوت) أو افتح الموديل في GRAFIS ونفّذ Test Run All Parts ثم احفظ",
     "Waiting for the GRAFIS robot": "ينتظر روبوت GRAFIS",
+    "Waiting for nesting": "ينتظر التعشيق",
+    "Order models (MDL, saved)": "موديلات الطلبات المحفوظة (MDL)",
+    "Finished XML (done)": "ملفات XML المنتهية (done)",
+    "Saved by GRAFIS: waiting for nesting": "حفظه GRAFIS: في قائمة انتظار التعشيق",
     "The order model is not in the MDL folder any more (moved or deleted?): write it again":
         "موديل الطلب لم يعد في مجلد MDL (نُقل أو حُذف؟): اكتبه من جديد",
     "models before it": "موديلات قبله",

@@ -20,6 +20,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 
 from ..storage.db import now
 
@@ -121,11 +122,14 @@ def _size_key(cmd, env, path, guess, log, info=None) -> str:
     return key
 
 
+_NESTING = threading.Lock()        # one nesting at a time (the chain and "Nest again" queue behind each other)
+
+
 def auto_cut(ws, chk, scb_path: str, force: bool = False) -> dict:
     """Nest the checked SCB and write the cutting files. Returns {status, outputs, log, ...}.
     ``force``: nest again (e.g. with a longer nesting time) although cutting files exist."""
     from .activity import working
-    with working([ln["revision_id"] for ln in chk.lines], "nesting", settings(ws)["time"] + 15):
+    with _NESTING, working([ln["revision_id"] for ln in chk.lines], "nesting", settings(ws)["time"] + 15):
         return _auto_cut(ws, chk, scb_path, force)
 
 

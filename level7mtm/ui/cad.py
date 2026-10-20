@@ -181,7 +181,7 @@ def _grafis_wait(db, go, rj) -> str:
     """Why an order model is still in GRAFIS: the robot off, its place in the robot's queue, or saved by GRAFIS
     and waiting to be read from the MDL folder."""
     if rj and rj["status"] == "done" and rj["at"] >= go["created_at"]:
-        return tr("GRAFIS saved the model: waiting for it to be read from the MDL folder (is the folder watched?)")
+        return tr("Saved by GRAFIS: waiting for nesting")
     import hashlib
     try:
         with open(go["path"], "rb") as fh:
@@ -189,7 +189,7 @@ def _grafis_wait(db, go, rj) -> str:
     except OSError:
         return tr("The order model is not in the MDL folder any more (moved or deleted?): write it again")
     if changed:
-        return tr("GRAFIS saved the model: waiting for it to be read from the MDL folder (is the folder watched?)")
+        return tr("Saved by GRAFIS: waiting for nesting")
     if not db.get_setting("robot.enabled", False):
         return tr("The GRAFIS robot is off: switch it on (GRAFIS page → Robot) or open the model in GRAFIS, run "
                   "Test Run All Parts and save")
@@ -208,8 +208,10 @@ def order_rows(ws, limit: int = 300) -> list[dict]:
             if ln.get("revision_id") is not None:
                 results[ln["revision_id"]] = dict(r)          # the newest result of the line wins
     out = []
+    from ..services.activity import snapshot
     from ..services.customers import names as customer_names
     names = customer_names(ws)
+    nesting_now = {r for r, m in snapshot().items() if m.get("what") == "nesting"}
     for rev in ws.list_revisions():
         if len(out) >= limit:                                 # the newest open lines (cleaned / cancelled ones
             break                                             # do not count)
@@ -253,6 +255,8 @@ def order_rows(ws, limit: int = 300) -> list[dict]:
             if res["status"] in ("needs_review", "unmatched"):
                 row["problems"] += [m for sv, m in json.loads(res["issues"]) if sv != "info"]
             cj = db.one("SELECT * FROM cutting_jobs WHERE sha256=? ORDER BY id DESC", (res["sha256"],))
+            if not cj and res["status"] == "handed_over" and rid not in nesting_now:
+                row["waiting"] = tr("Waiting for nesting")           # saved by GRAFIS: in the nesting queue
             if cj:
                 ci = json.loads(cj["info"])
                 row.update(l7n=ci.get("l7n"), length_mm=ci.get("length_mm"), efficiency_pct=ci.get("efficiency_pct"),
@@ -1363,7 +1367,8 @@ class OrderBrowser(QWidget):
             self.tree.addTopLevelItem(grp)
             for r in mine:
                 col = c[STAGE_COLOUR[r["stage"]]]
-                it = QTreeWidgetItem([ltr(r["line"]), tr(STAGE_TEXT[r["stage"]])])
+                it = QTreeWidgetItem([ltr(r["line"]), tr("Waiting for nesting") if r["stage"] == "nest" and
+                                      r.get("waiting") else tr(STAGE_TEXT[r["stage"]])])
                 it.setData(0, Qt.UserRole, r["rid"])
                 pm = QPixmap(10, 10)
                 pm.fill(col)
@@ -1640,7 +1645,7 @@ class Inspector(QScrollArea):
             self.stages.addWidget(tm, i, 2)
         self.problems.setText("\n".join("⚠ " + tr_msg(p) for p in r["problems"][:6]))
         self.problems.setVisible(bool(r["problems"]))
-        wait = r.get("waiting") if r["stage"] == "grafis" else ""
+        wait = r.get("waiting") if r["stage"] in ("grafis", "nest") else ""
         self.waiting.setText("⏳ " + wait if wait else "")
         self.waiting.setVisible(bool(wait))
         self.buttons.get("open_cut") and self.buttons["open_cut"].setEnabled(bool(r["outputs"]))

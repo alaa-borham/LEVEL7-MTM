@@ -421,6 +421,11 @@ def pending(ws) -> list[dict]:
 
 
 _RUNNING = threading.Lock()                       # one robot at a time: GRAFIS gets one model after the other
+_CURRENT: dict = {"path": None}                   # the model GRAFIS has open now (the MDL folder leaves it alone)
+
+
+def current_model() -> str | None:
+    return _CURRENT["path"]
 
 
 def run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) -> dict:
@@ -432,9 +437,11 @@ def run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) -> 
     try:
         rids = [r["revision_id"] for r in ws.db.q("SELECT revision_id FROM grafis_orders WHERE path=?",
                                                   (job["path"],))]
+        _CURRENT["path"] = job["path"]
         with working(rids, "robot"):
             return _run_one(ws, job, drv, sleep, clock)
     finally:
+        _CURRENT["path"] = None
         _RUNNING.release()
 
 
