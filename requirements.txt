@@ -5,3 +5,4 @@ defusedxml==0.7.1            # PSF — safe XML parsing
 reportlab==5.0.1             # BSD — PDF review sheet
 arabic-reshaper==3.0.0       # MIT — Arabic shaping in PDF
 python-bidi==0.6.6           # LGPL-3.0 — bidi reordering in PDF
+truststore==0.10.1           # MIT — HTTPS checked with Windows' own certificates (company proxy / antivirus)

@@ -80,7 +80,7 @@ class UpdateManager(QObject):
         manual, self.manual = self.manual, False
         if err:                                  # offline etc.: silent for automatic checks
             if manual:
-                QMessageBox.warning(self.w, tr("Updates"), f"{tr('Update failed')}: {err}")
+                self._failed(err)
             return
         if info is None:
             if manual:
@@ -91,6 +91,24 @@ class UpdateManager(QObject):
         self.notified.add(info.version)
         self.w.statusBar().showMessage(f"{tr('New version available')}: {info.version}")
         self._notify(info)
+
+    def _failed(self, err):
+        """The error, and a way round it: the download page in the browser (the installer is downloaded and run
+        by hand; orders and settings are kept)."""
+        box = QMessageBox(self.w)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle(tr("Updates"))
+        box.setText(f"{tr('Update failed')}: {err}")
+        if "CERTIFICATE" in str(err).upper() or "SSL" in str(err).upper():
+            box.setInformativeText(tr("The connection to GitHub was not trusted (a company proxy or an antivirus "
+                                      "checking HTTPS?). You can download the update in the browser."))
+        page = box.addButton(tr("Open the download page"), QMessageBox.ActionRole)
+        box.addButton(QMessageBox.Ok)
+        box.exec()
+        if box.clickedButton() is page:
+            from PySide6.QtCore import QUrl
+            from PySide6.QtGui import QDesktopServices
+            QDesktopServices.openUrl(QUrl(updater.DOWNLOAD_PAGE))
 
     def _notify(self, info):
         box = QMessageBox(self.w)
@@ -138,7 +156,7 @@ class UpdateManager(QObject):
         dlg.close()
         if err:
             if not canceled:
-                QMessageBox.warning(self.w, tr("Updates"), f"{tr('Update failed')}: {err}")
+                self._failed(err)
             return
         if not self.before_install():
             return

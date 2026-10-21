@@ -378,6 +378,9 @@ AR = {
         "روبوت GRAFIS متوقف: شغّله (صفحة GRAFIS ← الروبوت) أو افتح الموديل في GRAFIS ونفّذ Test Run All Parts ثم احفظ",
     "Waiting for the GRAFIS robot": "ينتظر روبوت GRAFIS",
     "Waiting for nesting": "ينتظر التعشيق",
+    "Open the download page": "فتح صفحة التحميل",
+    "The connection to GitHub was not trusted (a company proxy or an antivirus checking HTTPS?). You can download the update in the browser.":
+        "الاتصال بـ GitHub لم يُوثق (برنامج حماية أو بروكسي الشبكة يفحص HTTPS؟). يمكنك تحميل التحديث من المتصفح.",
     "GRAFIS behind my windows": "GRAFIS خلف نوافذي",
     "With 'Without the mouse': GRAFIS opens behind your windows (not over the whole screen) and the window you work in stays in front":
         "مع «بدون الماوس»: يفتح GRAFIS خلف نوافذك (لا يغطي الشاشة كاملة) وتبقى النافذة التي تعمل عليها في المقدمة",

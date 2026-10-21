@@ -7,7 +7,7 @@ ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
 ICON = os.path.join(ROOT, "level7mtm", "resources", "level7mtm.ico")
 datas = [(os.path.join(ROOT, "level7mtm", "resources"), "level7mtm/resources"),
          (os.path.join(ROOT, "docs"), "docs")]
-hidden = ["ezdxf", "defusedxml", "reportlab", "arabic_reshaper", "bidi", "bidi.algorithm"]
+hidden = ["ezdxf", "defusedxml", "reportlab", "arabic_reshaper", "bidi", "bidi.algorithm", "truststore"]
 excl = ["PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.Qt3DCore", "PySide6.QtQuick",
         "PySide6.QtQml", "PySide6.QtMultimedia", "PySide6.QtPdf", "tkinter", "matplotlib"]
 

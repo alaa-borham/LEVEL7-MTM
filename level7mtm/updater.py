@@ -22,6 +22,7 @@ from . import __version__
 
 REPO = "alaa-borham/LEVEL7-MTM"
 LATEST_API = f"https://api.github.com/repos/{REPO}/releases/latest"
+DOWNLOAD_PAGE = f"https://github.com/{REPO}/releases/latest"
 RELEASES_API = f"https://api.github.com/repos/{REPO}/releases?per_page=60"
 ALLOWED_HOSTS = ("github.com", "api.github.com")
 USER_AGENT = f"LEVEL7-MTM/{__version__}"
@@ -92,8 +93,21 @@ def _get(url: str, timeout: float, accept: str = "application/octet-stream", hos
     return _urlopen(req, timeout, hosts)                       # follows the redirect to GitHub's asset storage
 
 
+def _ssl_context():
+    """HTTPS checked the way Windows (and the browser) checks it: with the certificates Windows trusts, so a
+    company proxy or an antivirus that inspects HTTPS with its own certificate does not break the update
+    ("self-signed certificate in certificate chain"). Python's own list is the fallback."""
+    import ssl
+    try:
+        import truststore
+        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except Exception:  # noqa: BLE001 - not installed / not supported here
+        return ssl.create_default_context()
+
+
 def _urlopen(req, timeout, hosts=ALLOWED_HOSTS):
-    return urllib.request.build_opener(_SafeRedirects(hosts)).open(req, timeout=timeout)
+    return urllib.request.build_opener(urllib.request.HTTPSHandler(context=_ssl_context()),
+                                       _SafeRedirects(hosts)).open(req, timeout=timeout)
 
 
 def parse_release(data: dict) -> UpdateInfo | None:
