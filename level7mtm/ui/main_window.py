@@ -1930,7 +1930,16 @@ class GrafisPage(Page):
         mw = getattr(self, "mdl_watcher", None)
 
         def work():                                   # saved models wait here for their nesting, in turn
-            return (self.watcher.poll() if self.watcher else []) + (mw.poll() if mw else [])
+            out = self.watcher.poll() if self.watcher else []
+            if self.ws.db.get_setting("nesting.paused", False):
+                return out                            # the nesting is stopped: the saved models wait in the queue
+            got = mw.poll(limit=1) if mw else []      # one model at a time: a stop takes effect after it
+            if not got:
+                from ..services.mdl_intake import next_queued, register_mdl
+                p = next_queued(self.ws)              # left over in the queue (saved while stopped …)
+                if p:
+                    got = [register_mdl(self.ws, p)]
+            return out + got
         w = Worker(work)
         w.signals.done.connect(done)
         def failed(msg):
@@ -3682,6 +3691,8 @@ class MainWindow(QMainWindow):
         self.browser.selected.connect(self.select_row)
         self.browser.remove.connect(self.remove_orders)
         self.browser.reread.connect(self.reread_orders)
+        self.browser.nesting_toggle.connect(self.toggle_nesting)
+        self.browser.nesting_paused = bool(self.ws.db.get_setting("nesting.paused", False))
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
         self.tabs.setTabsClosable(True)
@@ -3845,7 +3856,7 @@ class MainWindow(QMainWindow):
         self.erp_clock.setObjectName("erpClock")
         self.erp_clock.setCursor(Qt.PointingHandCursor)
         self.erp_clock.setAlignment(Qt.AlignCenter)
-        self.erp_clock.setMinimumWidth(78)
+        self.erp_clock.setMinimumWidth(64)
         self.erp_clock.setLayoutDirection(Qt.LeftToRight)
         col = QVBoxLayout()
         col.setSpacing(2)
@@ -3861,7 +3872,7 @@ class MainWindow(QMainWindow):
         col.addWidget(self.erp_spin)
         col.addWidget(now_b)
         self.start_b = QPushButton()                  # Start / Stop: the whole chain (ERP, GRAFIS, robot, nesting)
-        self.start_b.setMinimumSize(86, 52)
+        self.start_b.setMinimumSize(64, 34)
         self.start_b.clicked.connect(self.toggle_chain)
         self._show_chain()
         h.addWidget(self.start_b)
@@ -3908,8 +3919,8 @@ class MainWindow(QMainWindow):
         b.setText(("■  " + tr("Stop")) if on else ("▶  " + tr("Start")))
         b.setToolTip(tr("Stop reading ERP orders, the robot and the nesting") if on else
                      tr("Start: read the ERP folder, the robot drives GRAFIS, nesting writes the cutting files"))
-        b.setStyleSheet(f"font-weight: 800; font-size: 11pt; color: {col}; border: 2px solid {col}; "
-                        f"border-radius: 6px; padding: 4px 10px;")
+        b.setStyleSheet(f"font-weight: 800; font-size: 9.5pt; color: {col}; border: 2px solid {col}; "
+                        f"border-radius: 5px; padding: 2px 8px;")
 
     def toggle_chain(self):
         """Start: the ERP folder is read on the timer, the GRAFIS folders are watched, the robot and the nesting
@@ -3958,13 +3969,13 @@ class MainWindow(QMainWindow):
         if self.watcher is None or not self.timer.isActive():
             lab.setText(tr("off"))
             lab.setToolTip(tr("ERP orders") + ": " + tr("not watching") + " — " + tr("Click: switch on / set up"))
-            lab.setStyleSheet(f"color: {themes.colour('bad').name()}; font-size: 15pt; font-weight: 800;")
+            lab.setStyleSheet(f"color: {themes.colour('bad').name()}; font-size: 12pt; font-weight: 800;")
             return
         left = max(0, self.timer.remainingTime() // 1000)
         lab.setText(f"{left // 60:02d}:{left % 60:02d}")
         lab.setToolTip(f"{tr('ERP orders')}: {self.ws.db.get_setting('watch.folder')} — {tr('last check')}: "
                        f"{(self.ws.db.get_setting('watch.last_check') or '—').replace('T', ' ')[:19]}")
-        lab.setStyleSheet(f"color: {themes.colour('accent').name()}; font-size: 15pt; font-weight: 800; "
+        lab.setStyleSheet(f"color: {themes.colour('accent').name()}; font-size: 12pt; font-weight: 800; "
                           f"font-family: Consolas, 'DejaVu Sans Mono', monospace;")
 
     def _menus(self):
@@ -4138,6 +4149,15 @@ class MainWindow(QMainWindow):
                 msg += "\n\n⚠ " + tr("Folder watch is off: the robot and the saved GRAFIS files wait. "
                                         "Click «Folder watch» in the status bar to switch it on.")
         self.marker.set_marker(marker, row, msg)
+
+    def toggle_nesting(self):
+        """The button on the nesting queue: stop the nesting (the model being nested is finished first; the models
+        CAD saves wait in the queue) or start it again (the queue is nested in turn)."""
+        paused = not bool(self.ws.db.get_setting("nesting.paused", False))
+        self.ws.db.set_setting("nesting.paused", paused)
+        self.browser.nesting_paused = paused
+        self.status(tr("Nesting stopped") if paused else tr("Nesting started"))
+        self.refresh_cad(force=True)
 
     def reread_orders(self, rids: list[int]):
         """Right click → Read again: the XML of these lines is read with today's settings of its customer /

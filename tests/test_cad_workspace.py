@@ -765,3 +765,38 @@ def test_x_values_in_the_panel_are_in_order(ws):
     assert [g.itemAtPosition(i, 0).widget().text() for i in range(4)] == ["007/X1", "007/X2", "007/X11", "009/X2"]
     win.close()
     app.processEvents()
+
+
+def test_nesting_queue_start_stop_and_left_over_models(ws, tmp_path):
+    """The button on the nesting queue stops / starts the nesting; models left in the queue (saved while it was
+    stopped, handed over and never nested) are taken again in turn."""
+    import json
+
+    from level7mtm.services.mdl_intake import next_queued
+    from level7mtm.storage.db import now
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.ui.main_window import MainWindow
+    m = tmp_path / "Order-1.mdl"
+    m.write_text("saved")
+    with ws.db.tx() as c:
+        c.execute("INSERT INTO grafis_results(sha256, path, checked_at, info, pieces, lines, issues, status, "
+                  "handed_over) VALUES ('s1', ?, ?, '{}', '[]', '[]', '[]', 'handed_over', 1)", (str(m), now()))
+    assert next_queued(ws) == str(m)                                     # handed over, never nested
+    with ws.db.tx() as c:
+        c.execute("INSERT INTO cutting_jobs(sha256, scb_path, created_at, status, outputs, info, log) "
+                  "VALUES ('s1', ?, ?, 'done', '[]', ?, '')", (str(m), now(), json.dumps({})))
+    assert next_queued(ws) is None                                       # nested: not again
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    win = MainWindow(ws)
+    win.show()
+    app.processEvents()
+    b = win.browser.queue_button
+    assert not ws.db.get_setting("nesting.paused", False)
+    b.click()
+    app.processEvents()
+    assert ws.db.get_setting("nesting.paused") is True and "▶" in win.browser.queue_button.text()
+    win.browser.queue_button.click()
+    app.processEvents()
+    assert ws.db.get_setting("nesting.paused") is False and "■" in win.browser.queue_button.text()
+    win.close()
+    app.processEvents()

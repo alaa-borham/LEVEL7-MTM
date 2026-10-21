@@ -149,3 +149,28 @@ def register_mdl(ws, path: str, cut: bool | None = None) -> dict:
         move_failed(ws, [ln["revision_id"] for ln in chk.lines], problems,
                     f"order model saved by GRAFIS not processed ({out['status']})")
     return out
+
+
+def next_queued(ws) -> str | None:
+    """The next model waiting for its nesting that no folder look will bring any more (e.g. saved by GRAFIS while
+    the nesting was stopped, or handed over and never nested): the oldest first."""
+    from .auto_cut import settings
+    from .grafis_robot import file_sha
+    if not settings(ws)["enabled"]:
+        return None                                   # cutting files are not made by themselves
+    for r in ws.db.q("SELECT path, sha256 FROM grafis_results WHERE archived=0 AND handed_over=1 AND path IS NOT NULL "
+                     "AND sha256 NOT IN (SELECT sha256 FROM cutting_jobs) ORDER BY id"):
+        if r["path"] and os.path.isfile(r["path"]):
+            return r["path"]
+    known = {r["path"] for r in ws.db.q("SELECT path FROM grafis_results WHERE path IS NOT NULL")}
+    for g in ws.db.q("SELECT path, info FROM grafis_orders WHERE status='written' AND archived=0 AND id IN "
+                     "(SELECT MAX(id) FROM grafis_orders GROUP BY revision_id) ORDER BY id"):
+        p = g["path"]
+        if not p or p in known or not os.path.isfile(p):
+            continue
+        try:
+            if file_sha(p) != json.loads(g["info"]).get("sha256"):      # saved by GRAFIS, never looked at
+                return p
+        except OSError:
+            continue
+    return None

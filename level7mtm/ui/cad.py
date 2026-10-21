@@ -1299,6 +1299,8 @@ class OrderBrowser(QWidget):
     selected = Signal(object)
     remove = Signal(list)                              # right click → remove: the order lines (revision ids)
     reread = Signal(list)                              # right click → read their XML again with today's settings
+    nesting_toggle = Signal()                          # the button on the nesting queue: start / stop the nesting
+    nesting_paused = False
 
     def __init__(self):
         super().__init__()
@@ -1341,6 +1343,30 @@ class OrderBrowser(QWidget):
               ("err", "Needs attention", ("err",), "bad"),
               ("cut", "Ready to cut", ("cut",), "ok"))
 
+    def _queue_button(self, grp, n, c):
+        from PySide6.QtWidgets import QToolButton
+        w = QWidget()
+        h = QHBoxLayout(w)
+        h.setContentsMargins(0, 0, 4, 0)
+        h.setSpacing(6)
+        b = QToolButton()
+        paused = self.nesting_paused
+        col = c["ok"] if paused else c["bad"]
+        b.setText(("▶ " + tr("Start nesting")) if paused else ("■ " + tr("Stop nesting")))
+        b.setToolTip(tr("The nesting is stopped: the models saved by CAD wait here") if paused else
+                     tr("Stop the nesting after the model being nested now"))
+        b.setStyleSheet(f"QToolButton {{ color: {col.name()}; border: 1px solid {col.name()}; border-radius: 4px; "
+                        f"padding: 1px 6px; font-weight: 700; }}")
+        b.clicked.connect(self.nesting_toggle.emit)
+        lab = QLabel(str(n))
+        lab.setStyleSheet(f"color: {c['accent'].name()}; font-weight: 800;")
+        h.addWidget(lab)
+        h.addStretch()
+        h.addWidget(b)
+        grp.setText(1, "")
+        self.tree.setItemWidget(grp, 1, w)
+        self.queue_button = b
+
     def _order_items(self):
         for g in range(self.tree.topLevelItemCount()):
             grp = self.tree.topLevelItem(g)
@@ -1375,6 +1401,8 @@ class OrderBrowser(QWidget):
             grp.setBackground(0, QBrush(QColor(c[colour].red(), c[colour].green(), c[colour].blue(), 28)))
             grp.setBackground(1, QBrush(QColor(c[colour].red(), c[colour].green(), c[colour].blue(), 28)))
             self.tree.addTopLevelItem(grp)
+            if key == "queue":                            # start / stop the nesting right on its list
+                self._queue_button(grp, len(mine), c)
             for r in mine:
                 col = c[STAGE_COLOUR[r["stage"]]]
                 it = QTreeWidgetItem([ltr(r["line"]), tr("Waiting for nesting") if r["stage"] == "nest" and
