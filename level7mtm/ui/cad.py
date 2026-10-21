@@ -1226,7 +1226,7 @@ class Ribbon(QFrame):
     def measure(self):
         """How wide each size is (after the style is applied); measured again when shown."""
         cur = self.mode
-        for m in ("small", "icons", "full"):
+        for m in ("small", "tiny", "icons", "full"):
             self._apply(m)
             for b in self.buttons.values():
                 b.ensurePolished()
@@ -1249,13 +1249,17 @@ class Ribbon(QFrame):
         self.compact = mode == "icons"
         for b in self.buttons.values():
             b.setToolButtonStyle(Qt.ToolButtonIconOnly if mode == "icons" else Qt.ToolButtonTextUnderIcon)
-            b.setIconSize(QSize(24, 24) if mode == "full" else QSize(19, 19))
+            b.setIconSize(QSize(24, 24) if mode == "full" else QSize(16, 16) if mode == "tiny" else QSize(19, 19))
             b.setMinimumWidth(36 if mode == "icons" else 0)
             pad = " padding-bottom: 5px;" if isinstance(b, MenuButton) else ""     # room for its arrow
-            b.setStyleSheet("" if mode == "full" else f"QToolButton {{ font-size: 8pt; padding: 1px 3px;{pad} }}")
+            b.setStyleSheet("" if mode == "full" else
+                            f"QToolButton {{ font-size: 7.5pt; padding: 0px 1px;{pad} }}" if mode == "tiny" else
+                            f"QToolButton {{ font-size: 8pt; padding: 1px 3px;{pad} }}")
             full = b.toolTip()
             words = full.split(" ")
-            if mode == "small" and len(words) > 1 and len(full) > 9:     # long labels on two lines
+            # labels of two words or more on two lines (Arabic labels are wider: they stay readable, no icons only)
+            if mode in ("small", "tiny") and len(words) > 1 and (len(full) > 9 or mode == "tiny" or
+                                                                 any("\u0600" <= ch <= "\u06ff" for ch in full)):
                 k = max(range(1, len(words)), key=lambda i: -abs(len(" ".join(words[:i])) - len(" ".join(words[i:]))))
                 b.setText(" ".join(words[:k]) + "\n" + " ".join(words[k:]))
             else:
@@ -1269,7 +1273,7 @@ class Ribbon(QFrame):
         if e is not None:
             super().resizeEvent(e)
         w = self.scroll.viewport().width() - 12            # the room really there, with a little to spare
-        order = ("full", "small", "icons")
+        order = ("full", "small", "tiny", "icons")
         want = next((m for m in order if w >= self.widths.get(m, 0)), "icons")
         if want != self.mode:
             self._apply(want)
@@ -1278,7 +1282,7 @@ class Ribbon(QFrame):
     def _verify(self):
         """After the new size is drawn: its real width (this PC's fonts); too wide after all -> the next smaller
         size, so there is never a scroll bar."""
-        order = ("full", "small", "icons")
+        order = ("full", "small", "tiny", "icons")
         real = self._lay.sizeHint().width()
         self.widths[self.mode] = real
         too_wide = real > self.scroll.viewport().width() - 12

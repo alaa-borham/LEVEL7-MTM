@@ -3638,7 +3638,7 @@ class MainWindow(QMainWindow):
             ("order", tr("The order"), [("import", "import", tr("Import XML"), self.import_dialog),
                            ("orders", "orders", tr("Orders"), lambda: self.goto("Orders")),
                            ("details", "ruler", tr("Order info"), self.open_details)]),
-            ("grafis", "GRAFIS", [("customers", "customers", tr("Customers"), lambda: self.goto("Customers")),
+            ("grafis", tr("GRAFIS"), [("customers", "customers", tr("Customers"), lambda: self.goto("Customers")),
                         ("write", "model", tr("Write model"), self.write_model),
                         ("robot", "robot", tr("Robot"), lambda: grafis().robot_now()),
                         ("options", "options", tr("Model settings"),
@@ -4030,7 +4030,7 @@ class MainWindow(QMainWindow):
             w.deleteLater()
         self.sb_items = {}
         self._sb_widgets = []
-        for key, text in (("grafis", "GRAFIS"), ("nesting", "LEVEL7 Nesting"), ("robot", tr("GRAFIS robot")),
+        for key, text in (("grafis", tr("GRAFIS")), ("nesting", "LEVEL7 Nesting"), ("robot", tr("GRAFIS robot")),
                           ("watch", tr("Folder watch")), ("erp", tr("ERP orders"))):
             w = _ClickLabel(lambda k=key: self._light_clicked(k))
             w.setCursor(Qt.PointingHandCursor)
