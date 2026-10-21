@@ -115,10 +115,12 @@ QHeaderView::section {{ background: {_rgb(c['panel'])}; color: {_rgb(mut)}; bord
     border-bottom: 1px solid {_rgb(c['border'])}; padding: 5px 7px; font-weight: 700; }}
 QTableCornerButton::section {{ background: {_rgb(c['panel'])}; border: none; }}
 QTabWidget::pane {{ border: 1px solid {_rgb(c['border'])}; top: -1px; }}
-QTabBar::tab {{ background: {_rgb(c['panel'])}; padding: 6px 14px; border: 1px solid {_rgb(c['border'])};
-    border-bottom: none; color: {_rgb(mut)}; }}
-QTabBar::tab:selected {{ background: {_rgb(c['canvas'])}; color: {_rgb(txt)}; border-top: 2px solid {_rgb(acc)}; font-weight: 700; }}
-QTabBar::tab:hover {{ color: {_rgb(txt)}; }}
+QTabBar::tab {{ background: {_rgb(c['button'])}; padding: 6px 16px; border: 1px solid {_rgb(c['border'])};
+    border-bottom: none; color: {_rgb(mut)}; margin: 3px 2px 0 2px; border-top-left-radius: 6px;
+    border-top-right-radius: 6px; }}
+QTabBar::tab:selected {{ background: {_rgb(c['canvas'])}; color: {_rgb(acc)}; border: 1px solid {_rgb(acc)};
+    border-top: 3px solid {_rgb(acc)}; border-bottom: none; font-weight: 800; margin-top: 0; }}
+QTabBar::tab:!selected:hover {{ color: {_rgb(txt)}; background: {_rgb(c['card'])}; }}
 QTabBar::close-button {{ subcontrol-position: right; }}
 
 QScrollBar:vertical {{ background: {_rgb(c['window'])}; width: 11px; margin: 0; }}
