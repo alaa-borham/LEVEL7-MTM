@@ -747,3 +747,21 @@ def test_order_details_follow_the_order_chosen_in_the_list(ws):
     assert rows[1]["line"] in page.head.text()                          # the open page shows it at once
     win.close()
     app.processEvents()
+
+
+def test_x_values_in_the_panel_are_in_order(ws):
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ws.import_file(XML_53)
+    win = MainWindow(ws)
+    from level7mtm.ui import cad
+    row = dict(cad.order_rows(ws)[0], x_rows=[{"part": "007", "x": "X11", "x_name": "a", "value_mm": 1},
+                                              {"part": "009", "x": "X2", "x_name": "b", "value_mm": 2},
+                                              {"part": "007", "x": "X2", "x_name": "c", "value_mm": 3},
+                                              {"part": "007", "x": "X1", "x_name": "d", "value_mm": 4}])
+    win.inspector.show_row(row)
+    g = win.inspector.xgrid
+    assert [g.itemAtPosition(i, 0).widget().text() for i in range(4)] == ["007/X1", "007/X2", "007/X11", "009/X2"]
+    win.close()
+    app.processEvents()

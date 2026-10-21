@@ -1531,8 +1531,8 @@ class Inspector(QScrollArea):
             self.buttons[key] = b
             self.lay.addWidget(b)
         self.kv: dict[str, QLabel] = {}
-        self._section(tr("The order"), [("customer", "Customer"), ("basic_size", "Basic-Size"), ("fabric", "Fabric"),
-                                         ("width", "Width"), ("quantity", "Quantity"), ("imported", "Imported")])
+        self._section(tr("The order"), [("customer", "Customer"), ("width", "Width"), ("quantity", "Quantity"),
+                                         ("imported", "Imported")])                # owner: no Basic-Size, no fabric
         self.lay.addWidget(self._sec_title(tr("Nesting")))
         nr = QHBoxLayout()
         self.ring = Ring()
@@ -1610,17 +1610,20 @@ class Inspector(QScrollArea):
         self.pill.setText(tr(STAGE_TEXT[r["stage"]]))
         self.pill.setStyleSheet(f"color: {col.name()}; border-color: {col.name()};")
         self.kv["customer"].setText(r.get("customer") or "—")
-        self.kv["basic_size"].setText(str(r.get("basic_size") or "—"))
-        self.kv["basic_size"].setToolTip(r.get("table") or "")
-        self.kv["fabric"].setText(str(r["fabric"] or "—"))
+
         self.kv["width"].setText(f"{r['width']:g} mm" if r["width"] else "—")
         self.kv["quantity"].setText(str(r["quantity"] or "—"))
         self.kv["imported"].setText((r["imported"] or "").replace("T", " ")[:16])
         self.kv["length"].setText(f"{r['length_mm'] / 1000:.2f} m" if r["length_mm"] else "—")
         self.kv["placed"].setText(str(r["placed"]) if r["placed"] is not None else "—")
         self.ring.set_value(r["efficiency_pct"])
-        for i, x in enumerate(r["x_rows"][:40]):
-            a = QLabel(x["x"])
+        def order(x):                                     # part by part, X1, X2 … in order
+            num = str(x.get("x", "")).lstrip("Xx")
+            return (str(x.get("part", "")), int(num) if num.isdigit() else 10 ** 6, str(x.get("x", "")))
+        xs = sorted(r["x_rows"], key=order)
+        several = len({str(x.get("part", "")) for x in xs}) > 1
+        for i, x in enumerate(xs[:60]):
+            a = QLabel(f"{x.get('part')}/{x['x']}" if several and x.get("part") else x["x"])
             a.setStyleSheet(f"color: {c['accent'].name()}; font-weight: 700;")
             b = QLabel(x.get("x_name") or "")
             b.setObjectName("kvKey")
