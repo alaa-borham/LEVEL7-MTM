@@ -192,3 +192,20 @@ def test_names_in_a_message_for_copying():
     from level7mtm.ui.main_window import quoted_names
     assert quoted_names("design code 'Small Size Fit' is not mapped to a model option") == ["Small Size Fit"]
     assert quoted_names("'A' and 'B ' and 'A'") == ["A", "B"] and quoted_names("nothing") == []
+
+
+def test_a_message_row_opens_its_text_with_a_click(ws, monkeypatch):
+    from PySide6.QtWidgets import QTableWidgetItem
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    win = MainWindow(ws)
+    t = win.pages["Order details"].probs
+    shown = []
+    t.show_text = lambda it: shown.append(it.text())
+    t.setRowCount(1)
+    t.setItem(0, 0, QTableWidgetItem("review"))
+    t.setItem(0, 1, QTableWidgetItem("design code 'Small Size Fit' is not mapped to a model option"))
+    t.itemClicked.emit(t.item(0, 0))                                    # a click on the row, any cell
+    assert shown == ["design code 'Small Size Fit' is not mapped to a model option"]
+    win.close()
+    app.processEvents()

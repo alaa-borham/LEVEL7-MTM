@@ -175,6 +175,12 @@ def copyable(t: QTableWidget) -> None:
         m.exec(t.viewport().mapToGlobal(pos))
     t.setContextMenuPolicy(Qt.CustomContextMenu)
     t.customContextMenuRequested.connect(menu)
+    t.show_text = show_text                               # message tables open it with a click
+
+
+def messages_open_on_click(t: QTableWidget) -> None:
+    """A message row opens its text window at once (the names in it on lines of their own, to copy)."""
+    t.itemClicked.connect(lambda it: t.show_text(t.item(it.row(), t.columnCount() - 1) or it))
 
 
 _KIND = {"#bbf7d0": "ok", "#a7f3d0": "ok", "#d1fae5": "ok", "#fde68a": "review", "#fecaca": "blocking",
@@ -721,6 +727,7 @@ class OrderPage(Page):
         sp = QSplitter()
         self.opts = table(["Group", "Value"])
         self.probs = table(["Severity", "Message"])
+        messages_open_on_click(self.probs)
         sp.addWidget(self.opts)
         sp.addWidget(self.probs)
         lay.addWidget(sp, 2)
@@ -994,6 +1001,7 @@ class ValidationPage(Page):
         super().__init__(win)
         lay = QVBoxLayout(self)
         self.issues = table(["Severity", "Message"])
+        messages_open_on_click(self.issues)
         self.checks = table(["Label", "Value", "Result"])
         self.rels = table(["Label", "Value", "Result"])
         self.block = QListWidget()
