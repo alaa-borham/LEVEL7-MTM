@@ -32,8 +32,15 @@ class NestingNotConfigured(RuntimeError):
     pass
 
 
+# one math thread per library: on a PC with many cores each thread takes its own large buffer and LEVEL7 Nesting
+# stopped with "OpenBLAS error: Memory allocation still failed after 10 retries"
+_ONE_THREAD = {k: "1" for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
+                                "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS")}
+
+
 def nesting_command(ws) -> tuple[list[str], dict]:
     env = dict(os.environ)
+    env.update(_ONE_THREAD)
     cli = ws.db.get_setting("nesting.cli")
     drives = [f"{d}:\\" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"] if os.name == "nt" else []
     found = [os.path.join(d, sub, "level7-cli.exe") for d in drives
@@ -92,10 +99,13 @@ def settings(ws, cid: str | None = None) -> dict:
             "remnant": bool(ws.db.get_setting("cutting.remnant", True))}
 
 
-def _run(cmd, env, log) -> int:
+def _run(cmd, env, log, timeout: float = 3600) -> int:
     log.append("$ " + " ".join(cmd))
-    p = subprocess.run(cmd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                       timeout=3600, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    try:
+        p = subprocess.run(cmd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           timeout=timeout, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except subprocess.TimeoutExpired:                  # stopped (killed); the reason in plain words
+        raise subprocess.SubprocessError(f"LEVEL7 Nesting did not finish within {timeout:.0f} s — stopped")
     log.append(p.stdout[-4000:])
     if p.stderr.strip():
         log.append(p.stderr[-2000:])
@@ -175,7 +185,13 @@ def _auto_cut_inner(ws, chk, scb_path: str, force: bool = False) -> dict:
         else:
             log.append("LEVEL7 Nesting too old for --remnant (update it): marker as nested")
             result["remnant"] = {"done": False, "why": "old LEVEL7 Nesting"}
-    rc = _run(nest, env, log)
+    limit = max(300.0, st["time"] * 3 + 180)            # the nesting time asked plus room, never hours
+    rc = _run(nest, env, log, limit)
+    if rc != 0 and "memory allocation" in "\n".join(log[-3:]).lower():
+        import time as _t                                # memory short for a moment (e.g. CAD saving): once more
+        log.append("LEVEL7 Nesting ran out of memory — trying once more")
+        _t.sleep(5)
+        rc = _run(nest, env, log, limit)
     out_text = "\n".join(log)
     m = re.search(r'"length_mm":\s*([\d.]+)', out_text)
     e = re.search(r'"efficiency_total_width_pct":\s*([\d.]+)', out_text)
