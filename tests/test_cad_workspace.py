@@ -726,3 +726,24 @@ def test_order_lists_stay_closed_until_opened(ws):
         [False, False, True, False, False]
     win.close()
     app.processEvents()
+
+
+def test_order_details_follow_the_order_chosen_in_the_list(ws):
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.ui import cad
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ws.import_file(XML_53)
+    rows = cad.order_rows(ws)
+    win = MainWindow(ws)
+    win.show()
+    win.select_row(rows[0])
+    win.goto("Order details")
+    page = win.pages["Order details"]
+    app.processEvents()
+    assert rows[0]["line"] in page.head.text()
+    win.select_row(rows[1])                                             # another order chosen in the list
+    app.processEvents()
+    assert rows[1]["line"] in page.head.text()                          # the open page shows it at once
+    win.close()
+    app.processEvents()

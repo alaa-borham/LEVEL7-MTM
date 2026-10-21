@@ -4085,7 +4085,11 @@ class MainWindow(QMainWindow):
         from . import cad
         self.sel_row = row
         if row is not None:
+            changed = row["rid"] != self.current_rid
             self.current_rid = row["rid"]
+            page = self.current_page()                    # the order page open now follows the list
+            if changed and page is not None and page.title in ("Order details", "Pattern preview", "Validation"):
+                self.guard(page.refresh)
         self.inspector.show_row(row)
         l7n = row.get("l7n") if row else None
         try:
