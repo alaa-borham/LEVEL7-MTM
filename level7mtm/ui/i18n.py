@@ -378,6 +378,10 @@ AR = {
         "روبوت GRAFIS متوقف: شغّله (صفحة GRAFIS ← الروبوت) أو افتح الموديل في GRAFIS ونفّذ Test Run All Parts ثم احفظ",
     "Waiting for the GRAFIS robot": "ينتظر روبوت GRAFIS",
     "Waiting for nesting": "ينتظر التعشيق",
+    "Copy the cell": "نسخ الخلية",
+    "Copy": "نسخ",
+    "Show the text to select words…": "عرض النص لتحديد كلمات منه…",
+    "In the nesting queue": "قائمة انتظار التعشيق",
     "Open the download page": "فتح صفحة التحميل",
     "The connection to GitHub was not trusted (a company proxy or an antivirus checking HTTPS?). You can download the update in the browser.":
         "الاتصال بـ GitHub لم يُوثق (برنامج حماية أو بروكسي الشبكة يفحص HTTPS؟). يمكنك تحميل التحديث من المتصفح.",
@@ -600,8 +604,23 @@ def language() -> str:
     return _LANG[0]
 
 
+_BRAND = None
+
+
+def brand(text: str) -> str:
+    """The CAD program is called "CAD" on the screen (owner: every "GRAFIS" name becomes "CAD"); the program
+    itself, its files and windows are untouched."""
+    global _BRAND
+    if not text or "rafis" not in text and "RAFIS" not in text:
+        return text
+    if _BRAND is None:
+        import re
+        _BRAND = re.compile(r"GRAFIS|Grafis|grafis")
+    return _BRAND.sub("CAD", text)
+
+
 def tr(text: str) -> str:
-    return AR.get(text, text) if _LANG[0] == "ar" else text
+    return brand(AR.get(text, text) if _LANG[0] == "ar" else text)
 
 
 def label(d: dict | str | None) -> str:
@@ -685,6 +704,10 @@ MSG_AR = [
 
 def tr_msg(text: str) -> str:
     """A message from the services in the language of the screen (English stays as it is)."""
+    return brand(_tr_msg(text))
+
+
+def _tr_msg(text: str) -> str:
     import re
     if _LANG[0] != "ar" or not text:
         return text
@@ -692,12 +715,12 @@ def tr_msg(text: str) -> str:
         return AR[text]
     parts = text.split(" — ")
     if len(parts) > 1:
-        return " — ".join(tr_msg(p) for p in parts)
+        return " — ".join(_tr_msg(p) for p in parts)
     for pat, ar in MSG_AR:
         m = re.fullmatch(pat, text.strip())
         if m:
-            return ar.format(*(tr_msg(g) for g in m.groups()))
+            return ar.format(*(_tr_msg(g) for g in m.groups()))
     m = re.fullmatch(r"([A-Za-z]*\d+[\w-]*|[\w ]{1,24}):\s+(.+)", text)     # "R003: …", "GRAFIS robot: …"
-    if m and m.group(2) != tr_msg(m.group(2)):
-        return f"{tr(m.group(1))}: {tr_msg(m.group(2))}"
+    if m and m.group(2) != _tr_msg(m.group(2)):
+        return f"{tr(m.group(1))}: {_tr_msg(m.group(2))}"
     return text

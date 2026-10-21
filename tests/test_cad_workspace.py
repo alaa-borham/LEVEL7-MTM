@@ -89,7 +89,7 @@ def test_window_shows_the_selected_marker(ws, tmp_path):
     win.show()
     groups = {win.browser.tree.topLevelItem(i).data(0, 0x0101): win.browser.tree.topLevelItem(i)
               for i in range(win.browser.tree.topLevelItemCount())}
-    assert list(groups) == ["grafis", "nest", "err", "cut"]              # GRAFIS and nesting each in its own list
+    assert list(groups) == ["grafis", "queue", "nest", "err", "cut"]     # GRAFIS, the nesting queue, nesting
     item = next(it for it in win.browser._order_items() if it.data(0, 0x0100) == rev["id"])
     assert item.parent() is groups["cut"] and groups["cut"].text(1) == "1"
     win.browser.tree.setCurrentItem(item)
@@ -431,12 +431,12 @@ def test_problem_messages_follow_the_language():
         ar = [tr_msg(m) for m in msgs]
         assert ar[0] == "سطر الطلب يحتاج مراجعة (مشاكل في الاستيراد) — عالجها أولاً"
         assert ar[1] == "خيار التصميم 'pocket_chest' غير محدد"
-        assert ar[2] == "R003: القياس DSR غير موجود في الطلب — X4 سيبقى على قيمة موديل GRAFIS الأصلية"
+        assert ar[2] == "R003: القياس DSR غير موجود في الطلب — X4 سيبقى على قيمة موديل CAD الأصلية"   # GRAFIS is called CAD on the screen
         assert ar[3].startswith("التعشيق")
         assert tr_msg("something new nobody translated") == "something new nobody translated"
     finally:
         set_language("en")
-    assert [tr_msg(m) for m in msgs] == msgs                       # English: as it is
+    assert [tr_msg(m) for m in msgs] == [m.replace("GRAFIS", "CAD") for m in msgs]   # English: as it is (CAD)
 
 
 def test_pattern_sheet_one_of_each_piece_side_by_side(tmp_path):
@@ -722,6 +722,7 @@ def test_order_lists_stay_closed_until_opened(ws):
     tree.topLevelItem(2).setExpanded(True)                              # the owner opens one
     win.refresh_cad(force=True)
     app.processEvents()
-    assert [tree.topLevelItem(i).isExpanded() for i in range(tree.topLevelItemCount())] == [False, False, True, False]
+    assert [tree.topLevelItem(i).isExpanded() for i in range(tree.topLevelItemCount())] == \
+        [False, False, True, False, False]
     win.close()
     app.processEvents()

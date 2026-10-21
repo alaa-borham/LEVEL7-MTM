@@ -246,6 +246,7 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
                     row["problems"].append(f"{tr('GRAFIS robot')}: {rj['message']}")
                 else:
                     row["waiting"] = _grafis_wait(db, go, rj)  # why it is still in GRAFIS (never silent)
+                    row["nest_queue"] = row["waiting"] == tr("Saved by GRAFIS: waiting for nesting")
         res = results.get(rid)
         if res:
             row["result"] = res["path"]
@@ -254,8 +255,10 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
             if res["status"] in ("needs_review", "unmatched"):
                 row["problems"] += [m for sv, m in json.loads(res["issues"]) if sv != "info"]
             cj = db.one("SELECT * FROM cutting_jobs WHERE sha256=? ORDER BY id DESC", (res["sha256"],))
+            row["nest_queue"] = False
             if not cj and res["status"] == "handed_over" and rid not in nesting_now:
                 row["waiting"] = tr("Waiting for nesting")           # saved by GRAFIS: in the nesting queue
+                row["nest_queue"] = True
             if cj:
                 ci = json.loads(cj["info"])
                 row.update(l7n=ci.get("l7n"), length_mm=ci.get("length_mm"), efficiency_pct=ci.get("efficiency_pct"),
@@ -1329,6 +1332,7 @@ class OrderBrowser(QWidget):
     # separate lists, so a line that needs attention never holds up the others; work in GRAFIS and in the nesting
     # each in its own list (they run side by side)
     GROUPS = (("grafis", "In progress — GRAFIS", ("new", "grafis"), "warn"),
+              ("queue", "In the nesting queue", ("queue",), "accent"),     # saved by GRAFIS, waiting their turn
               ("nest", "In progress — Nesting", ("nest",), "accent"),
               ("err", "Needs attention", ("err",), "bad"),
               ("cut", "Ready to cut", ("cut",), "ok"))
@@ -1353,7 +1357,8 @@ class OrderBrowser(QWidget):
         c = themes.colours()
         current, first = None, None
         for key, title, stages, colour in self.GROUPS:
-            mine = [r for r in rows if r["stage"] in stages]
+            mine = [r for r in rows if ("queue" if r.get("nest_queue") and r["stage"] in ("grafis", "nest")
+                                        else r["stage"]) in stages]
             grp = QTreeWidgetItem([f"{tr(title)}", str(len(mine))])
             grp.setData(0, Qt.UserRole + 1, key)
             grp.setFlags(Qt.ItemIsEnabled)

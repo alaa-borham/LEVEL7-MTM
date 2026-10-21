@@ -106,7 +106,53 @@ def table(headers: list[str]) -> QTableWidget:
     t.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
     t.horizontalHeader().setStretchLastSection(True)
     t.verticalHeader().setVisible(False)
+    copyable(t)
     return t
+
+
+def selected_text(t: QTableWidget) -> str:
+    """The selected rows, cells separated by tabs (pastes into Excel as columns)."""
+    rows = sorted({i.row() for i in t.selectedIndexes()})
+    out = []
+    for r in rows:
+        out.append("\t".join((t.item(r, c).text() if t.item(r, c) else "") for c in range(t.columnCount())
+                             if not t.isColumnHidden(c)))
+    return "\n".join(out)
+
+
+def copyable(t: QTableWidget) -> None:
+    """Ctrl+C copies the selected rows; right click: copy the rows, copy the cell, or show the cell's text to
+    select words in it (owner: "select words and copy them")."""
+    from PySide6.QtGui import QKeySequence, QShortcut
+    from PySide6.QtWidgets import QApplication, QMenu, QPlainTextEdit
+    QShortcut(QKeySequence.Copy, t, activated=lambda: QApplication.clipboard().setText(selected_text(t)),
+              context=Qt.WidgetShortcut)
+
+    def show_text(item):
+        d = QDialog(t)
+        d.setWindowTitle(t.horizontalHeaderItem(item.column()).text() if t.horizontalHeaderItem(item.column())
+                         else "")
+        lay = QVBoxLayout(d)
+        ed = QPlainTextEdit(item.text())
+        ed.setReadOnly(True)                              # select words and copy them (Ctrl+C / right click)
+        ed.selectAll()
+        lay.addWidget(ed)
+        bb = QDialogButtonBox(QDialogButtonBox.Close)
+        bb.rejected.connect(d.reject)
+        lay.addWidget(bb)
+        d.resize(560, 200)
+        d.exec()
+
+    def menu(pos):
+        item = t.itemAt(pos)
+        m = QMenu(t)
+        m.addAction(tr("Copy"), lambda: QApplication.clipboard().setText(selected_text(t)))
+        if item is not None:
+            m.addAction(tr("Copy the cell"), lambda: QApplication.clipboard().setText(item.text()))
+            m.addAction(tr("Show the text to select words…"), lambda: show_text(item))
+        m.exec(t.viewport().mapToGlobal(pos))
+    t.setContextMenuPolicy(Qt.CustomContextMenu)
+    t.customContextMenuRequested.connect(menu)
 
 
 _KIND = {"#bbf7d0": "ok", "#a7f3d0": "ok", "#d1fae5": "ok", "#fde68a": "review", "#fecaca": "blocking",
@@ -1026,7 +1072,7 @@ class SendPage(Page):
             return
         mdl = self.ws.db.get_setting("grafis.mdl")
         if not mdl or not os.path.exists(mdl):
-            mdl, _ = QFileDialog.getOpenFileName(self, "GRAFIS", "", "GRAFIS (*.mdl *.MDL)")
+            mdl, _ = QFileDialog.getOpenFileName(self, tr("GRAFIS"), "", "GRAFIS (*.mdl *.MDL)")
             if mdl:
                 self.ws.db.set_setting("grafis.mdl", mdl)
         for rid in ids:
@@ -1415,7 +1461,7 @@ class GrafisPage(Page):
         return register_scb(self.ws, path, nesting_dir=self._nesting_dir(), confirm_reason=reason)
 
     def register(self):
-        paths, _ = QFileDialog.getOpenFileNames(self, "GRAFIS", self.ws.db.get_setting("grafis.watch.folder", ""),
+        paths, _ = QFileDialog.getOpenFileNames(self, tr("GRAFIS"), self.ws.db.get_setting("grafis.watch.folder", ""),
                                                 "GRAFIS marker (*.scb *.SCB)")
         if paths:
             self.win.run(lambda: [self._register(p) for p in paths], lambda _r: self.refresh())
@@ -1567,7 +1613,7 @@ class GrafisPage(Page):
             self.watcher = None
         self.start(sub["SCB"])
         self.refresh()
-        QMessageBox.information(self, "GRAFIS", f"MDL: {sub['MDL']}\nSCB: {sub['SCB']} ({tr('watching')})\n"
+        QMessageBox.information(self, tr("GRAFIS"), f"MDL: {sub['MDL']}\nSCB: {sub['SCB']} ({tr('watching')})\n"
                                                 f"ER: {sub['ER']}\nCUT ({tr('Cutting files')}): {sub['CUT']}\n"
                                                 f"MDL-ARCHIVE ({tr('Order models archive…').rstrip('…')}): "
                                                 f"{sub['MDL-ARCHIVE']}")
@@ -1750,7 +1796,7 @@ class GrafisPage(Page):
             for p in paths:
                 r = self.win.guard(lambda p=p: self._register(p, reason))
                 if r and r["status"] != "handed_over":
-                    QMessageBox.warning(self, "GRAFIS", "\n".join(m for _, m in r["check"].issues))
+                    QMessageBox.warning(self, tr("GRAFIS"), "\n".join(m for _, m in r["check"].issues))
         self.refresh()
 
     def choose_nesting(self):
@@ -3316,7 +3362,7 @@ class RulesPage(Page):
             self.out.setPlainText(f"{tr('Done')}: {m['model_id']} {m['version']}")
 
     def open_mdl(self):
-        path, _ = QFileDialog.getOpenFileName(self, "GRAFIS", "", "GRAFIS (*.mdl *.MDL)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("GRAFIS"), "", "GRAFIS (*.mdl *.MDL)")
         if not path:
             return
         from ..grafis.formulas import read_formulas
@@ -4200,7 +4246,7 @@ class MainWindow(QMainWindow):
             if hasattr(os, "startfile"):
                 os.startfile(path)                   # .mdl opens in GRAFIS
             else:
-                QMessageBox.information(self, "GRAFIS", path)
+                QMessageBox.information(self, tr("GRAFIS"), path)
         elif b is robot:
             self.pages["GRAFIS markers"].robot_now()
 
@@ -4372,7 +4418,7 @@ class MainWindow(QMainWindow):
                 page.add_log(f"{o.file_name}: {tr(o.status)} {o.message} " +
                              ", ".join(f"{x['line_number']}→{x['action']}" for x in o.lines))
                 for g in o.grafis:
-                    page.add_log(f"  GRAFIS {g['line_number']}: {tr(g['status'])} "
+                    page.add_log(f"  {tr('GRAFIS')} {g['line_number']}: {tr(g['status'])} "
                                  f"{os.path.basename(g['path'] or '')} {'; '.join(g['problems'])}")
             page.refresh()
             self.refresh_cad()
@@ -4481,7 +4527,7 @@ class MainWindow(QMainWindow):
             for o in outs:
                 page.add_log(f"[watch] {o.file_name}: {tr(o.status)} {o.message}")
                 for g in o.grafis:
-                    page.add_log(f"  GRAFIS {g['line_number']}: {tr(g['status'])} "
+                    page.add_log(f"  {tr('GRAFIS')} {g['line_number']}: {tr(g['status'])} "
                                  f"{os.path.basename(g['path'] or '')} {'; '.join(g['problems'])}")
             page.refresh()
 
