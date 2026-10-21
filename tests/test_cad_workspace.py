@@ -762,7 +762,8 @@ def test_x_values_in_the_panel_are_in_order(ws):
                                               {"part": "007", "x": "X1", "x_name": "d", "value_mm": 4}])
     win.inspector.show_row(row)
     g = win.inspector.xgrid
-    assert [g.itemAtPosition(i, 0).widget().text() for i in range(4)] == ["007/X1", "007/X2", "007/X11", "009/X2"]
+    assert [g.itemAtPosition(i, 0).widget().text() for i in range(4)] == ["d", "c", "a", "b"]   # names, in order
+    assert g.itemAtPosition(0, 0).widget().toolTip() == "007/X1" and g.itemAtPosition(0, 1).widget().text() == "4"
     win.close()
     app.processEvents()
 

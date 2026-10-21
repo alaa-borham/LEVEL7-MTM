@@ -1654,18 +1654,18 @@ class Inspector(QScrollArea):
             return (str(x.get("part", "")), int(num) if num.isdigit() else 10 ** 6, str(x.get("x", "")))
         xs = sorted(r["x_rows"], key=order)
         several = len({str(x.get("part", "")) for x in xs}) > 1
-        for i, x in enumerate(xs[:60]):
-            a = QLabel(f"{x.get('part')}/{x['x']}" if several and x.get("part") else x["x"])
-            a.setStyleSheet(f"color: {c['accent'].name()}; font-weight: 700;")
-            b = QLabel(x.get("x_name") or "")
+        for i, x in enumerate(xs[:60]):                   # owner: the name and the value only (X in the tooltip)
+            xl = f"{x.get('part')}/{x['x']}" if several and x.get("part") else x["x"]
+            name = (x.get("x_name") or "").strip()
+            b = QLabel(name if name and name != "0" else xl)
             b.setObjectName("kvKey")
+            b.setToolTip(xl)
             b.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
             v = QLabel(f"{x['value_mm']:g}")
             v.setObjectName("kvVal")
             v.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.xgrid.addWidget(a, i, 0)
-            self.xgrid.addWidget(b, i, 1)
-            self.xgrid.addWidget(v, i, 2)
+            self.xgrid.addWidget(b, i, 0)
+            self.xgrid.addWidget(v, i, 1)
         if not r["x_rows"]:
             n = QLabel("—")
             n.setObjectName("kvKey")
