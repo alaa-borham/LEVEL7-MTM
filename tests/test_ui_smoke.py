@@ -186,3 +186,9 @@ def test_chosen_cutting_folder_and_moving_existing_files(ws, tmp_path, monkeypat
     page.timer.stop()
     win.close()
     app.processEvents()
+
+
+def test_names_in_a_message_for_copying():
+    from level7mtm.ui.main_window import quoted_names
+    assert quoted_names("design code 'Small Size Fit' is not mapped to a model option") == ["Small Size Fit"]
+    assert quoted_names("'A' and 'B ' and 'A'") == ["A", "B"] and quoted_names("nothing") == []

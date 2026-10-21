@@ -120,6 +120,15 @@ def selected_text(t: QTableWidget) -> str:
     return "\n".join(out)
 
 
+def quoted_names(text: str) -> list[str]:
+    """The names a message quotes ("design code 'Small Size Fit' is not mapped …" → ["Small Size Fit"])."""
+    out = []
+    for n in re.findall(r"'([^']+)'", text or ""):
+        if n.strip() and n.strip() not in out:
+            out.append(n.strip())
+    return out
+
+
 def copyable(t: QTableWidget) -> None:
     """Ctrl+C copies the selected rows; right click: copy the rows, copy the cell, or show the cell's text to
     select words in it (owner: "select words and copy them")."""
@@ -133,10 +142,23 @@ def copyable(t: QTableWidget) -> None:
         d.setWindowTitle(t.horizontalHeaderItem(item.column()).text() if t.horizontalHeaderItem(item.column())
                          else "")
         lay = QVBoxLayout(d)
-        ed = QPlainTextEdit(item.text())
+        text = item.text()
+        names = quoted_names(text)
+        ed = QPlainTextEdit(text + ("\n\n" + "\n".join(names) if names else ""))
         ed.setReadOnly(True)                              # select words and copy them (Ctrl+C / right click)
-        ed.selectAll()
         lay.addWidget(ed)
+        if names:                                         # each name in the message on a line of its own
+            ed.setFocus()
+            cur = ed.textCursor()
+            cur.movePosition(cur.MoveOperation.End)
+            cur.movePosition(cur.MoveOperation.StartOfBlock, cur.MoveMode.KeepAnchor)
+            ed.setTextCursor(cur)                         # the last name selected: Ctrl+C copies it
+            for n in names:
+                b = QPushButton(f"{tr('Copy')}: {n}")
+                b.clicked.connect(lambda _=False, n=n: QApplication.clipboard().setText(n))
+                lay.addWidget(b)
+        else:
+            ed.selectAll()
         bb = QDialogButtonBox(QDialogButtonBox.Close)
         bb.rejected.connect(d.reject)
         lay.addWidget(bb)
