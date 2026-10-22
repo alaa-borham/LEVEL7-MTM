@@ -88,6 +88,21 @@ def customer_formats(ws, cid: str) -> list[str] | None:
     return None
 
 
+def customer_folder(ws, cids) -> str:
+    """The folder of the cutting files: the customer's name (a product goes to its customer's folder); orders of
+    several customers in one marker: "mixed"."""
+    import re
+    from .customers import get
+    tops = set()
+    for cid in cids:
+        c = get(ws, cid)
+        top = get(ws, c["parent"]) if c and c.get("parent") else c
+        tops.add((top or {}).get("name") or cid)
+    name = tops.pop() if len(tops) == 1 else "mixed"
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(name)).strip(" .") or "customer"
+    return name
+
+
 def settings(ws, cid: str | None = None) -> dict:
     return {"formats": (customer_formats(ws, cid) if cid else None) or ws.db.get_setting("cutting.formats",
                                                                                           ["plt", "iso"]),
@@ -153,7 +168,8 @@ def _auto_cut(ws, chk, scb_path: str, force: bool = False) -> dict:
 
 
 def _auto_cut_inner(ws, chk, scb_path: str, force: bool = False) -> dict:
-    custs = {ws.customer_of(ln["revision_id"]) for ln in chk.lines}
+    custs_all = {ws.customer_of(ln["revision_id"]) for ln in chk.lines}
+    custs = set(custs_all)
     st = settings(ws, custs.pop() if len(custs) == 1 else None)   # the formats of the order's customer
     dup = ws.db.one("SELECT * FROM cutting_jobs WHERE sha256=? AND status='done'", (chk.sha256,))
     if dup and not force and all(os.path.isfile(p) for p in json.loads(dup["outputs"])):
@@ -172,8 +188,15 @@ def _auto_cut_inner(ws, chk, scb_path: str, force: bool = False) -> dict:
     except NestingNotConfigured as e:
         result["status"], result["message"] = "not_configured", str(e)
         return _save(ws, chk, scb_path, result)
-    os.makedirs(st["out"], exist_ok=True)
-    stem = os.path.join(st["out"], os.path.splitext(os.path.basename(scb_path))[0])
+    # owner: the cutting folder holds the cutting files only, each customer in his own folder; the marker (.l7n)
+    # is kept in the program's data folder (it opens from the order list)
+    name = os.path.splitext(os.path.basename(scb_path))[0]
+    cut_dir = os.path.join(st["out"], customer_folder(ws, custs_all))
+    l7n_dir = os.path.join(ws.folder, "markers")
+    os.makedirs(cut_dir, exist_ok=True)
+    os.makedirs(l7n_dir, exist_ok=True)
+    stem = os.path.join(l7n_dir, name)
+    cut_stem = os.path.join(cut_dir, name)
     nest = cmd + ["nest", scb_path, "--width", f"{width:g}", "--time", f"{st['time']:g}", "-o", stem + ".l7n"]
     finfo = _info(cmd, env, scb_path)
     if len(sizes) == 1:
@@ -209,7 +232,7 @@ def _auto_cut_inner(ws, chk, scb_path: str, force: bool = False) -> dict:
         result["message"] = "nesting did not produce a valid marker: " + _why(out_text, rc)
         return _save(ws, chk, scb_path, result)
     for fmt in st["formats"]:
-        target = f"{stem}.{fmt}"
+        target = f"{cut_stem}.{fmt}"
         args = cmd + ["export", stem + ".l7n", "--format", fmt, "-o", target]
         if fmt == "plt":
             args += ["--plt-preset", st["plt_preset"]]

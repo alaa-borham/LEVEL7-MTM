@@ -1313,7 +1313,7 @@ class OrderBrowser(QWidget):
         from PySide6.QtWidgets import QLineEdit
         self.find = QLineEdit()
         self.find.setPlaceholderText("⌕  " + tr("Search order…"))
-        self.find.textChanged.connect(self._filter)
+        self.find.textChanged.connect(self._find_changed)
         box = QWidget()
         bl = QVBoxLayout(box)
         bl.setContentsMargins(8, 8, 8, 6)
@@ -1329,6 +1329,7 @@ class OrderBrowser(QWidget):
         self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
         self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.tree.currentItemChanged.connect(self._changed)
+        self.tree.itemExpanded.connect(self._expanded)          # a closed list is filled when opened
         self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection)   # Ctrl / Shift: several orders
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._menu)
@@ -1403,6 +1404,11 @@ class OrderBrowser(QWidget):
             self.tree.addTopLevelItem(grp)
             if key == "queue":                            # start / stop the nesting right on its list
                 self._queue_button(grp, len(mine), c)
+            if key not in self.opened and not self.find.text().strip():
+                grp.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)   # filled when opened (thousands)
+                if any(r["rid"] == keep for r in mine):
+                    current = None
+                continue
             for r in mine:
                 col = c[STAGE_COLOUR[r["stage"]]]
                 it = QTreeWidgetItem([ltr(r["line"]), tr("Waiting for nesting") if r["stage"] == "nest" and
@@ -1502,6 +1508,31 @@ class OrderBrowser(QWidget):
         m.addAction(tr("Delete order…") if len(rids) == 1 else f"{tr('Delete orders…')} ({len(rids)})",
                     lambda: self.remove.emit(rids))
         m.exec(self.tree.viewport().mapToGlobal(pos))
+
+    def open_lists(self, keys=None):
+        """Open these lists (all when None) and fill them now."""
+        self.opened |= set(keys or [g[0] for g in self.GROUPS])
+        for g in range(self.tree.topLevelItemCount()):
+            grp = self.tree.topLevelItem(g)
+            if grp.data(0, Qt.UserRole + 1) in self.opened:
+                self.tree.blockSignals(True)
+                grp.setExpanded(True)
+                self.tree.blockSignals(False)
+        cur = self.tree.currentItem()
+        self.set_rows(self.rows, keep=cur.data(0, Qt.UserRole) if cur else None)
+
+    def _find_changed(self, text):
+        if bool(text.strip()) != getattr(self, "_finding", False):
+            self._finding = bool(text.strip())         # searching: every list filled; done: closed lists empty
+            self.set_rows(self.rows)
+        self._filter(text)
+
+    def _expanded(self, grp):
+        key = grp.data(0, Qt.UserRole + 1)
+        if key and key not in getattr(self, "opened", set()) and grp.childCount() == 0:
+            self.opened.add(key)
+            cur = self.tree.currentItem()
+            QTimer.singleShot(0, lambda: self.set_rows(self.rows, keep=cur.data(0, Qt.UserRole) if cur else None))
 
     def _filter(self, text):
         t = text.strip().lower()

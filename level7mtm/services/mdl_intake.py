@@ -174,3 +174,19 @@ def next_queued(ws) -> str | None:
         except OSError:
             continue
     return None
+
+
+def handled_before(ws, path: str) -> bool:
+    """An MDL of the folder that needs no look when the watch starts: still as this program wrote it (CAD has not
+    saved it), or saved and read before with the same content (checked / nested). A model saved meanwhile is read."""
+    from .grafis_robot import file_sha
+    try:
+        sha = file_sha(path)
+    except OSError:
+        return False
+    if ws.db.one("SELECT 1 FROM grafis_results WHERE path=? AND sha256=?", (path, sha)):
+        return True
+    for g in ws.db.q("SELECT info FROM grafis_orders WHERE path=? AND status='written' ORDER BY id DESC LIMIT 1",
+                     (path,)):
+        return json.loads(g["info"]).get("sha256") == sha
+    return False

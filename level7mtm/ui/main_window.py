@@ -1342,6 +1342,8 @@ class GrafisPage(Page):
         self.timer.timeout.connect(self.poll)
         if getattr(win, "chain_on", False):           # started (Start pressed) before a theme / language switch
             self.auto_start()
+        else:
+            self._start_mdl()                         # the nesting has its own button: it runs without Start
 
     def auto_start(self):
         """The chain runs by itself as soon as the program is open — nobody presses the robot: the robot takes
@@ -1459,7 +1461,7 @@ class GrafisPage(Page):
             self.settings_btn.setChecked(need)
             self.settings_btn.blockSignals(False)
             self.settings_card.setVisible(need)
-        rows = self.ws.db.q("SELECT * FROM grafis_results WHERE archived=0 ORDER BY checked_at DESC")
+        rows = self.ws.db.q("SELECT * FROM grafis_results WHERE archived=0 ORDER BY checked_at DESC LIMIT 500")
         out, colors, data, seen = [], [], [], set()
         for r in rows:
             if r["path"] in seen:                     # an older attempt of the same file: the newest row counts
@@ -1874,21 +1876,26 @@ class GrafisPage(Page):
         except OSError:
             return                                    # folder not reachable (network drive): set it up first
         from ..services.grafis_robot import current_model
-        self.mdl_watcher = FolderWatcher(self.ws, mdl_dir, settle_seconds=3, extensions=(".mdl",),
-                                         handler=lambda p: register_mdl(self.ws, p),
-                                         skip=lambda p: _same_path(p, current_model()))   # open in GRAFIS now
+        from ..services.mdl_intake import handled_before
+        if self.mdl_watcher is None or os.path.normcase(self.mdl_watcher.folder) != os.path.normcase(mdl_dir):
+            self.mdl_watcher = FolderWatcher(self.ws, mdl_dir, settle_seconds=3, extensions=(".mdl",),
+                                             handler=lambda p: register_mdl(self.ws, p),
+                                             skip=lambda p: _same_path(p, current_model()),   # open in CAD now
+                                             known=lambda p: handled_before(self.ws, p))   # thousands: not again
         self.timer.start(2000)
 
     def running(self) -> bool:
-        return self.timer.isActive() and self.mdl_watcher is not None
+        """The whole chain runs (Start): folders, robot and nesting."""
+        return bool(getattr(self.win, "chain_on", False)) and self.timer.isActive() and self.mdl_watcher is not None
 
     def poll(self):
         """Two workers side by side: the robot drives GRAFIS (next model) while the models GRAFIS saved are checked
         and nested one after the other (a nesting takes a minute; GRAFIS does not wait for it)."""
         if not (self.watcher or self.mdl_watcher):
             return
-        self._poll_robot()
-        self._poll_intake()
+        if getattr(self.win, "chain_on", False):      # the robot drives CAD only when the system was started
+            self._poll_robot()
+        self._poll_intake()                           # the nesting: its own button (stopped / running)
 
     def _poll_robot(self):
         if not _ROBOT_POLL.acquire(blocking=False):
@@ -1925,8 +1932,10 @@ class GrafisPage(Page):
             if not alive(self):                           # the page was made anew meanwhile
                 return
             self.busy = False
-            if res:
+            if res and self.isVisible():              # the page itself only when it is shown (thousands of rows)
                 self.refresh()
+            if res:
+                self.win.refresh_cad()
         mw = getattr(self, "mdl_watcher", None)
 
         def work():                                   # saved models wait here for their nesting, in turn
@@ -3610,7 +3619,7 @@ class MainWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll_watch)
         self.cad_timer = QTimer(self)
-        self.cad_timer.timeout.connect(self.refresh_cad)
+        self.cad_timer.timeout.connect(self._refresh_cad_bg)
         self.setAcceptDrops(True)
         self.resize(1440, 900)
         self.setMinimumSize(900, 560)
@@ -3931,11 +3940,14 @@ class MainWindow(QMainWindow):
             self.timer.stop()
             self.watcher = None
             if gp is not None:
-                gp.timer.stop()
-                gp.watcher = gp.mdl_watcher = None
+                gp.watcher = None                          # the CAD output folder and the robot wait
+            self.ws.db.set_setting("nesting.paused", True)  # the whole system: the nesting too
+            self.browser.nesting_paused = True
             self.status(tr("Stopped"))
         else:
             self.chain_on = True
+            self.ws.db.set_setting("nesting.paused", False)
+            self.browser.nesting_paused = False
             folder = self.ws.db.get_setting("watch.folder")
             if folder and os.path.isdir(folder):
                 self.start_watch(folder)
@@ -4104,6 +4116,25 @@ class MainWindow(QMainWindow):
         return states
 
     # ---- the CAD workspace
+    def _refresh_cad_bg(self):
+        """The order list every few seconds, computed in the background (thousands of order lines): the window
+        stays free; only the drawing happens here."""
+        from . import cad
+        if getattr(self, "_cad_busy", False):
+            return
+        self._cad_busy = True
+
+        def done(rows):
+            self._cad_busy = False
+            self._apply_rows(rows, False)
+
+        def failed(msg):
+            self._cad_busy = False
+        w = Worker(lambda: cad.order_rows(self.ws))
+        w.signals.done.connect(done)
+        w.signals.failed.connect(failed)
+        self.pool.start(w)
+
     def refresh_cad(self, force: bool = False):
         from . import cad
         try:
@@ -4111,6 +4142,9 @@ class MainWindow(QMainWindow):
         except Exception as e:  # noqa: BLE001 - the workspace never stops the window
             self.status(f"{tr('Error')}: {e}")
             return
+        self._apply_rows(rows, force)
+
+    def _apply_rows(self, rows, force: bool):
         self._status_lights()
         sig = json.dumps(rows, sort_keys=True, default=str)
         if sig == self._cad_sig and not force:

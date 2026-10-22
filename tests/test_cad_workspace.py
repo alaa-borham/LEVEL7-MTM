@@ -90,6 +90,9 @@ def test_window_shows_the_selected_marker(ws, tmp_path):
     groups = {win.browser.tree.topLevelItem(i).data(0, 0x0101): win.browser.tree.topLevelItem(i)
               for i in range(win.browser.tree.topLevelItemCount())}
     assert list(groups) == ["grafis", "queue", "nest", "err", "cut"]     # GRAFIS, the nesting queue, nesting
+    win.browser.open_lists()                                             # lists are filled when opened
+    groups = {win.browser.tree.topLevelItem(i).data(0, 0x0101): win.browser.tree.topLevelItem(i)
+              for i in range(win.browser.tree.topLevelItemCount())}
     item = next(it for it in win.browser._order_items() if it.data(0, 0x0100) == rev["id"])
     assert item.parent() is groups["cut"] and groups["cut"].text(1) == "1"
     win.browser.tree.setCurrentItem(item)
@@ -661,6 +664,7 @@ def test_robot_works_while_a_nesting_runs(ws, tmp_path, monkeypatch):
     ran = threading.Event()
     monkeypatch.setattr(grafis_robot, "step", lambda ws, drv=None: ran.set() or None)
     win = MainWindow(ws)
+    win.chain_on = True                                                  # Start pressed: the robot works
     gp = win.pages["GRAFIS markers"]
     gp.mdl_watcher = FolderWatcher(ws, str(tmp_path), extensions=(".mdl",))
     assert mw._GRAFIS_POLL.acquire(blocking=False)                       # a nesting is running
@@ -801,3 +805,36 @@ def test_nesting_queue_start_stop_and_left_over_models(ws, tmp_path):
     assert ws.db.get_setting("nesting.paused") is False and "■" in win.browser.queue_button.text()
     win.close()
     app.processEvents()
+
+
+def test_closed_lists_are_filled_only_when_opened(ws):
+    """Thousands of order lines: a closed list holds no rows (the window stays quick); opened, it is filled."""
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ws.import_file(XML_53)
+    win = MainWindow(ws)
+    win.show()
+    app.processEvents()
+    tree = win.browser.tree
+    assert sum(tree.topLevelItem(i).childCount() for i in range(tree.topLevelItemCount())) == 0
+    grp = next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount()) if tree.topLevelItem(i).text(1) == "2")
+    grp.setExpanded(True)                                               # the owner opens it
+    for _ in range(5):
+        app.processEvents()
+    grp = next(tree.topLevelItem(i) for i in range(tree.topLevelItemCount()) if tree.topLevelItem(i).text(1) == "2")
+    assert grp.childCount() == 2 and grp.isExpanded()
+    win.browser.find.setText("9-53-1")                                  # a search looks in every list
+    app.processEvents()
+    assert any(not it.isHidden() for it in win.browser._order_items())
+    win.close()
+    app.processEvents()
+
+
+def test_cutting_files_go_in_the_customer_folder(ws):
+    from level7mtm.services import customers
+    from level7mtm.services.auto_cut import customer_folder
+    cid = customers.add_customer(ws, "Richy", "From Richy")
+    pid = customers.add_product(ws, cid, "ثوب سعودي", "91001")
+    assert customer_folder(ws, {pid}) == "Richy" and customer_folder(ws, {cid}) == "Richy"   # product: its customer
+    assert customer_folder(ws, {cid, "level7"}) == "mixed"
