@@ -461,3 +461,17 @@ def test_every_order_model_is_kept_in_the_archive(ws, tmp_path):
     ws.db.set_setting("grafis.mdl_archive", str(tmp_path / "mine"))
     assert archive_mdl(ws, str(m)) == str(tmp_path / "mine" / "Order-1.mdl")
     assert archive_mdl(ws, str(tmp_path / "missing.mdl")) is None
+
+
+def test_many_held_files_counted_fast_and_reported_short(ws, xml53):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.services.customers import held_files, held_lines, reread_held
+    from level7mtm.ui.main_window import reread_report
+    data = open(xml53, "rb").read().replace(b"Collar Square", b"Collar Round")
+    for i in range(25):
+        ws.import_data(data.replace(b"9-53-", f"9-{100 + i}-".encode()), f"o{i}.xml")
+    fids = held_files(ws, "level7")
+    assert len(fids) == 25 and held_lines(ws, fids) == 50
+    text = reread_report(ws, reread_held(ws, "level7", fids))
+    assert text.count("\n") < 25 and "Collar Round" in text                # totals and reasons, not 25 files

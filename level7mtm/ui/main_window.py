@@ -389,21 +389,39 @@ def fill_customer_box(ws, box) -> None:
 
 def reread_held_question(page, msg: str) -> None:
     """After the customer's settings were saved: read his held orders again (they may pass now)."""
-    from ..services.customers import held_files, reread_held
+    from ..services.customers import held_files, held_lines, reread_held
     cid = page.ws.customer()                             # the customer edited (in the background: no screen choice)
-    n = len(held_files(page.ws, cid))
+    fids = held_files(page.ws, cid)
+    n = len(fids)
     if not n:
         QMessageBox.information(page, tr("Saved"), msg)
         return
-    if QMessageBox.question(page, tr("Saved"), msg + "\n\n" + tr("Read this customer's held XML files again "
-                                                                   "now?") + f" ({n})") == QMessageBox.Yes:
-        page.win.run(lambda: reread_held(page.ws, cid), lambda outs: (
+    lines = held_lines(page.ws, fids)                   # held in the program (read before), not the folder's files
+    if QMessageBox.question(page, tr("Saved"), msg + "\n\n" + tr("Read this customer's held orders again now?") +
+                            "\n" + tr("{n} XML files read before ({lines} order lines) wait in the program for "
+                                       "review").format(n=n, lines=lines)) == QMessageBox.Yes:
+        page.win.run(lambda: reread_held(page.ws, cid, fids), lambda outs: (
             page.win.refresh_cad(force=True),
             QMessageBox.information(page, tr("Saved"), reread_report(page.ws, outs))))
 
 
 def reread_report(ws, outs) -> str:
-    """Each file read again, its lines' status and — for a line still held — why (each reason once)."""
+    """Each file read again, its lines' status and — for a line still held — why (each reason once). Many files:
+    the totals and the reasons only (a list of a thousand files would not fit on the screen)."""
+    if len(outs) > 20:
+        from collections import Counter
+        st = Counter(x["status"] for o in outs for x in o.lines)
+        why = Counter()
+        for o in outs:
+            for x in o.lines:
+                if x["status"] != "ready" and x.get("revision_id"):
+                    for p in ws.revision(x["revision_id"])["normalized"].get("problems") or []:
+                        why[tr_msg(p["message"])] += 1
+        text = f"{tr('Read again')}: {len(outs)} — " + ", ".join(f"{tr(k)}: {v}" for k, v in st.most_common())
+        if why:
+            text += "\n\n" + tr("Still held because") + ":\n" + "\n".join(f"  • {m} ({c})"
+                                                                     for m, c in why.most_common(15))
+        return text
     from ..services.customers import names
     who = names(ws)
     out = []
@@ -3967,8 +3985,11 @@ class MainWindow(QMainWindow):
             self.poll_watch()
 
     def _tick(self):
-        from ..services.activity import snapshot
+        from ..services.activity import progress, snapshot
         busy = snapshot()
+        pr = progress()
+        if pr:                                              # a long job of many files: how far it is
+            self.statusBar().showMessage(f"{tr('Reading the held orders again')}… {pr}", 2000)
         if hasattr(self, "browser"):
             self.browser.update_busy(busy)
             if set(getattr(self, "_was_busy", {})) - set(busy):

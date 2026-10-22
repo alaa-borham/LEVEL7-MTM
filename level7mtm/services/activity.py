@@ -41,3 +41,15 @@ def snapshot() -> dict[int, dict]:
                 p = min(0.97, (now - m["since"]) / m["expected"])
             out[r] = dict(m, progress=p)
         return out
+
+
+_progress: dict = {"text": ""}
+
+
+def set_progress(text: str) -> None:
+    """A long job of many files says how far it is ("Reading again 120 / 1104"); "" when done."""
+    _progress["text"] = text
+
+
+def progress() -> str:
+    return _progress["text"]

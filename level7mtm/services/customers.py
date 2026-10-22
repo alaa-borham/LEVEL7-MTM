@@ -440,21 +440,41 @@ def _family(ws, cid: str) -> set[str]:
 
 
 def held_files(ws, cid: str | None = None) -> list[int]:
-    """Imported XML files of the customer (or his products) whose order lines all wait (nothing went further)."""
-    import json
+    """Imported XML files of the customer (or his products) whose order lines all wait (nothing went further) —
+    one query (a thousand held files made the window wait)."""
     fam = _family(ws, cid or ws.customer())
-    out = []
-    for f in ws.db.q("SELECT DISTINCT import_file AS id FROM revisions WHERE status='needs_review'"):
-        revs = ws.db.q("SELECT status, normalized FROM revisions WHERE import_file=?", (f["id"],))
-        if revs and all(r["status"] in HELD for r in revs) and all(
-                (json.loads(r["normalized"]).get("customer") or DEFAULT_CUSTOMER) in fam for r in revs):
-            out.append(f["id"])
-    return out
+    files: dict[int, bool] = {}
+    for r in ws.db.q("SELECT import_file AS id, status, json_extract(normalized, '$.customer') AS cust FROM revisions "
+                     "WHERE import_file IN (SELECT DISTINCT import_file FROM revisions WHERE status='needs_review')"):
+        ok = r["status"] in HELD and (r["cust"] or DEFAULT_CUSTOMER) in fam
+        files[r["id"]] = files.get(r["id"], True) and ok
+    return [fid for fid, ok in files.items() if ok]
 
 
-def reread_held(ws, cid: str | None = None) -> list:
-    """Read the customer's held XML files again with his current settings (models written as on import)."""
-    return [_reread(ws, fid) for fid in held_files(ws, cid)]
+def held_lines(ws, fids: list[int]) -> int:
+    if not fids:
+        return 0
+    n = 0
+    for i in range(0, len(fids), 500):
+        part = fids[i:i + 500]
+        n += ws.db.one(f"SELECT COUNT(*) AS n FROM revisions WHERE import_file IN ({','.join('?' * len(part))})",
+                       tuple(part))["n"]
+    return n
+
+
+def reread_held(ws, cid: str | None = None, fids: list[int] | None = None) -> list:
+    """Read the customer's held XML files again with his current settings (models written as on import); says
+    how far it is (a thousand files take minutes)."""
+    from .activity import set_progress
+    fids = held_files(ws, cid) if fids is None else fids
+    outs = []
+    try:
+        for k, fid in enumerate(fids, 1):
+            set_progress(f"{k} / {len(fids)}")
+            outs.append(_reread(ws, fid))
+    finally:
+        set_progress("")
+    return outs
 
 
 def reread_lines(ws, rids: list[int]) -> tuple[list, list[str]]:

@@ -378,6 +378,12 @@ AR = {
         "روبوت GRAFIS متوقف: شغّله (صفحة GRAFIS ← الروبوت) أو افتح الموديل في GRAFIS ونفّذ Test Run All Parts ثم احفظ",
     "Waiting for the GRAFIS robot": "ينتظر روبوت GRAFIS",
     "Waiting for nesting": "ينتظر التعشيق",
+    "Read this customer's held orders again now?": "هل تريد إعادة قراءة الطلبات المعلقة لهذا العميل الآن؟",
+    "{n} XML files read before ({lines} order lines) wait in the program for review":
+        "{n} ملف XML قُرئت من قبل ({lines} سطر طلب) معلّقة في البرنامج تنتظر المراجعة — ليست عدد الملفات الموجودة في المجلد",
+    "Read again": "أُعيدت قراءة",
+    "Still held because": "ما زالت معلّقة بسبب",
+    "Reading the held orders again": "إعادة قراءة الطلبات المعلقة",
     "Start nesting": "تشغيل",
     "Stop nesting": "إيقاف",
     "Nesting stopped": "تم إيقاف التعشيق",
