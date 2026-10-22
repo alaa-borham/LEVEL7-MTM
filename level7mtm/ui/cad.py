@@ -177,7 +177,7 @@ def transform(pts, rotation: float, mirrored: bool, dx: float, dy: float, sx: fl
     return out
 
 
-def _grafis_wait(db, go, rj) -> str:
+def _grafis_wait(db, go, rj, ahead=None, robot_on=None) -> str:
     """Why an order model is still in GRAFIS: the robot off, its place in the robot's queue, or saved by GRAFIS
     and waiting to be read from the MDL folder."""
     if rj and rj["status"] == "done" and rj["at"] >= go["created_at"]:
@@ -189,9 +189,11 @@ def _grafis_wait(db, go, rj) -> str:
         return tr("The order model is not in the MDL folder any more (moved or deleted?): write it again")
     if changed:
         return tr("Saved by GRAFIS: waiting for nesting")
-    if not db.get_setting("robot.enabled", False):
+    if not (db.get_setting("robot.enabled", False) if robot_on is None else robot_on):
         return tr("The GRAFIS robot is off: switch it on (GRAFIS page → Robot) or open the model in GRAFIS, run "
                   "Test Run All Parts and save")
+    if ahead is not None:
+        return tr("Waiting for the GRAFIS robot") + (f" — {ahead} {tr('models before it')}" if ahead else "")
     ahead = db.one("SELECT COUNT(*) AS n FROM grafis_orders g WHERE g.status='written' AND g.archived=0 AND g.id<? "
                    "AND g.id IN (SELECT MAX(id) FROM grafis_orders GROUP BY revision_id) AND NOT EXISTS "
                    "(SELECT 1 FROM robot_jobs j WHERE j.path=g.path AND j.at>=g.created_at)", (go["id"],))["n"]
@@ -211,18 +213,37 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
     from ..services.customers import names as customer_names
     names = customer_names(ws)
     nesting_now = {r for r, m in snapshot().items() if m.get("what") == "nesting"}
+    # everything in a few queries (thousands of lines: one query per line held the database for seconds)
+    gos_of: dict[int, list] = {}
+    for g in db.q("SELECT * FROM grafis_orders ORDER BY id DESC"):
+        gos_of.setdefault(g["revision_id"], []).append(g)
+    rj_of: dict[str, object] = {}
+    for j in db.q("SELECT path, status, message, at FROM robot_jobs ORDER BY id"):
+        rj_of[j["path"]] = j                                  # the newest try of each model
+    cj_of: dict[str, object] = {}
+    for j in db.q("SELECT * FROM cutting_jobs ORDER BY id"):
+        cj_of[j["sha256"]] = j                                # the newest nesting of each saved model
+    data_of = {r["id"]: r for r in db.q("SELECT id, raw_line, normalized FROM revisions WHERE status <> 'superseded'")}
+    robot_on = bool(db.get_setting("robot.enabled", False))
+    tried = {}                                                # the robot's queue: written, not tried since
+    for g in db.q("SELECT id, path, created_at FROM grafis_orders WHERE status='written' AND archived=0 AND id IN "
+                  "(SELECT MAX(id) FROM grafis_orders GROUP BY revision_id) ORDER BY id"):
+        j = rj_of.get(g["path"])
+        if not (j and j["at"] >= g["created_at"]):
+            tried[g["id"]] = len(tried)
     for rev in ws.list_revisions():
         if len(out) >= limit:                                 # the newest open lines (cleaned / cancelled ones
             break                                             # do not count)
         if rev["status"] == "cancelled":
             continue
         rid = rev["id"]
-        gos = db.q("SELECT * FROM grafis_orders WHERE revision_id=? ORDER BY id DESC", (rid,))
+        gos = gos_of.get(rid, [])
         if gos and all(g["archived"] for g in gos):
             continue                                          # cleaned from the list
         go = next((dict(g) for g in gos if not g["archived"]), None)
-        full = ws.revision(rid)
-        norm, raw = full["normalized"], full["raw_line"]
+        d = data_of.get(rid)
+        norm = json.loads(d["normalized"]) if d else {}
+        raw = json.loads(d["raw_line"]) if d else {}
         cust = norm.get("customer") or "level7"
         row = {"rid": rid, "line": rev["line_number"], "stage": "new", "problems": [], "imported": rev["imported_at"],
                "customer": names.get(cust, cust),
@@ -240,12 +261,12 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
                 row["problems"] += info.get("problems", []) or [tr(go["status"])]
             elif go["status"] in ("written", "duplicate"):
                 row["stage"] = "grafis"
-                rj = db.one("SELECT status, message, at FROM robot_jobs WHERE path=? ORDER BY id DESC", (go["path"],))
+                rj = rj_of.get(go["path"])
                 if rj and rj["status"] == "failed" and rj["at"] >= go["created_at"]:
                     row["robot_failed"] = True                # stays until "Robot: try again" (never silent)
                     row["problems"].append(f"{tr('GRAFIS robot')}: {rj['message']}")
                 else:
-                    row["waiting"] = _grafis_wait(db, go, rj)  # why it is still in GRAFIS (never silent)
+                    row["waiting"] = _grafis_wait(db, go, rj, tried.get(go["id"], 0), robot_on)   # never silent
                     row["nest_queue"] = row["waiting"] == tr("Saved by GRAFIS: waiting for nesting")
         res = results.get(rid)
         if res:
@@ -254,7 +275,7 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
             row["stage"] = "nest"
             if res["status"] in ("needs_review", "unmatched"):
                 row["problems"] += [m for sv, m in json.loads(res["issues"]) if sv != "info"]
-            cj = db.one("SELECT * FROM cutting_jobs WHERE sha256=? ORDER BY id DESC", (res["sha256"],))
+            cj = cj_of.get(res["sha256"])
             row["nest_queue"] = False
             if not cj and res["status"] == "handed_over" and rid not in nesting_now:
                 row["waiting"] = tr("Waiting for nesting")           # saved by GRAFIS: in the nesting queue

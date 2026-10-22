@@ -1935,7 +1935,7 @@ class GrafisPage(Page):
             if res and self.isVisible():              # the page itself only when it is shown (thousands of rows)
                 self.refresh()
             if res:
-                self.win.refresh_cad()
+                self.win._refresh_cad_bg()            # the order list in the background, not here
         mw = getattr(self, "mdl_watcher", None)
 
         def work():                                   # saved models wait here for their nesting, in turn
@@ -4124,13 +4124,19 @@ class MainWindow(QMainWindow):
             return
         self._cad_busy = True
 
-        def done(rows):
+        def done(res):
             self._cad_busy = False
-            self._apply_rows(rows, False)
+            rows, sig = res
+            if sig != self._cad_sig:                  # nothing changed: nothing to draw
+                self._apply_rows(rows, False, sig)
 
         def failed(msg):
             self._cad_busy = False
-        w = Worker(lambda: cad.order_rows(self.ws))
+
+        def work():
+            rows = cad.order_rows(self.ws)
+            return rows, json.dumps(rows, sort_keys=True, default=str)
+        w = Worker(work)
         w.signals.done.connect(done)
         w.signals.failed.connect(failed)
         self.pool.start(w)
@@ -4144,9 +4150,9 @@ class MainWindow(QMainWindow):
             return
         self._apply_rows(rows, force)
 
-    def _apply_rows(self, rows, force: bool):
+    def _apply_rows(self, rows, force: bool, sig=None):
         self._status_lights()
-        sig = json.dumps(rows, sort_keys=True, default=str)
+        sig = sig or json.dumps(rows, sort_keys=True, default=str)
         if sig == self._cad_sig and not force:
             return
         self._cad_sig = sig

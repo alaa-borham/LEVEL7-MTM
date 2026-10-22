@@ -195,6 +195,17 @@ MIGRATIONS: list[str] = [
     ALTER TABLE grafis_orders ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE grafis_results ADD COLUMN archived INTEGER NOT NULL DEFAULT 0
     """,
+    # 9 — thousands of order lines: the order list and the queues look things up by these
+    """
+    CREATE INDEX IF NOT EXISTS idx_go_rev ON grafis_orders(revision_id);
+    CREATE INDEX IF NOT EXISTS idx_go_path ON grafis_orders(path);
+    CREATE INDEX IF NOT EXISTS idx_rj_path ON robot_jobs(path);
+    CREATE INDEX IF NOT EXISTS idx_cj_sha ON cutting_jobs(sha256);
+    CREATE INDEX IF NOT EXISTS idx_gr_sha ON grafis_results(sha256);
+    CREATE INDEX IF NOT EXISTS idx_gr_path ON grafis_results(path);
+    CREATE INDEX IF NOT EXISTS idx_rev_file ON revisions(import_file);
+    CREATE INDEX IF NOT EXISTS idx_if_sha ON import_files(sha256)
+    """,
 ]
 
 
