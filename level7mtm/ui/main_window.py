@@ -413,6 +413,8 @@ def reread_report(ws, outs) -> str:
         st = Counter(x["status"] for o in outs for x in o.lines)
         why = Counter()
         for o in outs:
+            if o.status == "failed" and o.message:       # the file itself could not be read again
+                why[tr_msg(o.message)] += 1
             for x in o.lines:
                 if x["status"] != "ready" and x.get("revision_id"):
                     for p in ws.revision(x["revision_id"])["normalized"].get("problems") or []:
@@ -2192,6 +2194,7 @@ class OptionsPage(Page):
             self._switch(self.cur, row)
         gr = self.groups[row]
         self._before = (row, copy.deepcopy(gr), new)
+        self._asked = False                               # a new change: saving it offers the re-read again
         for k, val in (("group", gr["group"]), ("ar", gr["label"].get("ar", "")), ("en", gr["label"].get("en", "")),
                        ("default", gr.get("default") or "")):
             self.gf[k].setText(val)
@@ -2292,11 +2295,15 @@ class OptionsPage(Page):
             QMessageBox.warning(self, tr("Error"), tr_msg(str(e)))
             return False
         if not parts_ver and not out["catalog_version"]:
+            if not getattr(self, "_asked", False):     # saved before (e.g. the window froze then): the held orders
+                self._asked = True                        # may still wait for it — offered once, not again on close
+                reread_held_question(self, tr("Saved"))
             self.refresh()
             return True                                   # nothing changed (e.g. saved already in a group's window)
         msg = f"{tr('Saved')}: {tr('Rules')} {parts_ver or out['catalog_version']}"
         if out["mapping_version"]:
             msg += f"\n{tr('ERP mapping profile')} {out['mapping_version']}"
+        self._asked = True
         reread_held_question(self, msg)
         self.refresh()
         return True

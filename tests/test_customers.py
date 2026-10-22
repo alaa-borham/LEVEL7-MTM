@@ -475,3 +475,45 @@ def test_many_held_files_counted_fast_and_reported_short(ws, xml53):
     assert len(fids) == 25 and held_lines(ws, fids) == 50
     text = reread_report(ws, reread_held(ws, "level7", fids))
     assert text.count("\n") < 25 and "Collar Round" in text                # totals and reasons, not 25 files
+
+
+def test_saving_unchanged_options_still_offers_the_held_orders(ws, xml53, monkeypatch):
+    """The Variation was saved before (the window then froze): saving again changes nothing, the orders it holds
+    are still offered for reading again — once, not again when the outer window closes."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.services.options import option_table, save_options
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ws.import_data(open(xml53, "rb").read().replace(b"Collar Square", b"Collar Weird"), "w.xml")
+    g = option_table(ws)
+    next(v for v in next(x for x in g if x["group"] == "collar")["values"]
+         if v["value"] == "square")["erp_names"].append("Collar Weird")
+    save_options(ws, g)                                                   # saved, the orders not read again
+    asked = []
+    monkeypatch.setattr("level7mtm.ui.main_window.reread_held_question", lambda page, msg: asked.append(msg))
+    win = MainWindow(ws)
+    page = win.pages["Design options"]
+    page.refresh()
+    row = next(i for i, x in enumerate(page.groups) if x["group"] == "collar")
+    page.g.setCurrentCell(row, 0)
+    page.g.cellClicked.emit(row, 0)
+    page._group_save_close()
+    assert len(asked) == 1
+    page.save()                                                           # the outer Save and close
+    assert len(asked) == 1
+    win.close()
+    app.processEvents()
+
+
+def test_one_file_failing_does_not_stop_the_others(ws, xml53, monkeypatch):
+    from level7mtm.services import customers as cs
+    data = open(xml53, "rb").read().replace(b"Collar Square", b"Collar Weird")
+    for i in range(3):
+        ws.import_data(data.replace(b"9-53-", f"9-{100 + i}-".encode()), f"o{i}.xml")
+    fids = cs.held_files(ws, "level7")
+    real = cs._reread
+    monkeypatch.setattr(cs, "_reread", lambda w, fid: (_ for _ in ()).throw(OSError("disk")) if fid == fids[1]
+                        else real(w, fid))
+    outs = cs.reread_held(ws, "level7", fids)
+    assert [o.status for o in outs] == ["imported", "failed", "imported"] and outs[1].file_name == "o1.xml"

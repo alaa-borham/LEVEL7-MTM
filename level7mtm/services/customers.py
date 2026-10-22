@@ -17,7 +17,7 @@ import copy
 import re
 
 from ..erp.xmlsafe import XmlError, load_bytes
-from .workflow import DEFAULT_CUSTOMER, WorkflowError
+from .workflow import DEFAULT_CUSTOMER, FileOutcome, WorkflowError
 
 ID_RE = re.compile(r"[^a-z0-9_]+")
 
@@ -471,7 +471,11 @@ def reread_held(ws, cid: str | None = None, fids: list[int] | None = None) -> li
     try:
         for k, fid in enumerate(fids, 1):
             set_progress(f"{k} / {len(fids)}")
-            outs.append(_reread(ws, fid))
+            try:
+                outs.append(_reread(ws, fid))
+            except Exception as e:  # noqa: BLE001 - one file that cannot be read again never stops the others
+                f = ws.db.one("SELECT file_name FROM import_files WHERE id=?", (fid,))
+                outs.append(FileOutcome(f["file_name"] if f else str(fid), "failed", str(e)))
     finally:
         set_progress("")
     return outs
