@@ -4243,6 +4243,7 @@ class MainWindow(QMainWindow):
         else:
             self.chain_on = True
             self.ws.db.set_setting("nesting.paused", False)
+            self.ws.db.set_setting("cutting.auto", True)     # the whole system: the nesting too
             self.browser.nesting_paused = False
             folder = self.ws.db.get_setting("watch.folder")
             if folder and os.path.isdir(folder):
@@ -4508,6 +4509,9 @@ class MainWindow(QMainWindow):
         CAD saves wait in the queue) or start it again (the queue is nested in turn)."""
         paused = not bool(self.ws.db.get_setting("nesting.paused", False))
         self.ws.db.set_setting("nesting.paused", paused)
+        if not paused:                                    # Start means nest: also when "Nest and write cutting
+            self.ws.db.set_setting("cutting.auto", True)  # files" was switched off in Setup (a hidden stop)
+            self.ws.db.set_setting("grafis.last_poll_error", "")
         self.browser.nesting_paused = paused
         self.status(tr("Nesting stopped") if paused else tr("Nesting started"))
         self.refresh_cad(force=True)

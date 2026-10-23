@@ -105,8 +105,28 @@ def check_mdl(ws, path: str) -> tuple[ScbCheck, dict | None]:
     return chk, row
 
 
+_NOW: dict = {}                                       # the model the nesting worker is on, and since when
+
+
+def intake_now() -> tuple[str, int] | None:
+    """(model, minutes) the nesting worker has been on it — a long time says where the queue is held up."""
+    if not _NOW:
+        return None
+    import time as _t
+    return os.path.basename(_NOW["path"]), int((_t.monotonic() - _NOW["since"]) // 60)
+
+
 def register_mdl(ws, path: str, cut: bool | None = None) -> dict:
     """Watched-folder handler for the MDL folder. Returns {status, check, cutting, ...}."""
+    import time as _t
+    _NOW.update(path=path, since=_t.monotonic())
+    try:
+        return _register_mdl(ws, path, cut)
+    finally:
+        _NOW.clear()
+
+
+def _register_mdl(ws, path: str, cut: bool | None = None) -> dict:
     from . import errors_folder
     from .auto_cut import auto_cut, settings
     chk, row = check_mdl(ws, path)

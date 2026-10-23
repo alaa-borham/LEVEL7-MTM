@@ -369,6 +369,10 @@ AR = {
     "Read again with the current settings": "إعادة القراءة بالإعدادات الحالية",
     "Measurement limits…": "حدود القياس…",
     "Measurement checks": "فحص القياسات",
+    "«Nest and write cutting files» is off in Setup: press «Start» on the nesting queue":
+        "«التعشيق وكتابة ملفات القص» متوقف في الإعداد: اضغط «تشغيل» على قائمة انتظار التعشيق",
+    "the nesting stopped on an error": "توقف التعشيق بسبب خطأ",
+    "the nesting has been on {f} for {m} min": "التعشيق يعمل على {f} منذ {m} دقيقة",
     "Cutting files folder": "مجلد ملفات القص",
     "Cutting folder": "مجلد القص",
     "as his customer": "مثل عميله",
@@ -708,7 +712,10 @@ MSG_AR = [
     (r"(\S+) \((.+) → (X\d+)\) is not confirmed", "القاعدة {0} ({1} ← {2}) غير مؤكدة"),
     (r"no GRAFIS part selected for this order", "لم يُحدَّد أي جزء GRAFIS لهذا الطلب"),
     (r"GRAFIS did not show (\S+) within ([\d.]+) s", "لم يُظهر GRAFIS الملف {0} خلال {1} ث"),
-    (r"GRAFIS internal error (\S+) — GRAFIS was closed \(Cancel\)",
+    (r"GRAFIS closed and started anew \(scratch files\)", "أُغلق GRAFIS ويبدأ من جديد (الملفات المؤقتة)"),
+    (r"GRAFIS ended and started anew \(scratch files\)", "أُنهي GRAFIS ويبدأ من جديد (الملفات المؤقتة)"),
+    (r"GRAFIS not restarted: (.+)", "لم يُعَد تشغيل GRAFIS: {0}"),
+    (r"GRAFIS internal error (.+?) — GRAFIS was closed \(Cancel\)",
      "خطأ داخلي في GRAFIS ‏{0} — أُغلق GRAFIS (إلغاء الأمر) ويُفتح من جديد للموديل التالي"),
     (r"GRAFIS did not find the measurement chart (\S*) on the drive it was started on \(GRAFIS folder: (.*)\)",
      "لم يجد GRAFIS جدول القياسات {0} على القرص الذي بدأ منه (مجلد GRAFIS: {1})"),
@@ -790,9 +797,13 @@ def _tr_msg(text: str) -> str:
         return text
     if text in AR:
         return AR[text]
-    parts = text.split(" — ")
-    if len(parts) > 1:
-        return " — ".join(_tr_msg(p) for p in parts)
+    if " — " in text:                                   # a message made of parts: as a whole first, then each part
+        for pat, ar in MSG_AR:
+            if " — " in pat:
+                m = re.fullmatch(pat, text.strip())
+                if m:
+                    return ar.format(*(_tr_msg(g) for g in m.groups()))
+        return " — ".join(_tr_msg(p) for p in text.split(" — "))
     for pat, ar in MSG_AR:
         m = re.fullmatch(pat, text.strip())
         if m:

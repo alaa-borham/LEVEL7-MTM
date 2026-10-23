@@ -214,6 +214,12 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
     names = customer_names(ws)
     nesting_now = {r for r, m in snapshot().items() if m.get("what") == "nesting"}
     paused = bool(db.get_setting("nesting.paused", False))
+    auto_on = bool(db.get_setting("cutting.auto", True))
+    poll_err = db.get_setting("grafis.last_poll_error") or ""
+    from ..services.mdl_intake import intake_now
+    now_ = intake_now()                                    # what the nesting worker is on, and since when
+    busy_note = (tr("the nesting has been on {f} for {m} min").format(f=now_[0], m=now_[1]) if now_ and now_[1] >= 10
+                 else "")
     # everything in a few queries (thousands of lines: one query per line held the database for seconds)
     gos_of: dict[int, list] = {}
     for g in db.q("SELECT * FROM grafis_orders ORDER BY id DESC"):
@@ -296,9 +302,13 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
         if res:                                               # GRAFIS saved it: an old robot failure is over
             row["problems"] = [p for p in row["problems"] if not p.startswith(tr("GRAFIS robot") + ":")]
             row["robot_failed"] = False
-        if row.get("nest_queue") and paused:              # never silent: why the queue does not move
-            row["waiting"] = (row["waiting"] or tr("Waiting for nesting")) + " — " + tr(
-                "the nesting is stopped: press «Start» on the nesting queue")
+        if row.get("nest_queue"):                         # never silent: why the queue does not move
+            why = tr("the nesting is stopped: press «Start» on the nesting queue") if paused else \
+                tr("«Nest and write cutting files» is off in Setup: press «Start» on the nesting queue") \
+                if not auto_on else (tr("the nesting stopped on an error") + ": " + tr_msg(poll_err[:160])) \
+                if poll_err else busy_note
+            if why:
+                row["waiting"] = (row["waiting"] or tr("Waiting for nesting")) + " — " + why
         if row["problems"] and row["stage"] != "cut":
             row["stage_reached"], row["stage"] = row["stage"], "err"
         out.append(row)

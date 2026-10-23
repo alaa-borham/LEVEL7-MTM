@@ -336,3 +336,72 @@ def test_grafis_is_started_on_its_own_drive(tmp_path):
     assert robot.grafis_home(exe="", drives=[str(tmp_path / "C"), str(tmp_path / "D")]) == \
         str(tmp_path / "D" / "grafis")
     assert robot.grafis_home(exe="", drives=[]) is None
+
+
+def test_grafis_restarted_before_it_runs_out_of_scratch_files():
+    """GRAFIS keeps scratch files of every model it opened ("lm4modl_z: Zu viele Scratch-Files!"): the robot
+    closes it after so many models — asked to save again: No — and ends it if it stays open."""
+    class Open:
+        def __init__(self, stubborn=False):
+            self.closed, self.pressed, self.ended, self.stubborn, self.asked = [], [], [], stubborn, True
+
+        def windows(self):
+            out = [] if (self.closed and not self.stubborn) else [{"hwnd": 1, "title": "Grafis - [A: x.mdl]",
+                                                                 "cls": "GrafisMain"}]
+            if self.closed and self.asked:
+                out.append({"hwnd": 9, "title": "GRAFIS", "cls": "#32770"})
+            return out
+
+        def buttons_of(self, h):
+            return [{"hwnd": 91, "text": "Ja"}, {"hwnd": 92, "text": "Nein"}]
+
+        def press(self, b):
+            self.pressed.append(b)
+            self.asked = False
+
+        def close(self, h):
+            self.closed.append(h)
+
+        def terminate(self, h):
+            self.ended.append(h)
+            self.stubborn = False
+            return True
+    g = Open()
+    assert "started anew" in robot.restart_grafis(g, sleep=lambda s: None, clock=_clock())
+    assert g.closed == [1] and g.pressed == [92] and not g.ended          # No: the model is saved already
+    g = Open(stubborn=True)
+    assert "ended" in robot.restart_grafis(g, sleep=lambda s: None, clock=_clock()) and g.ended == [1]
+
+    class NoGrafis:
+        def windows(self):
+            return []
+    assert robot.restart_grafis(NoGrafis()) == ""                       # nothing open: nothing to do
+
+
+def test_scratch_files_grave_error_named(ws, tmp_path):
+    import hashlib
+
+    class Box(FakeGrafis):
+        def __init__(self):
+            super().__init__()
+            self.pressed = []
+
+        def windows(self):
+            return [{"hwnd": 5, "title": "GRAFIS", "cls": "#32770"}] if self.opened and not self.pressed else []
+
+        def buttons_of(self, h):
+            return [{"hwnd": 51, "text": "موافق"}, {"hwnd": 52, "text": "إلغاء الأمر"}]
+
+        def texts_of(self, h):
+            return ["ATTENTION:", "A grave error has been discovered in the internal file organization. The",
+                    "error is defined as", "lm4modl_z: Zu viele Scratch-Files!"]
+
+        def press(self, b):
+            self.pressed.append(b)
+    ws.db.set_setting("robot.mode", "background")
+    p = tmp_path / "Order-1.mdl"
+    p.write_bytes(b"x")
+    g = Box()
+    r = robot.run_one(ws, {"path": str(p), "sha256": hashlib.sha256(b"x").hexdigest()}, g, sleep=lambda s: None,
+                      clock=_clock())
+    assert r["status"] == "failed" and "Zu viele Scratch-Files" in r["message"] and g.pressed == [52]

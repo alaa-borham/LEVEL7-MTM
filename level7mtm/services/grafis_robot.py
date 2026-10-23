@@ -42,7 +42,10 @@ def settings(ws) -> dict:
             "mode": ws.db.get_setting("robot.mode", "auto"),
             # background mode: GRAFIS stays behind the owner's windows (he keeps working)
             "behind": bool(ws.db.get_setting("robot.behind", True)),
-            "menu": ws.db.get_setting("robot.menu", {}) or {}}
+            "menu": ws.db.get_setting("robot.menu", {}) or {},
+            # GRAFIS keeps scratch files of every model it opened: after so many models it is closed and the next
+            # model starts a new GRAFIS (owner: "lm4modl_z: Zu viele Scratch-Files!" after a few hundred)
+            "restart_every": int(ws.db.get_setting("robot.restart_every", 20) or 0)}
 
 
 class RobotError(RuntimeError):
@@ -240,6 +243,19 @@ class Win32:
             if t:
                 out.append(t)
         return out
+
+    def terminate(self, h) -> bool:
+        """End the program of a window (GRAFIS left running with too many models): True when done."""
+        k = self.ct.windll.kernel32
+        pid = self.wt.DWORD()
+        self.u.GetWindowThreadProcessId(h, self.ct.byref(pid))
+        hp = k.OpenProcess(0x0001, False, pid.value)                    # PROCESS_TERMINATE
+        if not hp:
+            return False
+        try:
+            return bool(k.TerminateProcess(hp, 0))
+        finally:
+            k.CloseHandle(hp)
 
     def press(self, h):
         self._setup_bg()
@@ -444,6 +460,36 @@ def _act(drv, st, main, name: str, path: str, required: bool) -> str | None:
 
 OK_TEXTS = ("ok", "o.k.", "weiter", "continue", "fortsetzen", "schließen", "schliessen", "close", "موافق")
 CANCEL_TEXTS = ("cancel", "abbrechen", "إلغاء الأمر", "إلغاء")
+NO_TEXTS = ("no", "nein", "لا")
+_DONE_SINCE_START = {"n": 0}                       # models GRAFIS did since it was (re)started by the robot
+
+
+def restart_grafis(drv, sleep=time.sleep, clock=time.monotonic) -> str:
+    """Close GRAFIS (its models are saved already): asked to save again — No; still open after a while — ended.
+    The next model starts a new GRAFIS with no scratch files."""
+    def mains():
+        return [w["hwnd"] for w in drv.windows() if w["cls"] != "#32770" and
+                (w["title"] or "").lower().startswith("grafis")]
+    found = mains()
+    if not found:
+        return ""
+    for h in found:
+        drv.close(h)
+    t0 = clock()
+    while clock() - t0 < 20:
+        sleep(1)
+        if hasattr(drv, "buttons_of"):
+            for w in drv.windows():                    # "save changes?": no — the model is saved already
+                if w["cls"] == "#32770" and "grafis" in (w["title"] or "").lower():
+                    b = next((b for b in drv.buttons_of(w["hwnd"]) if b["text"].lower() in NO_TEXTS), None)
+                    if b:
+                        drv.press(b["hwnd"])
+        if not mains():
+            return "GRAFIS closed and started anew (scratch files)"
+    if hasattr(drv, "terminate"):
+        for h in mains():
+            drv.terminate(h)
+    return "GRAFIS ended and started anew (scratch files)"
 
 
 def _grafis_says(drv, h) -> str:
@@ -488,8 +534,10 @@ def _answer_dialogs(drv, st, notes: list) -> None:
             b = next((b for b in btns if b["text"].lower() in CANCEL_TEXTS), None) or (btns[-1] if btns else None)
             if b:
                 drv.press(b["hwnd"])
-            code = re.search(r"\bmu\w*-\d+", said)
-            raise RobotError(f"GRAFIS internal error {code.group(0) if code else '?'} — GRAFIS was closed (Cancel)")
+            code = re.search(r"\bmu\w*-\d+|\b\w+_\w+: [^.!]+[.!]?", said)
+            _DONE_SINCE_START["n"] = 0                   # a new GRAFIS starts with the next model
+            raise RobotError(f"GRAFIS internal error {code.group(0).strip() if code else '?'} — GRAFIS was closed "
+                             f"(Cancel)")
         if "measur" in said_low and "chart" in said_low:
             b = next((b for b in btns if b["text"].lower() in OK_TEXTS), None) or (btns[0] if btns else None)
             if b:
@@ -629,6 +677,13 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
             how.append(_act(drv, st, main, "close", job["path"], False))
         except RobotError:
             pass                                      # closing is a courtesy: the model is saved
+        _DONE_SINCE_START["n"] += 1
+        if st["restart_every"] and _DONE_SINCE_START["n"] >= st["restart_every"] and hasattr(drv, "close"):
+            _DONE_SINCE_START["n"] = 0               # before GRAFIS runs out of scratch files
+            try:
+                notes.append(restart_grafis(drv, sleep, clock))
+            except Exception as e:  # noqa: BLE001 - the model is saved: only said
+                notes.append(f"GRAFIS not restarted: {e}")
         res.update(status="done", message="opened, Test Run All Parts, saved — " +
                    ", ".join(h for h in how + notes if h))
     except Exception as e:  # noqa: BLE001 - every failure is reported, never retried silently
