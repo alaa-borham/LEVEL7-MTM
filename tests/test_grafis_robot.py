@@ -284,3 +284,55 @@ def test_a_model_written_again_with_the_same_content_is_tried_again(ws, tmp_path
         c.execute("INSERT INTO grafis_orders(revision_id, created_at, status, path, template_sha256, info) "
                   "VALUES (?, '2026-10-20T09:00:00', 'written', ?, 't', ?)", (rid, str(m), json.dumps({"sha256": sha})))
     assert [j["path"] for j in robot.pending(ws)] == [str(m)]             # written again: a new job
+
+
+def test_grafis_grave_error_and_missing_chart_stop_the_model(ws, tmp_path):
+    """GRAFIS says "grave error … mu5Tset-3": Cancel (it is closed, the next model starts a new one), never OK;
+    "measurement chart … .mas not available": the model fails with the chart named."""
+    import hashlib
+
+    class Broken(FakeGrafis):
+        def __init__(self, text):
+            super().__init__()
+            self.text, self.pressed = text, []
+
+        def windows(self):
+            return [{"hwnd": 5, "title": "GRAFIS", "cls": "#32770"}] if not self.pressed else []
+
+        def buttons_of(self, h):
+            return [{"hwnd": 51, "text": "موافق"}, {"hwnd": 52, "text": "إلغاء الأمر"}]
+
+        def texts_of(self, h):
+            return self.text
+
+        def press(self, b):
+            self.pressed.append(b)
+
+    ws.db.set_setting("robot.mode", "background")
+    p = tmp_path / "Order-9-50-1_0.mdl"
+    p.write_bytes(b"x")
+    job = {"path": str(p), "sha256": hashlib.sha256(b"x").hexdigest()}
+    g = Broken(["ATTENTION:", "A grave error has been discovered in\nthe internal file organization. The", "mu5Tset-3"])
+    g.windows = lambda: [{"hwnd": 5, "title": "GRAFIS", "cls": "#32770"}] if g.opened else []
+    r = robot.run_one(ws, job, g, sleep=lambda s: None, clock=_clock())
+    assert r["status"] == "failed" and "mu5Tset-3" in r["message"] and g.pressed == [52]     # Cancel
+    g = Broken(["You have called measurment chart", "\\grafis\\basis_d\\mas\\3537.mas",
+                "It is not available on the current drive or is faulty."])
+    g.windows = lambda: [{"hwnd": 5, "title": "GRAFIS - Info (5)", "cls": "#32770"}] if g.opened else []
+    r = robot.run_one(ws, job, g, sleep=lambda s: None, clock=_clock())
+    assert r["status"] == "failed" and "3537.mas" in r["message"] and g.pressed == [51]      # OK
+    from level7mtm.ui.i18n import set_language, tr_msg
+    set_language("ar")
+    assert "3537.mas" in tr_msg(r["message"]) and "جدول القياسات" in tr_msg(r["message"])
+    set_language("en")
+
+
+def test_grafis_is_started_on_its_own_drive(tmp_path):
+    exe = tmp_path / "prog" / "grafis.exe"
+    exe.parent.mkdir()
+    exe.write_bytes(b"")
+    assert robot.grafis_home(exe=str(exe)) == str(exe.parent)
+    (tmp_path / "D" / "grafis" / "basis_d").mkdir(parents=True)
+    assert robot.grafis_home(exe="", drives=[str(tmp_path / "C"), str(tmp_path / "D")]) == \
+        str(tmp_path / "D" / "grafis")
+    assert robot.grafis_home(exe="", drives=[]) is None

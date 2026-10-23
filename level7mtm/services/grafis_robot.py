@@ -18,6 +18,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
+import string
 import sys
 import threading
 import time
@@ -226,6 +228,19 @@ class Win32:
             out.append({"hwnd": c, "text": self._text(c).replace("&", "").strip()})
         return out
 
+    def texts_of(self, h) -> list[str]:
+        """The texts of a dialog box (its Static lines): what GRAFIS says in it."""
+        self._setup_bg()
+        out, c = [], None
+        while True:
+            c = self.u.FindWindowExW(h, c, "Static", None)
+            if not c:
+                break
+            t = self._text(c).strip()
+            if t:
+                out.append(t)
+        return out
+
     def press(self, h):
         self._setup_bg()
         self.u.PostMessageW(h, 0x00F5, 0, 0)                                 # BM_CLICK: the button itself
@@ -261,7 +276,14 @@ class Win32:
         self.u.keybd_event(0x11, 0, 2, 0)
 
     def open(self, path):
-        os.startfile(path)                           # as a double-click: opens in GRAFIS (owner)
+        # as a double-click: opens in GRAFIS (owner) — started in GRAFIS's own folder: GRAFIS finds its measurement
+        # charts as \\grafis\\basis_d\\mas\\… on the *current* drive (started from this program on another drive it
+        # did not find them, then stopped with "grave error mu5Tset")
+        home = grafis_home()
+        if home:
+            os.startfile(path, cwd=home)
+        else:
+            os.startfile(path)
 
     def active_window(self):
         return self.u.GetForegroundWindow()
@@ -276,6 +298,33 @@ class Win32:
             self.u.keybd_event(0x12, 0, 0, 0)        # ALT: lets this process give the focus back
             self.u.keybd_event(0x12, 0, 2, 0)
             self.u.SetForegroundWindow(prev)
+
+
+def _assoc_exe(ext: str) -> str:
+    """The program Windows opens these files with ("" when not known)."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        n = wintypes.DWORD(520)
+        b = ctypes.create_unicode_buffer(520)
+        if ctypes.windll.shlwapi.AssocQueryStringW(0, 2, ext, None, b, ctypes.byref(n)) == 0:   # ASSOCSTR_EXECUTABLE
+            return b.value
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
+def grafis_home(exe: str | None = None, drives=None) -> str | None:
+    """The folder GRAFIS is started in, on the drive that has \\grafis\\basis_d (its measurement charts): the
+    folder of the program .mdl files open with, else the first drive with \\grafis."""
+    exe = _assoc_exe(".mdl") if exe is None and sys.platform == "win32" else exe
+    if exe and os.path.isfile(exe):
+        return os.path.dirname(exe)
+    for d in (drives if drives is not None else
+              ([f"{x}:\\" for x in string.ascii_uppercase] if sys.platform == "win32" else [])):
+        if os.path.isdir(os.path.join(d, "grafis", "basis_d")):
+            return os.path.join(d, "grafis")
+    return None
 
 
 # ------------------------------------------------------------------ robot
@@ -393,7 +442,15 @@ def _act(drv, st, main, name: str, path: str, required: bool) -> str | None:
     return None
 
 
-OK_TEXTS = ("ok", "o.k.", "weiter", "continue", "fortsetzen", "schließen", "schliessen", "close")
+OK_TEXTS = ("ok", "o.k.", "weiter", "continue", "fortsetzen", "schließen", "schliessen", "close", "موافق")
+CANCEL_TEXTS = ("cancel", "abbrechen", "إلغاء الأمر", "إلغاء")
+
+
+def _grafis_says(drv, h) -> str:
+    try:
+        return " ".join(drv.texts_of(h)) if hasattr(drv, "texts_of") else ""
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def _answer_dialogs(drv, st, notes: list) -> None:
@@ -424,6 +481,22 @@ def _answer_dialogs(drv, st, notes: list) -> None:
         if "grafis" not in low and title not in taught:
             continue
         btns = drv.buttons_of(w["hwnd"])
+        said = _grafis_says(drv, w["hwnd"])
+        said_low = " ".join(said.lower().split())
+        if "grave error" in said_low or "internal file organization" in said_low:
+            # GRAFIS itself says to stop: Cancel ends it (the next model starts a new GRAFIS); OK would go on broken
+            b = next((b for b in btns if b["text"].lower() in CANCEL_TEXTS), None) or (btns[-1] if btns else None)
+            if b:
+                drv.press(b["hwnd"])
+            code = re.search(r"\bmu\w*-\d+", said)
+            raise RobotError(f"GRAFIS internal error {code.group(0) if code else '?'} — GRAFIS was closed (Cancel)")
+        if "measur" in said_low and "chart" in said_low:
+            b = next((b for b in btns if b["text"].lower() in OK_TEXTS), None) or (btns[0] if btns else None)
+            if b:
+                drv.press(b["hwnd"])
+            mas = re.search(r"\S+\.mas\b", said, re.I)
+            raise RobotError(f"GRAFIS did not find the measurement chart {mas.group(0) if mas else ''} on the drive "
+                             f"it was started on (GRAFIS folder: {grafis_home() or 'not found'})")
         want = next((t for k, t in taught.items() if title.startswith(k)), None)
         b = next((b for b in btns if want and b["text"].lower() == want.lower()), None) or \
             next((b for b in btns if b["text"].lower() in OK_TEXTS), None) or (btns[0] if len(btns) == 1 else None)
@@ -507,7 +580,11 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
             raise RobotError("the 'Test Run All Parts' button was not taught yet (GRAFIS screen → Robot)")
         stem = os.path.splitext(os.path.basename(job["path"]))[0]
         notes: list[str] = []
-        _answer_dialogs(drv, st, notes)               # a box left from before (crash, start window) first
+        try:
+            _answer_dialogs(drv, st, notes)           # a box left from before (crash, start window) first
+        except RobotError as e:                       # left by the model before: GRAFIS was closed, start anew
+            notes.append(f"before: {e}")
+            sleep(3)
         behind = st["mode"] == "background" and st["behind"] and hasattr(drv, "send_back")
         prev = drv.active_window() if behind else None
         drv.open(job["path"])
