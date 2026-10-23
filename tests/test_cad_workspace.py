@@ -831,6 +831,39 @@ def test_closed_lists_are_filled_only_when_opened(ws):
     app.processEvents()
 
 
+
+def test_list_titles_stay_on_top_and_only_the_list_scrolls(ws, tmp_path):
+    """The titles (CAD, nesting queue, nesting, needs attention, ready) are above the list, always in sight: a click
+    opens that list below them (its lines only), the one open before closes; clicked again it closes."""
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from PySide6.QtCore import Qt
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ws.import_file(XML_53)
+    win = MainWindow(ws)
+    win.resize(1400, 900)
+    win.show()
+    app.processEvents()
+    b = win.browser
+    heads = [b.heads.itemAt(i).widget() for i in range(b.heads.count())]
+    assert len(heads) == len(b.GROUPS) and b.tree.isHidden()             # nothing open: the titles only
+    key = next(r["stage"] for r in b.rows)
+    k = next(i for i, g in enumerate(b.GROUPS) if key in g[2])
+    b.open_list(b.GROUPS[k][0])
+    app.processEvents()
+    assert not b.tree.isHidden()
+    grp = b.tree.topLevelItem(k)
+    assert b.tree.rootIndex() == b.tree.indexFromItem(grp) and grp.childCount() == 2   # its lines, no title
+    assert b.tree.indexAt(b.tree.viewport().rect().topLeft()).data(Qt.UserRole) is not None
+    win.grab().save(str(tmp_path / "lists.png"))
+    b.open_list(b.GROUPS[k][0])                                           # clicked again: closed
+    app.processEvents()
+    assert b.tree.isHidden() and not b.opened
+    win.close()
+    app.processEvents()
+
 def test_cutting_files_go_in_the_customer_folder(ws):
     from level7mtm.services import customers
     from level7mtm.services.auto_cut import customer_folder

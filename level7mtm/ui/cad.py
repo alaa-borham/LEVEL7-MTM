@@ -1340,6 +1340,11 @@ class OrderBrowser(QWidget):
         bl.setContentsMargins(8, 8, 8, 6)
         bl.addWidget(self.find)
         lay.addWidget(box)
+        self.heads_box = QWidget()                     # the lists' titles stay on top; only the list scrolls
+        self.heads = QVBoxLayout(self.heads_box)
+        self.heads.setContentsMargins(0, 0, 0, 4)
+        self.heads.setSpacing(1)
+        lay.addWidget(self.heads_box)
         self.tree = QTreeWidget()
         self.tree.setObjectName("orders")
         self.tree.setHeaderHidden(True)
@@ -1355,6 +1360,8 @@ class OrderBrowser(QWidget):
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._menu)
         lay.addWidget(self.tree, 1)
+        self.rest = QWidget()                          # no list open: the titles stay at the top
+        lay.addWidget(self.rest, 1)
         self.rows: list[dict] = []
 
     # separate lists, so a line that needs attention never holds up the others; work in GRAFIS and in the nesting
@@ -1365,12 +1372,8 @@ class OrderBrowser(QWidget):
               ("err", "Needs attention", ("err",), "bad"),
               ("cut", "Ready to cut", ("cut",), "ok"))
 
-    def _queue_button(self, grp, n, c):
+    def _queue_button(self, c):
         from PySide6.QtWidgets import QToolButton
-        w = QWidget()
-        h = QHBoxLayout(w)
-        h.setContentsMargins(0, 0, 4, 0)
-        h.setSpacing(6)
         b = QToolButton()
         paused = self.nesting_paused
         col = c["ok"] if paused else c["bad"]
@@ -1380,14 +1383,46 @@ class OrderBrowser(QWidget):
         b.setStyleSheet(f"QToolButton {{ color: {col.name()}; border: 1px solid {col.name()}; border-radius: 4px; "
                         f"padding: 1px 6px; font-weight: 700; }}")
         b.clicked.connect(self.nesting_toggle.emit)
-        lab = QLabel(str(n))
-        lab.setStyleSheet(f"color: {c['accent'].name()}; font-weight: 800;")
-        h.addWidget(lab)
-        h.addStretch()
-        h.addWidget(b)
-        grp.setText(1, "")
-        self.tree.setItemWidget(grp, 1, w)
         self.queue_button = b
+        return b
+
+    def _heads(self, counts: dict, c):
+        """The lists' titles above the list (always in sight): a click opens that list below, again closes it."""
+        while self.heads.count():
+            w = self.heads.takeAt(0).widget()
+            if w is not None:
+                w.deleteLater()
+        for key, title, _, colour in self.GROUPS:
+            col = c[colour]
+            on = self.opened == {key}
+            f = QFrame()
+            f.setObjectName("listHead")
+            f.setCursor(Qt.PointingHandCursor)
+            f.setStyleSheet(f"QFrame#listHead {{ background: rgba({col.red()},{col.green()},{col.blue()},"
+                            f"{70 if on else 28}); border-radius: 3px; }} QLabel {{ background: transparent; "
+                            f"color: {col.name()}; font-weight: 800; }}")
+            h = QHBoxLayout(f)
+            h.setContentsMargins(8, 5, 8, 5)
+            h.setSpacing(6)
+            h.addWidget(QLabel(("▾ " if on else "▸ ") + tr(title)), 1)
+            if key == "queue":                            # start / stop the nesting right on its list
+                h.addWidget(self._queue_button(c))
+            h.addWidget(QLabel(str(counts.get(key, 0))))
+            f.mousePressEvent = lambda e, k=key: self.open_list(k)
+            self.heads.addWidget(f)
+
+    def open_list(self, key: str):
+        """A title clicked: its list opens below (the one open before closes); clicked again it closes."""
+        if not hasattr(self, "opened"):
+            self.opened = set()
+        self.opened = set() if self.opened == {key} else {key}
+        cur = self.tree.currentItem()
+        for g in range(self.tree.topLevelItemCount()):    # set_rows reads which lists are open from the tree
+            grp = self.tree.topLevelItem(g)
+            self.tree.blockSignals(True)
+            grp.setExpanded(grp.data(0, Qt.UserRole + 1) in self.opened)
+            self.tree.blockSignals(False)
+        self.set_rows(self.rows, keep=cur.data(0, Qt.UserRole) if cur else None)
 
     def _order_items(self):
         for g in range(self.tree.topLevelItemCount()):
@@ -1408,10 +1443,12 @@ class OrderBrowser(QWidget):
         self._bars = {}
         c = themes.colours()
         current, first = None, None
+        counts, items = {}, {}
         for key, title, stages, colour in self.GROUPS:
             mine = [r for r in rows if ("queue" if r.get("nest_queue") and r["stage"] in ("grafis", "nest")
                                         else r["stage"]) in stages]
             grp = QTreeWidgetItem([f"{tr(title)}", str(len(mine))])
+            counts[key], items[key] = len(mine), grp
             grp.setData(0, Qt.UserRole + 1, key)
             grp.setFlags(Qt.ItemIsEnabled)
             f = grp.font(0)
@@ -1423,8 +1460,6 @@ class OrderBrowser(QWidget):
             grp.setBackground(0, QBrush(QColor(c[colour].red(), c[colour].green(), c[colour].blue(), 28)))
             grp.setBackground(1, QBrush(QColor(c[colour].red(), c[colour].green(), c[colour].blue(), 28)))
             self.tree.addTopLevelItem(grp)
-            if key == "queue":                            # start / stop the nesting right on its list
-                self._queue_button(grp, len(mine), c)
             if key not in self.opened and not self.find.text().strip():
                 grp.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)   # filled when opened (thousands)
                 if any(r["rid"] == keep for r in mine):
@@ -1450,6 +1485,15 @@ class OrderBrowser(QWidget):
                     current = it
             grp.setExpanded(key in self.opened)
         self.tree.blockSignals(False)
+        self._heads(counts, c)
+        finding = bool(self.find.text().strip())
+        one = next(iter(self.opened)) if len(self.opened) == 1 and not finding else None
+        # one list open: the tree shows only its lines (its title is above); searching: every list with its title
+        from PySide6.QtCore import QModelIndex
+        self.tree.setRootIndex(self.tree.indexFromItem(items[one]) if one else QModelIndex())
+        shown = bool(self.opened) or finding
+        self.tree.setVisible(shown)
+        self.rest.setVisible(not shown)
         self.count.setText(str(len(rows)))
         self._filter(self.find.text())
         if current is not None and current.parent().isExpanded():      # a closed list stays closed
