@@ -3840,6 +3840,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.ws = ws
         self.pool = QThreadPool.globalInstance()
+        QTimer.singleShot(4000, self, self._tidy_markers)  # old markers out of the cutting folder, in the background
         self.current_rid = None
         self.sel_row = None
         self._cad_sig = None
@@ -4405,6 +4406,11 @@ class MainWindow(QMainWindow):
                 self.guard(page.refresh)
         self.inspector.show_row(row)
         l7n = row.get("l7n") if row else None
+        if l7n and not os.path.isfile(l7n):                 # moved (e.g. out of the cutting folder): found again
+            from ..services.auto_cut import find_marker
+            found = find_marker(self.ws, l7n, row.get("outputs") or ())
+            if found:
+                row["l7n"] = l7n = found
         try:
             key = (row["rid"], l7n, os.path.getmtime(l7n), row.get("job")) if l7n else None
         except OSError:
@@ -4414,13 +4420,22 @@ class MainWindow(QMainWindow):
         self._shown_key = key
         marker = cad.load_marker(l7n) if l7n and os.path.isfile(l7n) else None
         msg = ""
-        if row is not None and marker is None:
+        if row is not None and marker is None and l7n:      # nested, but its marker file is gone / unreadable
+            msg = (tr("The marker file of this nesting could not be read" if os.path.isfile(l7n) else
+                      "The marker file of this nesting is no longer there") + ":\n" + l7n + "\n\n" +
+                   tr("The cutting files are kept; «Nest again» makes the marker anew"))
+        elif row is not None and marker is None:
             msg = (tr("No marker yet") + " — " + tr(cad.STAGE_TEXT[row["stage"]])
                    + ("\n" + tr_msg(row["problems"][0]) if row["problems"] else ""))
             if row["stage"] in ("grafis", "nest") and not self.pages["GRAFIS markers"].running():
                 msg += "\n\n⚠ " + tr("Folder watch is off: the robot and the saved GRAFIS files wait. "
                                         "Click «Folder watch» in the status bar to switch it on.")
         self.marker.set_marker(marker, row, msg)
+
+    def _tidy_markers(self):
+        from ..services.auto_cut import tidy_markers
+        if self.isVisible():
+            self.pool.start(Worker(lambda: tidy_markers(self.ws)))
 
     def toggle_nesting(self):
         """The button on the nesting queue: stop the nesting (the model being nested is finished first; the models

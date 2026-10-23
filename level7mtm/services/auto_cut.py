@@ -103,6 +103,58 @@ def customer_folder(ws, cids) -> str:
     return name
 
 
+def find_marker(ws, l7n: str | None, outputs=()) -> str | None:
+    """The marker file (.l7n) of a nesting: where it was saved, else in the program's markers folder, the cutting
+    folder (and its customer folders) or next to its cutting files — a marker moved from the cutting folder (owner:
+    "only the cutting files there") is still found. None: it is gone."""
+    if not l7n:
+        return None
+    if os.path.isfile(l7n):
+        return l7n
+    name = os.path.basename(l7n)
+    out = settings(ws)["out"]
+    places = [os.path.join(ws.folder, "markers"), out] + [os.path.dirname(p) for p in outputs or ()]
+    if os.path.isdir(out):
+        places += [os.path.join(out, d) for d in os.listdir(out) if os.path.isdir(os.path.join(out, d))]
+    return next((os.path.join(d, name) for d in places if os.path.isfile(os.path.join(d, name))), None)
+
+
+def tidy_markers(ws) -> int:
+    """Markers (.l7n) written into the cutting folder before it held cutting files only: moved to the program's
+    markers folder, the nestings pointing at them. Returns how many."""
+    import shutil
+    dest = os.path.join(ws.folder, "markers")
+    moved = 0
+    for r in ws.db.q("SELECT id, outputs, info FROM cutting_jobs"):
+        info = json.loads(r["info"])
+        old = info.get("l7n")
+        if not old:
+            continue
+        here = find_marker(ws, old, json.loads(r["outputs"]))
+        if not here or os.path.normcase(os.path.dirname(os.path.abspath(here))) == \
+                os.path.normcase(os.path.abspath(dest)):
+            if here and here != old:
+                info["l7n"] = here
+                with ws.db.tx() as c:
+                    c.execute("UPDATE cutting_jobs SET info=? WHERE id=?", (json.dumps(info, ensure_ascii=False),
+                                                                           r["id"]))
+            continue
+        os.makedirs(dest, exist_ok=True)
+        target = os.path.join(dest, os.path.basename(here))
+        try:
+            if not os.path.exists(target):
+                shutil.move(here, target)
+            elif os.path.normcase(here) != os.path.normcase(target):
+                os.remove(here)                              # the same marker kept in the markers folder already
+        except OSError:
+            continue
+        info["l7n"] = target
+        with ws.db.tx() as c:
+            c.execute("UPDATE cutting_jobs SET info=? WHERE id=?", (json.dumps(info, ensure_ascii=False), r["id"]))
+        moved += 1
+    return moved
+
+
 def settings(ws, cid: str | None = None) -> dict:
     return {"formats": (customer_formats(ws, cid) if cid else None) or ws.db.get_setting("cutting.formats",
                                                                                           ["plt", "iso"]),

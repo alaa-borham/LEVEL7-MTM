@@ -91,3 +91,29 @@ def test_a_measurement_from_a_program_of_the_xml(ws):
     r = _first(ws, ws.import_data(_xml(), "p.xml"))                       # Program Value="675"
     assert r["normalized"]["measurements"]["SW"]["value_mm"] == pytest.approx(67.5)
     assert programs_seen(ws, "level7") == ["Cuff_Individuel_Hight"]
+
+
+def test_old_markers_leave_the_cutting_folder_and_are_found(ws, tmp_path):
+    """A nesting from before the cutting folder held cutting files only: its .l7n there is moved to the program's
+    markers folder (the order still shows its marker); a marker moved by hand to a customer folder is found."""
+    import json
+
+    from level7mtm.services.auto_cut import find_marker, tidy_markers
+    out = tmp_path / "cut"
+    (out / "Richy").mkdir(parents=True)
+    ws.db.set_setting("cutting.output", str(out))
+    old = out / "FR20-841.l7n"
+    old.write_bytes(b"zip")
+    (out / "FR20-841.plt").write_bytes(b"plt")
+    with ws.db.tx() as c:
+        c.execute("INSERT INTO cutting_jobs(sha256, scb_path, created_at, status, outputs, info, log) VALUES "
+                  "('s', 'x.scb', '2026-10-21T09:45:00', 'done', ?, ?, '')",
+                  (json.dumps([str(out / "FR20-841.plt")]), json.dumps({"l7n": str(old)})))
+    assert tidy_markers(ws) == 1
+    info = json.loads(ws.db.one("SELECT info FROM cutting_jobs")["info"])
+    assert info["l7n"] == os.path.join(ws.folder, "markers", "FR20-841.l7n") and os.path.isfile(info["l7n"])
+    assert not old.exists() and (out / "FR20-841.plt").exists()            # the cutting file stays
+    moved = out / "Richy" / "J-1.l7n"
+    moved.write_bytes(b"zip")
+    assert find_marker(ws, str(tmp_path / "gone" / "J-1.l7n")) == str(moved)
+    assert find_marker(ws, str(tmp_path / "gone" / "none.l7n")) is None
