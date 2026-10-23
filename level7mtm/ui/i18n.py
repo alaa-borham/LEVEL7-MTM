@@ -679,6 +679,11 @@ MSG_AR = [
     (r"measurement (\S+) not in the order", "القياس {0} غير موجود في الطلب"),
     (r"measurement (\S+) of the style table is missing", "القياس {0} غير موجود في جدول المقاسات"),
     (r"(X\d+) would keep the GRAFIS placeholder", "{0} سيبقى على قيمة موديل GRAFIS الأصلية"),
+    (r"the XML has (\S+): read the order again with the current settings",
+     "ملف XML فيه {0}: أعد قراءة الطلب بالإعدادات الحالية"),
+    (r"the XML has (\S+) but it is not in the measurements of this customer",
+     "ملف XML فيه {0} لكنه ليس ضمن قياسات هذا العميل"),
+    (r"the XML of this order line has no (\S+)", "ملف XML لهذا الطلب لا يحتوي على {0}"),
     (r"(\S+) \((.+) → (X\d+)\) is not confirmed", "القاعدة {0} ({1} ← {2}) غير مؤكدة"),
     (r"no GRAFIS part selected for this order", "لم يُحدَّد أي جزء GRAFIS لهذا الطلب"),
     (r"GRAFIS did not show (\S+) within ([\d.]+) s", "لم يُظهر GRAFIS الملف {0} خلال {1} ث"),
@@ -748,6 +753,7 @@ MSG_AR = [
     (r"this model was not written by LEVEL7 MTM for an order line", "هذا الموديل لم يكتبه LEVEL7 MTM لسطر طلب"),
     (r"(\S+) is not in the X table of part (\d+) of (.+)", "{0} غير موجود في جدول X للجزء {1} في {2}"),
     (r"GRAFIS part (\d+) \((.*)\) is not in (.+)", "جزء GRAFIS {0} ({1}) غير موجود في {2}"),
+    (r"(.+?) \(([^()]+)\)", "{0} ({1})"),       # last: a message with a note in brackets, each part translated
 ]
 
 

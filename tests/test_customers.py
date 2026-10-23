@@ -617,3 +617,23 @@ def test_held_line_read_again_although_another_line_of_its_xml_went_further(ws, 
     assert ws.revision(other["revision_id"])["status"] == "sent_to_nesting"      # untouched
     _, skipped = reread_lines(ws, [other["revision_id"]])
     assert skipped and "went further" in skipped[0]
+
+
+def test_line_blocked_at_the_model_is_read_again_after_saving(ws, xml53):
+    """A line read well whose model could not be written ("measurement SW not in the order") is held too: after
+    the size table is saved it is read again with it."""
+    from level7mtm.services.customers import held_files, held_lines, reread_held
+    from level7mtm.services.grafis_orders import _in_xml
+    out = ws.import_data(open(xml53, "rb").read(), "a.xml")
+    rid = out.lines[0]["revision_id"]
+    assert out.lines[0]["status"] == "ready" and held_files(ws, "level7") == []
+    with ws.db.tx() as c:
+        c.execute("INSERT INTO grafis_orders(revision_id, created_at, status, path, template_sha256, info) "
+                  "VALUES (?, '2026-10-23T10:00:00', 'blocked', NULL, 't', '{}')", (rid,))
+    fids = held_files(ws, "level7")
+    assert len(fids) == 1 and held_lines(ws, fids) == 1
+    outs = reread_held(ws, "level7", fids)
+    assert [ln["line_number"] for ln in outs[0].lines] == [out.lines[0]["line_number"]]
+    rev = ws.revision(outs[0].lines[0]["revision_id"])
+    assert _in_xml(ws, rev, "SW") == "the XML of this order line has no SW"
+    assert _in_xml(ws, rev, "FL").startswith("the XML has FL")

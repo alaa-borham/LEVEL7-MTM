@@ -420,14 +420,23 @@ HELD = ("needs_review", "ready", "imported", "validation_failed")
 
 
 WAITING = ("needs_review", "imported", "validation_failed")   # held: read again after the settings were saved
+# an order line read well whose model could not be written (e.g. a measurement of the size table missing): held too
+_BLOCKED = ("SELECT r.id FROM revisions r WHERE r.status='ready' AND (SELECT g.status FROM grafis_orders g WHERE "
+            "g.revision_id=r.id ORDER BY g.id DESC LIMIT 1) IN ('blocked', 'not_configured')")
+
+
+def _held_ids(ws, fid: int) -> list[int]:
+    blocked = {r["id"] for r in ws.db.q(_BLOCKED + " AND r.import_file=?", (fid,))}
+    return [r["id"] for r in ws.db.q("SELECT id, status FROM revisions WHERE import_file=?", (fid,))
+            if r["status"] in WAITING or r["id"] in blocked]
 
 
 def _take_back(ws, fid: int, name: str, rids: list[int] | None = None) -> set[str]:
     """These order lines of an imported XML (default: its held ones) are removed, so they read anew; the file's
     other lines (in CAD, nested, deleted, replaced) stay as they are. Returns their line numbers."""
     revs = ws.db.q("SELECT id, order_id, status, line_number FROM revisions WHERE import_file=?", (fid,))
-    revs = [r for r in revs if (r["id"] in rids and r["status"] in HELD if rids is not None
-                                else r["status"] in WAITING)]
+    held = set(rids if rids is not None else _held_ids(ws, fid))
+    revs = [r for r in revs if r["id"] in held and r["status"] in HELD]
     if not revs:
         raise WorkflowError("this XML has no held order line (they went further: model written to GRAFIS, "
                             "nested): it is not read again")
@@ -459,7 +468,8 @@ def held_files(ws, cid: str | None = None) -> list[int]:
     fam = _family(ws, cid or ws.customer())
     out = []
     for r in ws.db.q("SELECT import_file AS id, json_extract(normalized, '$.customer') AS cust FROM revisions "
-                     "WHERE status='needs_review' AND import_file IS NOT NULL ORDER BY import_file"):
+                     f"WHERE (status='needs_review' OR id IN ({_BLOCKED})) AND import_file IS NOT NULL "
+                     "ORDER BY import_file"):
         if (r["cust"] or DEFAULT_CUSTOMER) in fam and (not out or out[-1] != r["id"]):
             out.append(r["id"])
     return out
@@ -473,7 +483,8 @@ def held_lines(ws, fids: list[int]) -> int:
     for i in range(0, len(fids), 500):
         part = fids[i:i + 500]
         n += ws.db.one(f"SELECT COUNT(*) AS n FROM revisions WHERE import_file IN ({','.join('?' * len(part))}) "
-                       f"AND status IN ({','.join('?' * len(WAITING))})", tuple(part) + WAITING)["n"]
+                       f"AND (status IN ({','.join('?' * len(WAITING))}) OR id IN ({_BLOCKED}))",
+                       tuple(part) + WAITING)["n"]
     return n
 
 

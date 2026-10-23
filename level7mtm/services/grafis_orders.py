@@ -81,6 +81,25 @@ def mdl_name(ws, rev) -> str:
     return re.sub(r'[<>:"/\\|?*]', "_", stem) + ".mdl"
 
 
+def _in_xml(ws, rev, code: str) -> str:
+    """Why a measurement is not in the order: the line's XML read again with today's settings of its customer."""
+    from ..erp.importer import import_bytes
+    try:
+        f = ws.db.one("SELECT raw FROM import_files WHERE id=?", (rev["import_file"],))
+        with ws.for_customer(rev["normalized"].get("customer")):
+            _, prof = ws.active("mapping")
+        ln = next((x for x in import_bytes(bytes(f["raw"]), prof).lines if x.number == rev["line_number"]), None)
+    except Exception:  # noqa: BLE001 - only a hint
+        return ""
+    if ln is None:
+        return ""
+    if code in ln.measurements:
+        return f"the XML has {code}: read the order again with the current settings"
+    if any(p.code == "measure.unknown" and p.field == code for p in ln.problems):
+        return f"the XML has {code} but it is not in the measurements of this customer"
+    return f"the XML of this order line has no {code}"
+
+
 def plan_values(ws, rid: int, template: str) -> dict:
     """{values: {(part, X): mm}, rows, inactive, problems} — nothing written."""
     rev = ws.revision(rid)
@@ -99,7 +118,9 @@ def plan_values(ws, rid: int, template: str) -> dict:
     for t in res.trace:
         r = rules.get(t.rule_id, {})
         if t.status == "skipped" and r and t.target not in applied_targets and r.get("status") == "confirmed":
-            problems.append(f"{t.rule_id}: {t.message} — {t.target.split('/')[-1]} would keep the GRAFIS placeholder")
+            why = _in_xml(ws, rev, t.source) if (t.message or "").startswith("measurement ") else ""
+            problems.append(f"{t.rule_id}: {t.message} — {t.target.split('/')[-1]} would keep the GRAFIS placeholder"
+                            + (f" ({why})" if why else ""))
         if t.status != "applied":
             continue
         piece, _, var = t.target.split("/")
