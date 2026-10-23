@@ -364,6 +364,22 @@ AR = {
     "Pattern to review": "البترون للمراجعة",
     "Read again with the current settings": "إعادة القراءة بالإعدادات الحالية",
     "Measurement limits…": "حدود القياس…",
+    "Measurement checks": "فحص القياسات",
+    "Pattern": "البترون",
+    "All patterns": "كل البترونات",
+    "Check": "الفحص",
+    "From": "من",
+    "To": "إلى",
+    "From … to": "من … إلى",
+    "No check": "بدون فحص",
+    "ERP mapping range": "حدود ملف الربط",
+    "For each measurement of the XML (in its unit, e.g. cm): From … to (outside: the order waits for review; an empty "
+    "side is open), No check, or Formula: the value computed from the other measurements, e.g. FL - 10 or CH / 2 + 3 "
+    "(M = its own XML value) — when the XML has none, or it is outside From … to, or always when both are empty. A "
+    "pattern's checks come over the ones for all patterns.":
+        "لكل قياس في XML (بوحدته، مثل سم): «من … إلى» (خارجها ينتظر الطلب المراجعة، والطرف الفارغ مفتوح)، أو «بدون فحص»، "
+        "أو «معادلة»: تُحسب القيمة من القياسات الأخرى، مثل FL - 10 أو CH / 2 + 3 (M = قيمته نفسها في XML) — عندما لا "
+        "يرسله XML، أو تكون قيمته خارج «من … إلى»، أو دائمًا إذا تُركا فارغين. فحص البترون يأتي فوق فحص كل البترونات.",
     "Choose a measurement in the table": "اختر قياسًا من الجدول",
     "for this customer / product only": "لهذا العميل / المنتج فقط",
     "Lowest": "أقل قيمة",
@@ -695,6 +711,11 @@ MSG_AR = [
     (r"(.+): went further, not read again", "{0}: تقدّم (حفظه CAD أو عُشّق) — لا يُقرأ من جديد"),
     (r"this XML has no held order line \(they went further: model written to GRAFIS, nested\)",
      "لا يوجد في هذا الملف سطر طلب معلّق (تقدّمت كلها: حفظها CAD أو عُشّقت)"),
+    (r"(\S+) = (\S+) (\S+) from the formula (.+) \(XML: (.+)\)", "{0} = {1} {2} محسوب بالمعادلة {3} (في XML: {4})"),
+    (r"(\S+): the formula (.+) could not be computed: (.+)", "{0}: تعذّر حساب المعادلة {1}: {2}"),
+    (r"measurement (\S+): the formula '(.+)' is not valid: (.+)", "القياس {0}: المعادلة '{1}' غير صحيحة: {2}"),
+    (r"measurement (\S+): write the formula \(e\.g\. FL - 10\)", "القياس {0}: اكتب المعادلة (مثل FL - 10)"),
+    (r"measurement (\S+): the lowest value is above the highest", "القياس {0}: أقل قيمة أكبر من أعلى قيمة"),
     (r"it is not read again", "لا يُقرأ من جديد"),
     (r"no pattern for this order: none of its Variations is a pattern of the customer \((.+)\)",
      "لا يوجد بترون لهذا الطلب: لا توجد في الطلب أي Variation من بترونات العميل ({0})"),

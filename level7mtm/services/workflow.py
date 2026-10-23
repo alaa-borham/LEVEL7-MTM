@@ -251,6 +251,13 @@ class Workspace:
         pats = {_plain(p["variation"]) for p in patterns(self, cid)}
         for ln in res.lines:                            # a pattern's Variation chooses the model: not an option
             ln.problems = [p for p in ln.problems if not (p.code == "option.unknown" and _plain(p.field or "") in pats)]
+        from ..erp.mapping import measure_specs
+        from .checks import apply_checks, rules_for
+        specs = measure_specs(profile)
+        for ln in res.lines:                            # the owner's measurement checks (per pattern)
+            rules = rules_for(self, cid, ln.option_codes)
+            if rules:
+                apply_checks(ln, rules, specs)
         status = "imported" if res.ok else "failed"
         msg = "; ".join(p.message for p in res.problems if p.severity == "error")
         out = FileOutcome(name, status, msg)

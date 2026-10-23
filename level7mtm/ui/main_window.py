@@ -818,11 +818,11 @@ class OrderPage(Page):
         return None
 
     def edit_range(self):
-        """The lowest / highest value this order's customer (or product) accepts for a measurement — or no check:
-        his settings only, another customer keeps his own; then his held orders may be read again."""
-        from PySide6.QtCore import QLocale
-
-        from ..services.customers import measure_range, names, set_measure_range
+        """The check of a measurement for this order's customer (or product) — for all his patterns or the order's
+        pattern: from … to, no check, or a formula; another customer keeps his own. Then his held orders may be
+        read again."""
+        from ..services.checks import ALL, get_checks, set_checks
+        from ..services.customers import _plain, measure_range, names, patterns
         rid = self.win.current_rid
         code = self._range_code(rid) if rid is not None else None
         if not code:
@@ -830,36 +830,59 @@ class OrderPage(Page):
             return
         cid = self.ws.customer_of(rid)
         rng, unit = measure_range(self.ws, cid, code)
+        have = {_plain(c) for c in self.ws.revision(rid)["raw_line"].get("option_codes") or []}
+        mine = [p["variation"] for p in patterns(self.ws, cid) if _plain(p["variation"]) in have]
+        every = get_checks(self.ws, cid)
         d = QDialog(self)
         d.setWindowTitle(f"{tr('Measurement limits…')} — {names(self.ws).get(cid, cid)}")
+        d.setMinimumWidth(420)
         f = QFormLayout(d)
-        f.addRow(QLabel(f"<b>{code}</b> — {tr('for this customer / product only')}"))
-        boxes = []
-        for text, v in ((tr("Lowest"), rng[0] if rng else 0), (tr("Highest"), rng[1] if rng else 0)):
-            b = QDoubleSpinBox()
-            b.setLocale(QLocale(QLocale.English, QLocale.UnitedStates))
-            b.setLayoutDirection(Qt.LeftToRight)
-            b.setRange(0, 10000)
-            b.setDecimals(1)
-            b.setSuffix(f" {unit}")
-            b.setValue(v)
-            f.addRow(text + ":", b)
-            boxes.append(b)
-        free = QCheckBox(tr("No limit (any value is accepted)"))
-        free.setChecked(rng is None)
-        free.toggled.connect(lambda on: [b.setEnabled(not on) for b in boxes])
-        for b in boxes:
-            b.setEnabled(rng is not None)
-        f.addRow(free)
+        f.addRow(QLabel(f"<b>{code}</b> ({unit}) — {tr('for this customer / product only')}"))
+        pat = QComboBox()
+        pat.addItem(tr("All patterns"), ALL)
+        for v in mine:
+            pat.addItem(f"{tr('Pattern')} {v}", v)
+        f.addRow(tr("Pattern") + ":", pat)
+        mode = QComboBox()
+        for k, text in CHECK_MODES:
+            mode.addItem(tr(text), k)
+        f.addRow(tr("Check") + ":", mode)
+        lo, hi, formula = QLineEdit(), QLineEdit(), QLineEdit()
+        formula.setPlaceholderText("FL - 10")
+        for w in (lo, hi, formula):
+            w.setLayoutDirection(Qt.LeftToRight)
+        f.addRow(tr("From") + ":", lo)
+        f.addRow(tr("To") + ":", hi)
+        f.addRow(tr("Formula") + ":", formula)
+
+        def load(_i=None):
+            r = every.get(pat.currentData(), {}).get(code) or every.get(ALL, {}).get(code) or \
+                ({"mode": "range", "min": rng[0], "max": rng[1]} if rng else {"mode": "none"})
+            mode.setCurrentIndex([k for k, _ in CHECK_MODES].index(r.get("mode", "range")))
+            lo.setText("" if r.get("min") is None else f"{r['min']:g}")
+            hi.setText("" if r.get("max") is None else f"{r['max']:g}")
+            formula.setText(r.get("formula", ""))
+
+        def shown(_i=None):
+            m = mode.currentData()
+            for w in (lo, hi):
+                w.setEnabled(m != "none")
+            formula.setEnabled(m == "formula")
+        pat.currentIndexChanged.connect(load)
+        mode.currentIndexChanged.connect(shown)
+        load()
+        shown()
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.accepted.connect(d.accept)
         bb.rejected.connect(d.reject)
         f.addRow(bb)
         if d.exec() != QDialog.Accepted:
             return
-        new = None if free.isChecked() else (boxes[0].value(), boxes[1].value())
+        rows = dict(every.get(pat.currentData(), {}))
+        rows[code] = {"mode": mode.currentData(), "min": lo.text().strip().replace(",", "."),
+                      "max": hi.text().strip().replace(",", "."), "formula": formula.text().strip()}
         try:
-            changed = set_measure_range(self.ws, cid, code, new)
+            changed = set_checks(self.ws, cid, pat.currentData(), rows)
         except Exception as e:  # noqa: BLE001
             QMessageBox.warning(self, tr("Error"), tr_msg(str(e)))
             return
@@ -2730,6 +2753,115 @@ class XValuesPage(Page):
         return True
 
 
+CHECK_MODES = (("range", "From … to"), ("none", "No check"), ("formula", "Formula"))
+
+
+class MeasureChecksPanel(QWidget):
+    """The customer's / product's checks of each XML measurement, for all his patterns or one pattern: from … to,
+    no check, or a value computed by a formula from the other measurements (services/checks.py)."""
+    COLS = ["Code", "Measurement", "Check", "From", "To", "Formula", "ERP mapping range"]
+
+    def __init__(self, page):
+        super().__init__()
+        self.page, self.ws = page, page.ws
+        lay = QVBoxLayout(self)
+        top = QHBoxLayout()
+        top.addWidget(QLabel(tr("Pattern") + ":"))
+        self.pattern = QComboBox()
+        self.pattern.currentIndexChanged.connect(self._pattern_changed)
+        top.addWidget(self.pattern, 1)
+        lay.addLayout(top)
+        note = QLabel(tr("For each measurement of the XML (in its unit, e.g. cm): From … to (outside: the order waits "
+                         "for review; an empty side is open), No check, or Formula: the value computed from the other "
+                         "measurements, e.g. FL - 10 or CH / 2 + 3 (M = its own XML value) — when the XML has none, "
+                         "or it is outside From … to, or always when both are empty. A pattern's checks come over "
+                         "the ones for all patterns."))
+        note.setWordWrap(True)
+        lay.addWidget(note)
+        self.t = QTableWidget(0, len(self.COLS))
+        self.t.setHorizontalHeaderLabels([tr(c) for c in self.COLS])
+        self.t.verticalHeader().setVisible(False)
+        self.t.horizontalHeader().setStretchLastSection(True)
+        lay.addWidget(self.t, 1)
+        self.edits: dict[str, dict] = {}
+        self._cur = None
+
+    def _codes(self):
+        _, prof = self.ws.active("mapping")
+        return prof["measurements"]["fields"]
+
+    def refresh(self):
+        from ..services.checks import ALL, get_checks
+        from ..services.customers import patterns
+        self.cid = self.ws.customer()
+        self.saved = get_checks(self.ws, self.cid)
+        self.edits, self._cur = {}, None
+        self.pattern.blockSignals(True)
+        self.pattern.clear()
+        self.pattern.addItem(tr("All patterns"), ALL)
+        for p in patterns(self.ws, self.cid):
+            self.pattern.addItem(p["variation"], p["variation"])
+        self.pattern.blockSignals(False)
+        self._show(ALL)
+
+    def _pattern_changed(self, _i):
+        if self._cur is not None:
+            self.edits[self._cur] = self.rows()
+        self._show(self.pattern.currentData())
+
+    def _show(self, pat):
+        self._cur = pat
+        rules = self.edits.get(pat, self.saved.get(pat, {}))
+        fields = self._codes()
+        codes = list(fields) + [c for c in rules if c not in fields]
+        self.t.setRowCount(len(codes))
+        for i, code in enumerate(codes):
+            f, r = fields.get(code, {}), rules.get(code, {})
+            it = QTableWidgetItem(code)
+            it.setFlags(it.flags() & ~Qt.ItemIsEditable)
+            self.t.setItem(i, 0, it)
+            it = QTableWidgetItem(label(f.get("label")) or code)
+            it.setFlags(it.flags() & ~Qt.ItemIsEditable)
+            self.t.setItem(i, 1, it)
+            cb = QComboBox()
+            for k, text in CHECK_MODES:
+                cb.addItem(tr(text), k)
+            cb.setCurrentIndex([k for k, _ in CHECK_MODES].index(r.get("mode", "range")))
+            self.t.setCellWidget(i, 2, cb)
+            for j, k in ((3, "min"), (4, "max")):
+                self.t.setItem(i, j, QTableWidgetItem("" if r.get(k) is None else f"{r[k]:g}"))
+            self.t.setItem(i, 5, QTableWidgetItem(r.get("formula", "")))
+            rng = f.get("range")
+            it = QTableWidgetItem(f"{rng[0]:g}–{rng[1]:g} {f.get('unit', '')}" if rng else "—")
+            it.setFlags(it.flags() & ~Qt.ItemIsEditable)
+            self.t.setItem(i, 6, it)
+        self.t.resizeColumnsToContents()
+
+    def rows(self) -> dict:
+        out = {}
+        for i in range(self.t.rowCount()):
+            code = self.t.item(i, 0).text()
+            mode = self.t.cellWidget(i, 2).currentData()
+            vals = [self.t.item(i, j).text().strip().replace(",", ".") if self.t.item(i, j) else "" for j in (3, 4, 5)]
+            if mode == "range" and not vals[0] and not vals[1]:
+                continue                                  # nothing set: as the ERP mapping
+            out[code] = {"mode": mode, "min": vals[0], "max": vals[1], "formula": vals[2]}
+        return out
+
+    def save(self):
+        from ..services.checks import set_checks
+        self.edits[self._cur] = self.rows()
+        changed = False
+        try:
+            for pat, rows in self.edits.items():
+                changed |= set_checks(self.ws, self.cid, pat, rows)
+        except Exception as e:  # noqa: BLE001 - shown, the window stays open to correct it
+            QMessageBox.warning(self, tr("Error"), tr_msg(str(e)))
+            return False
+        reread_held_question(self.page, tr("Saved"), self.cid)
+        return True
+
+
 class PatternsPanel(QWidget):
     """The customer's patterns (body shapes): the Variation name in the XML that chooses each and its GRAFIS
     model. The size table, piece options and fixed pieces stay the customer's."""
@@ -2849,7 +2981,8 @@ class CustomersPage(Page):
         for n, (key, ic, label_) in enumerate((("patterns", "nest", "Patterns"),
                                                ("X values for GRAFIS", "xvalues", "Size table setup"),
                                                ("Design options", "options", "Piece options setup"),
-                                               ("GRAFIS parts", "parts", "Fixed pieces"))):
+                                               ("GRAFIS parts", "parts", "Fixed pieces"),
+                                               ("Measurement checks", "ruler", "Measurement checks"))):
             b = QToolButton()
             b.setObjectName("ribbonButton")
             b.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
@@ -2869,7 +3002,8 @@ class CustomersPage(Page):
         self.editor_key = None
 
     LABELS = {"patterns": "Patterns", "X values for GRAFIS": "Size table setup",
-              "Design options": "Piece options setup", "GRAFIS parts": "Fixed pieces"}
+              "Design options": "Piece options setup", "GRAFIS parts": "Fixed pieces",
+              "Measurement checks": "Measurement checks"}
 
     def show_tab(self, key: str):
         self.open_editor(key)
@@ -2879,9 +3013,11 @@ class CustomersPage(Page):
         from ..services.customers import names
         if self.editor_dialog is not None and self.editor_dialog.isVisible():
             self.editor_dialog.close()
-        page = PatternsPanel(self) if key == "patterns" else \
-            {"X values for GRAFIS": XValuesPage, "Design options": OptionsPage, "GRAFIS parts": GrafisPartsPage}[key](
-                self.win)
+        if key in ("patterns", "Measurement checks"):
+            page = (PatternsPanel if key == "patterns" else MeasureChecksPanel)(self)
+        else:
+            page = {"X values for GRAFIS": XValuesPage, "Design options": OptionsPage,
+                    "GRAFIS parts": GrafisPartsPage}[key](self.win)
         box = getattr(page, "customer_box", None)
         if box is not None:
             box.parentWidget().hide()                 # the customer is the one chosen on the Customers page
@@ -2890,7 +3026,7 @@ class CustomersPage(Page):
                 b.hide()
         d = QDialog(self)
         d.setWindowTitle(f"{tr(self.LABELS[key])} — {names(self.ws).get(self.ws.customer(), '')}")
-        d.resize(1150 if key == "X values for GRAFIS" else 720, 720)   # narrow but for the size table
+        d.resize({"X values for GRAFIS": 1150, "Measurement checks": 1000}.get(key, 720), 720)   # narrow but tables
         v = QVBoxLayout(d)
         v.addWidget(page, 1)
         bb = QDialogButtonBox()
