@@ -206,6 +206,16 @@ MIGRATIONS: list[str] = [
     CREATE INDEX IF NOT EXISTS idx_rev_file ON revisions(import_file);
     CREATE INDEX IF NOT EXISTS idx_if_sha ON import_files(sha256)
     """,
+    # 10 — shifts (owner): each shift ended, with what was done in it (the dashboard's history)
+    """
+    CREATE TABLE shifts (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        ended_at TEXT NOT NULL,
+        counts TEXT NOT NULL
+    )
+    """,
 ]
 
 

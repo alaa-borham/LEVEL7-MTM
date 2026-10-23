@@ -369,12 +369,38 @@ AR = {
     "Read again with the current settings": "إعادة القراءة بالإعدادات الحالية",
     "Measurement limits…": "حدود القياس…",
     "Measurement checks": "فحص القياسات",
+    "Orders this shift": "طلبات هذه الوردية",
+    "Cutting files this shift": "تعشيقات هذه الوردية",
+    "End the shift": "إنهاء الوردية",
+    "Shifts…": "الورديات…",
+    "Shift": "الوردية",
+    "since": "منذ",
+    "now": "الآن",
+    "From": "من",
+    "To": "إلى",
+    "Order lines": "أسطر الطلبات",
+    "Models for CAD": "موديلات لـ CAD",
+    "Saved by CAD": "حفظها CAD",
+    "Nested": "عُشّقت",
+    "Metres": "الأمتار",
+    "Problems in the shift": "المشاكل",
+    "Starts at": "تبدأ الساعة",
+    "Add": "إضافة",
+    "Shift ended": "انتهت الوردية",
+    "A start time is written as 08:00 or 20:30": "وقت البداية يُكتب هكذا: 08:00 أو 20:30",
+    "End the shift now? The «Ready to cut» list starts from zero; the cutting files stay in the customers' folders "
+    "and every order stays in the program.":
+        "إنهاء الوردية الآن؟ قائمة «جاهز للقص» تبدأ من الصفر؛ ملفات القص تبقى في مجلدات العملاء وكل الطلبات تبقى في "
+        "البرنامج.",
+    "Each shift and the time it starts (24 h, e.g. 08:00, 20:00). A shift ends by itself when the next starts; "
+    "without shifts here, it lasts until «End the shift».":
+        "كل وردية ووقت بدايتها (24 ساعة، مثل 08:00، 20:00). تنتهي الوردية وحدها عند بداية التي بعدها؛ وإن لم تُضف "
+        "ورديات هنا تستمر حتى «إنهاء الوردية».",
     "Part / X": "البارت / X",
     "«Nest and write cutting files» is off in Setup: press «Start» on the nesting queue":
         "«التعشيق وكتابة ملفات القص» متوقف في الإعداد: اضغط «تشغيل» على قائمة انتظار التعشيق",
     "the nesting stopped on an error": "توقف التعشيق بسبب خطأ",
     "the nesting has been on {f} for {m} min": "التعشيق يعمل على {f} منذ {m} دقيقة",
-    "Cutting files folder": "مجلد ملفات القص",
     "Cutting folder": "مجلد القص",
     "as his customer": "مثل عميله",
     "Choose the folder this customer's cutting files are sent to": "اختر المجلد الذي تُرسل إليه ملفات القص لهذا العميل",
@@ -394,8 +420,6 @@ AR = {
     "Pattern": "البترون",
     "All patterns": "كل البترونات",
     "Check": "الفحص",
-    "From": "من",
-    "To": "إلى",
     "From … to": "من … إلى",
     "No check": "بدون فحص",
     "ERP mapping range": "حدود ملف الربط",

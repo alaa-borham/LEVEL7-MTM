@@ -488,12 +488,32 @@ class HomePage(Page):
         grid = QHBoxLayout()
         grid.setSpacing(14)
         self.cards = {}
-        for key, label_ in (("orders", "Orders today"), ("waiting", "Waiting for GRAFIS"),
-                            ("cut", "Cutting files today"), ("errors", "Need attention")):
+        for key, label_ in (("orders", "Orders this shift"), ("waiting", "Waiting for GRAFIS"),
+                            ("cut", "Cutting files this shift"), ("errors", "Need attention")):
             card, val = self._card(tr(label_))
             self.cards[key] = val
             grid.addWidget(card)
         lay.addLayout(grid)
+        sh = QFrame()                                  # the shift: running since …, end it; every shift's work
+        sh.setObjectName("card")
+        shl = QVBoxLayout(sh)
+        top = QHBoxLayout()
+        self.shift_label = QLabel()
+        self.shift_label.setObjectName("cardTitle")
+        top.addWidget(self.shift_label, 1)
+        b = QPushButton(tr("End the shift"))
+        b.setObjectName("primary")
+        b.clicked.connect(self.end_shift)
+        top.addWidget(b)
+        b = QPushButton(tr("Shifts…"))
+        b.clicked.connect(self.edit_shifts)
+        top.addWidget(b)
+        shl.addLayout(top)
+        self.shifts = table(["Shift", "From", "To", "Order lines", "Models for CAD", "Saved by CAD", "Nested",
+                             "Cutting files", "Metres", "Problems in the shift"])
+        self.shifts.setMinimumHeight(170)
+        shl.addWidget(self.shifts)
+        lay.addWidget(sh, 2)
         row = QHBoxLayout()
         row.setSpacing(14)
         st = QFrame()
@@ -551,6 +571,64 @@ class HomePage(Page):
     def _grafis(self):
         return self.win.pages["GRAFIS markers"]
 
+    def end_shift(self):
+        """The shift ends: counted into the history; the "ready to cut" list starts from zero (nothing deleted)."""
+        from ..services.shifts import end_shift
+        if QMessageBox.question(self, tr("End the shift"), tr("End the shift now? The «Ready to cut» list starts "
+                                                             "from zero; the cutting files stay in the customers' "
+                                                             "folders and every order stays in the program.")) \
+                != QMessageBox.Yes:
+            return
+        rec = self.win.guard(lambda: end_shift(self.ws))
+        if rec:
+            self.win.status(f"{tr('Shift ended')}: {rec['counts']['nested']} {tr('Nested')}, "
+                            f"{rec['counts']['cut_files']} {tr('Cutting files')}")
+            self.win.refresh_cad(force=True)
+        self.refresh()
+
+    def edit_shifts(self):
+        """The day's shifts: name and start time (e.g. morning 08:00, evening 20:00); a shift ends by itself when
+        the next one starts. None: a shift lasts until «End the shift»."""
+        from ..services.shifts import schedule, set_schedule
+        d = QDialog(self)
+        d.setWindowTitle(tr("Shifts…"))
+        d.setMinimumWidth(380)
+        v = QVBoxLayout(d)
+        note = QLabel(tr("Each shift and the time it starts (24 h, e.g. 08:00, 20:00). A shift ends by itself when "
+                         "the next starts; without shifts here, it lasts until «End the shift»."))
+        note.setWordWrap(True)
+        v.addWidget(note)
+        t = QTableWidget(0, 2)
+        t.setHorizontalHeaderLabels([tr("Shift"), tr("Starts at")])
+        t.horizontalHeader().setStretchLastSection(True)
+        for r in schedule(self.ws):
+            t.insertRow(t.rowCount())
+            t.setItem(t.rowCount() - 1, 0, QTableWidgetItem(r["name"]))
+            t.setItem(t.rowCount() - 1, 1, QTableWidgetItem(r["start"]))
+        v.addWidget(t)
+        bar = QHBoxLayout()
+        for text, fn in ((tr("Add"), lambda: t.insertRow(t.rowCount())),
+                         (tr("Remove"), lambda: t.removeRow(t.currentRow()) if t.currentRow() >= 0 else None)):
+            b = QPushButton(text)
+            b.clicked.connect(fn)
+            bar.addWidget(b)
+        bar.addStretch()
+        v.addLayout(bar)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(d.accept)
+        bb.rejected.connect(d.reject)
+        v.addWidget(bb)
+        if d.exec() != QDialog.Accepted:
+            return
+        rows = [{"name": (t.item(i, 0).text() if t.item(i, 0) else ""),
+                 "start": (t.item(i, 1).text() if t.item(i, 1) else "")} for i in range(t.rowCount())]
+        try:
+            set_schedule(self.ws, rows)
+        except ValueError:
+            QMessageBox.warning(self, tr("Error"), tr("A start time is written as 08:00 or 20:30"))
+            return
+        self.refresh()
+
     def _open_er(self):
         d = self.ws.db.get_setting("errors.folder")
         if d and os.path.isdir(d) and hasattr(os, "startfile"):
@@ -564,9 +642,17 @@ class HomePage(Page):
         from ..services.grafis_robot import pending
         today = date.today().isoformat()
         db = self.ws.db
-        n_orders = db.one("SELECT COUNT(*) AS n FROM revisions WHERE imported_at LIKE ?", (today + "%",))["n"]
-        n_cut = db.one("SELECT COUNT(*) AS n FROM cutting_jobs WHERE status='done' AND created_at LIKE ?",
-                       (today + "%",))["n"]
+        from ..services.shifts import FIRST, history
+        hist = history(self.ws)
+        cur = hist[0]
+        n_orders, n_cut = cur["counts"]["orders"], cur["counts"]["nested"]
+        when = lambda t: "—" if not t or t == FIRST else t.replace("T", " ")[:16]   # noqa: E731
+        self.shift_label.setText(f"{tr('Shift')}: {cur['name'] or '—'} — {tr('since')} {when(cur['started_at'])}")
+        keys = ("orders", "models", "cad_saved", "nested", "cut_files", "metres", "problems")
+        fill(self.shifts, [[h["name"] or "—", when(h["started_at"]), when(h["ended_at"]) if h["ended_at"] else
+                            tr("now")] + [h["counts"].get(k, 0) for k in keys] for h in hist],
+             [STATUS_COLORS.get("info")] + [None] * (len(hist) - 1))
+        del today
         n_bad = db.one("SELECT COUNT(*) AS n FROM grafis_orders g WHERE archived=0 AND status IN "
                        "('blocked','not_configured') AND id IN (SELECT MAX(id) FROM grafis_orders GROUP BY "
                        "revision_id)")["n"] + db.one("SELECT COUNT(*) AS n FROM grafis_results WHERE archived=0 "

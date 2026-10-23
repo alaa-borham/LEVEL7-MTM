@@ -214,6 +214,8 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
     names = customer_names(ws)
     nesting_now = {r for r, m in snapshot().items() if m.get("what") == "nesting"}
     paused = bool(db.get_setting("nesting.paused", False))
+    from ..services.shifts import current as current_shift
+    shift_start = current_shift(ws)["started_at"]            # "ready to cut": this shift's only (owner)
     auto_on = bool(db.get_setting("cutting.auto", True))
     poll_err = db.get_setting("grafis.last_poll_error") or ""
     from ..services.mdl_intake import intake_now
@@ -311,6 +313,8 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
                 row["waiting"] = (row["waiting"] or tr("Waiting for nesting")) + " — " + why
         if row["problems"] and row["stage"] != "cut":
             row["stage_reached"], row["stage"] = row["stage"], "err"
+        if row["stage"] == "cut" and (row["times"].get("cut") or "") < shift_start:
+            continue                                          # cut in a shift before: off the list, files kept
         out.append(row)
     return out
 
