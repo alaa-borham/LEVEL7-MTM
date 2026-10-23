@@ -79,3 +79,15 @@ def test_measurement_checks_window(ws):
         app.processEvents()
     finally:
         mw.reread_held_question = real
+
+
+def test_a_measurement_from_a_program_of_the_xml(ws):
+    """From Dubai: a sleeve type sends no SW but <Program VariationName="Cuff Individuel Hight" Value="76.2"/>:
+    SW is computed from it when the XML has no SW."""
+    from level7mtm.services.checks import program_name
+    from level7mtm.services.customers import programs_seen
+    assert program_name("Cuff Individuel Hight ") == "Cuff_Individuel_Hight"
+    set_checks(ws, "level7", ALL, {"SW": {"mode": "formula", "formula": "Cuff_Individuel_Hight / 100"}})
+    r = _first(ws, ws.import_data(_xml(), "p.xml"))                       # Program Value="675"
+    assert r["normalized"]["measurements"]["SW"]["value_mm"] == pytest.approx(67.5)
+    assert programs_seen(ws, "level7") == ["Cuff_Individuel_Hight"]

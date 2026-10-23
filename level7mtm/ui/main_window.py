@@ -2778,6 +2778,10 @@ class MeasureChecksPanel(QWidget):
                          "the ones for all patterns."))
         note.setWordWrap(True)
         lay.addWidget(note)
+        self.progs = QLabel()                          # the order's Programs a formula can use
+        self.progs.setWordWrap(True)
+        self.progs.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        lay.addWidget(self.progs)
         self.t = QTableWidget(0, len(self.COLS))
         self.t.setHorizontalHeaderLabels([tr(c) for c in self.COLS])
         self.t.verticalHeader().setVisible(False)
@@ -2792,8 +2796,12 @@ class MeasureChecksPanel(QWidget):
 
     def refresh(self):
         from ..services.checks import ALL, get_checks
-        from ..services.customers import patterns
+        from ..services.customers import patterns, programs_seen
         self.cid = self.ws.customer()
+        seen = programs_seen(self.ws, self.cid)
+        self.progs.setText(tr("Programs in this customer's XML (for a formula)") + ": " + ", ".join(seen)
+                           if seen else "")
+        self.progs.setVisible(bool(seen))
         self.saved = get_checks(self.ws, self.cid)
         self.edits, self._cur = {}, None
         self.pattern.blockSignals(True)

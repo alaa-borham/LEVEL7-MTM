@@ -316,6 +316,19 @@ def variations_seen(ws, cid: str | None = None) -> list[str]:
     return sorted(seen.values(), key=str.lower)
 
 
+def programs_seen(ws, cid: str | None = None) -> list[str]:
+    """The Programs (<Program VariationName=…>) that came in the customer's XML, by their name in a formula."""
+    import json
+
+    from .checks import program_name
+    cid = cid or ws.customer()
+    seen = set()
+    for r in ws.db.q("SELECT raw_line, normalized FROM revisions ORDER BY id DESC LIMIT 2000"):
+        if (json.loads(r["normalized"]).get("customer") or DEFAULT_CUSTOMER) != cid:
+            continue
+        seen |= {program_name(p.get("name")) for p in json.loads(r["raw_line"]).get("programs") or [] if p.get("name")}
+    return sorted(seen, key=str.lower)
+
 
 # ------------------------------------------------------------------ learning a customer's XML (owner: Richy's files
 # have other measurement codes, full girths, another table name and order numbers like GR-1963-2_2)

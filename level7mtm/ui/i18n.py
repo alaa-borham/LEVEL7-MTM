@@ -365,6 +365,7 @@ AR = {
     "Read again with the current settings": "إعادة القراءة بالإعدادات الحالية",
     "Measurement limits…": "حدود القياس…",
     "Measurement checks": "فحص القياسات",
+    "Programs in this customer's XML (for a formula)": "قيم Programs في ملفات XML لهذا العميل (للمعادلة)",
     "Pattern": "البترون",
     "All patterns": "كل البترونات",
     "Check": "الفحص",

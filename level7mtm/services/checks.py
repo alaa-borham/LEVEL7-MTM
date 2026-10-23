@@ -3,8 +3,8 @@
 For each measurement of the XML (in the XML's unit, e.g. cm):
     range    from … to …: a value outside holds the order for review (an empty side is open)
     none     no check: any value is accepted
-    formula  the value is computed from the other measurements, e.g. ``FL - 10`` or ``CH / 2 + 3`` (``M`` is the
-             measurement's own XML value) — when the XML has none, or it is outside from … to … (both given), or
+    formula  the value is computed from the other measurements and the order's Programs, e.g. ``FL - 10``,
+             ``CH / 2 + 3`` or ``Cuff_Individuel_Hight / 10`` (``M`` is the measurement's own XML value) — when the XML has none, or it is outside from … to … (both given), or
              always (from … to … empty)
 A check replaces the range of the ERP mapping for that measurement. The checks of one pattern (the Variation that
 chooses it) come over the ones set for all the patterns.
@@ -100,6 +100,28 @@ def _value(m: Measured | None) -> float | None:
         return None
 
 
+def program_name(name: str) -> str:
+    """A Program of the XML as a name in a formula: "Cuff Individuel Hight" → Cuff_Individuel_Hight."""
+    n = re.sub(r"\W+", "_", str(name or "").strip()).strip("_")
+    return ("P_" + n) if n[:1].isdigit() else n
+
+
+def program_values(programs) -> dict[str, float]:
+    """The number of each Program of an order line (<Program VariationName=… Value=…/>), by its formula name and
+    by its variable in the ERP mapping."""
+    out = {}
+    for pr in programs or []:
+        try:
+            v = float(str(pr.get("value")).replace(",", "."))
+        except (TypeError, ValueError):
+            continue
+        if pr.get("name"):
+            out[program_name(pr["name"])] = v
+        if pr.get("variable"):
+            out.setdefault(pr["variable"], v)
+    return out
+
+
 def apply_checks(ln, rules: dict[str, dict], specs: dict) -> None:
     """The customer's checks on one order line (in place): its range problems replaced, values computed."""
     def drop(code, kinds):
@@ -122,7 +144,8 @@ def apply_checks(ln, rules: dict[str, dict], specs: dict) -> None:
             continue
         if not (v is None or outside or (lo is None and hi is None)):
             continue                                   # the XML value is fine: kept
-        env = {c: x for c, x in ((c, _value(mm)) for c, mm in ln.measurements.items()) if x is not None}
+        env = program_values(ln.programs)              # e.g. Cuff_Individuel_Hight = 76.2 (as in the XML)
+        env.update({c: x for c, x in ((c, _value(mm)) for c, mm in ln.measurements.items()) if x is not None})
         if v is not None:
             env["M"] = v
         try:
