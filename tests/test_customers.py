@@ -615,8 +615,10 @@ def test_held_line_read_again_although_another_line_of_its_xml_went_further(ws, 
     assert [ln["line_number"] for ln in outs[0].lines] == [held["line_number"]]
     assert outs[0].lines[0]["status"] == "ready"
     assert ws.revision(other["revision_id"])["status"] == "sent_to_nesting"      # untouched
+    with ws.db.tx() as c:
+        c.execute("UPDATE revisions SET status='completed' WHERE id=?", (other["revision_id"],))
     _, skipped = reread_lines(ws, [other["revision_id"]])
-    assert skipped and "went further" in skipped[0]
+    assert skipped and "cutting files" in skipped[0]                     # cut already: never read again
 
 
 def test_line_blocked_at_the_model_is_read_again_after_saving(ws, xml53):
@@ -637,3 +639,17 @@ def test_line_blocked_at_the_model_is_read_again_after_saving(ws, xml53):
     rev = ws.revision(outs[0].lines[0]["revision_id"])
     assert _in_xml(ws, rev, "SW") == "the XML of this order line has no SW"
     assert _in_xml(ws, rev, "FL").startswith("the XML has FL")
+
+
+def test_line_whose_nesting_failed_gets_its_model_again_from_the_pattern(ws, xml53):
+    """The owner adds a grain line to a piece of the base pattern: a line saved by CAD whose nesting failed is read
+    again by right click and its model written again (from the corrected pattern)."""
+    from level7mtm.services.customers import reread_lines
+    out = ws.import_data(open(xml53, "rb").read(), "n.xml")
+    rid = out.lines[0]["revision_id"]
+    with ws.db.tx() as c:
+        c.execute("UPDATE revisions SET status='sent_to_nesting' WHERE id=?", (rid,))
+    outs, skipped = reread_lines(ws, [rid])
+    assert not skipped and [ln["line_number"] for ln in outs[0].lines] == [out.lines[0]["line_number"]]
+    assert outs[0].lines[0]["action"] == "new" and outs[0].lines[0]["status"] == "ready"
+    assert ws.revision(out.lines[1]["revision_id"])["status"] == "ready"   # the file's other line untouched

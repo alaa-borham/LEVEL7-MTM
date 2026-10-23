@@ -723,6 +723,8 @@ MSG_AR = [
     (r"this XML has order lines that went further \(model written to GRAFIS, nested\)",
      "لهذا الملف طلبات تقدمت (كُتب موديلها أو تم تعشيقها)"),
     (r"(.+): went further, not read again", "{0}: تقدّم (حفظه CAD أو عُشّق) — لا يُقرأ من جديد"),
+    (r"(.+): has its cutting files or is being nested now, not read again",
+     "{0}: له ملفات قص أو يُعشّق الآن — لا يُقرأ من جديد"),
     (r"this XML has no held order line \(they went further: model written to GRAFIS, nested\)",
      "لا يوجد في هذا الملف سطر طلب معلّق (تقدّمت كلها: حفظها CAD أو عُشّقت)"),
     (r"(\S+) = (\S+) (\S+) from the formula (.+) \(XML: (.+)\)", "{0} = {1} {2} محسوب بالمعادلة {3} (في XML: {4})"),

@@ -430,6 +430,14 @@ def reread_file(ws, path: str):
 
 
 HELD = ("needs_review", "ready", "imported", "validation_failed")
+# chosen by the owner (right click → Read again): also a line saved by CAD whose nesting failed or waits — its model
+# is written again from today's pattern (e.g. a grain line added to a piece); never one with cutting files
+AGAIN = HELD + ("sent_to_nesting",)
+
+
+def _nesting_now(rid: int) -> bool:
+    from .activity import snapshot
+    return (snapshot().get(rid) or {}).get("what") == "nesting"
 
 
 WAITING = ("needs_review", "imported", "validation_failed")   # held: read again after the settings were saved
@@ -449,7 +457,7 @@ def _take_back(ws, fid: int, name: str, rids: list[int] | None = None) -> set[st
     other lines (in CAD, nested, deleted, replaced) stay as they are. Returns their line numbers."""
     revs = ws.db.q("SELECT id, order_id, status, line_number FROM revisions WHERE import_file=?", (fid,))
     held = set(rids if rids is not None else _held_ids(ws, fid))
-    revs = [r for r in revs if r["id"] in held and r["status"] in HELD]
+    revs = [r for r in revs if r["id"] in held and r["status"] in (AGAIN if rids is not None else HELD)]
     if not revs:
         raise WorkflowError("this XML has no held order line (they went further: model written to GRAFIS, "
                             "nested): it is not read again")
@@ -521,8 +529,9 @@ def reread_held(ws, cid: str | None = None, fids: list[int] | None = None) -> li
 
 
 def reread_lines(ws, rids: list[int]) -> tuple[list, list[str]]:
-    """Read these order lines again from their XML with today's settings (right click → Read again). A line that
-    went further (model saved by GRAFIS, nested) is not read again; the file's other lines are not touched.
+    """Read these order lines again from their XML with today's settings (right click → Read again): their model
+    is written again from today's pattern, also for a line saved by GRAFIS whose nesting failed. A line with
+    cutting files (or being nested now) is not read again; the file's other lines are not touched.
     Returns (outcomes, skipped reasons)."""
     by_file: dict[int, list[int]] = {}
     skipped = []
@@ -530,8 +539,8 @@ def reread_lines(ws, rids: list[int]) -> tuple[list, list[str]]:
         r = ws.db.one("SELECT import_file, status, line_number FROM revisions WHERE id=?", (rid,))
         if not r or not r["import_file"]:
             continue
-        if r["status"] not in HELD:
-            skipped.append(f"{r['line_number']}: went further, not read again")
+        if r["status"] not in AGAIN or _nesting_now(rid):
+            skipped.append(f"{r['line_number']}: has its cutting files or is being nested now, not read again")
             continue
         by_file.setdefault(r["import_file"], []).append(rid)
     return [_reread(ws, fid, mine) for fid, mine in by_file.items()], skipped
