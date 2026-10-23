@@ -369,6 +369,11 @@ AR = {
     "Read again with the current settings": "إعادة القراءة بالإعدادات الحالية",
     "Measurement limits…": "حدود القياس…",
     "Measurement checks": "فحص القياسات",
+    "Cutting files folder": "مجلد ملفات القص",
+    "Cutting folder": "مجلد القص",
+    "as his customer": "مثل عميله",
+    "Choose the folder this customer's cutting files are sent to": "اختر المجلد الذي تُرسل إليه ملفات القص لهذا العميل",
+    "Back to the customer's folder inside the cutting folder": "العودة إلى مجلد العميل داخل مجلد القص",
     "Model written again": "كُتب الموديل من جديد",
     "Nest again from the base pattern?": "إعادة التعشيق من البترون الأساسي؟",
     "The model of each order chosen is written again from the base pattern with today's settings (a new number "

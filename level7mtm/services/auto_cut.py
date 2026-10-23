@@ -88,6 +88,29 @@ def customer_formats(ws, cid: str) -> list[str] | None:
     return None
 
 
+def chosen_cut_folder(ws, cid: str) -> str | None:
+    """The folder the owner chose for this customer's cutting files (a product without its own: its customer's);
+    None = <cutting folder>/<customer name>."""
+    from .customers import get
+    c = get(ws, cid)
+    for one in [cid] + ([c["parent"]] if c and c.get("parent") else []):
+        got = ws.db.get_setting(f"cutting.folder@{one}")
+        if got:
+            return got
+    return None
+
+
+def cut_folder(ws, cids, out: str | None = None) -> str:
+    """Where the cutting files of these orders go: the folder chosen for their customer, else the customer's
+    folder inside the cutting folder (several customers in one marker: "mixed")."""
+    cids = set(cids)
+    if len(cids) == 1:
+        own = chosen_cut_folder(ws, next(iter(cids)))
+        if own:
+            return own
+    return os.path.join(out or settings(ws)["out"], customer_folder(ws, cids))
+
+
 def customer_folder(ws, cids) -> str:
     """The folder of the cutting files: the customer's name (a product goes to its customer's folder); orders of
     several customers in one marker: "mixed"."""
@@ -250,7 +273,7 @@ def _auto_cut_inner(ws, chk, scb_path: str, force: bool = False) -> dict:
     # owner: the cutting folder holds the cutting files only, each customer in his own folder; the marker (.l7n)
     # is kept in the program's data folder (it opens from the order list)
     name = os.path.splitext(os.path.basename(scb_path))[0]
-    cut_dir = os.path.join(st["out"], customer_folder(ws, custs_all))
+    cut_dir = cut_folder(ws, custs_all, st["out"])
     l7n_dir = markers_folder(ws)
     os.makedirs(cut_dir, exist_ok=True)
     os.makedirs(l7n_dir, exist_ok=True)

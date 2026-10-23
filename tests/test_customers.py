@@ -75,7 +75,7 @@ def test_customers_page_and_selector(ws, xml53, tmp_path):
     assert [win.customer_box.itemText(i) for i in range(win.customer_box.count())] == ["LEVEL7", "Richy"]
     win.goto("Customers")
     page = win.pages["Customers"]
-    assert page.t.rowCount() == 2 and page.t.item(1, 1).text() == "From Richy" and page.t.item(1, 2).text() == "—"
+    assert page.t.rowCount() == 2 and page.t.item(1, 2).text() == "From Richy" and page.t.item(1, 3).text() == "—"
     win.customer_box.setCurrentIndex(1)
     win.customer_box.activated.emit(1)
     assert ws.customer() == cid                                   # the settings pages now edit Richy's
@@ -318,15 +318,15 @@ def test_customers_page_lists_products_under_their_customer(ws):
     t = win.pages["Customers"].t
     col0 = [t.item(i, 0).text().strip() for i in range(t.rowCount())]
     assert col0[1].endswith("Richy") and "Thobe men" in col0[2] and col0[2].startswith("↳")   # under Richy
-    assert t.item(2, 3).text() == "1001001001" and col0[3].endswith("Other")
+    assert t.item(2, 4).text() == "1001001001" and col0[3].endswith("Other")
     assert "Richy / Thobe men" in [win.customer_box.itemText(i) for i in range(win.customer_box.count())]
     cp = win.pages["Customers"]
     from level7mtm.ui.i18n import tr
-    assert t.item(1, 7).text() == tr("for each product")               # the patterns are the products'
+    assert t.item(1, 8).text() == tr("for each product")               # the patterns are the products'
     customers.set_patterns(ws, [{"variation": "Big Size", "mdl": "a.mdl"}, {"variation": "Slim", "mdl": "b.mdl"}],
                            customers.products(ws, a)[0]["id"])
     cp.refresh()
-    assert t.item(2, 7).text() == tr("{n} patterns").format(n=2)         # the names only in Patterns
+    assert t.item(2, 8).text() == tr("{n} patterns").format(n=2)         # the names only in Patterns
     assert cp.tile_buttons["patterns"].isEnabled()                       # LEVEL7: no products
     t.selectRow(1)
     app.processEvents()
@@ -394,7 +394,7 @@ def test_product_measurement_table_and_basic_size(ws, xml53):
     app.processEvents()
     t = win.pages["Customers"].t
     row = next(i for i in range(t.rowCount()) if "Thobe" in t.item(i, 0).text())
-    assert t.item(row, 4).text() == table and t.item(row, 5).text() == rev["raw_line"]["basic_size"]
+    assert t.item(row, 5).text() == table and t.item(row, 6).text() == rev["raw_line"]["basic_size"]
 
 
 def test_orders_read_before_the_product_are_read_again_with_it(ws, xml53):
@@ -653,3 +653,31 @@ def test_line_whose_nesting_failed_gets_its_model_again_from_the_pattern(ws, xml
     assert not skipped and [ln["line_number"] for ln in outs[0].lines] == [out.lines[0]["line_number"]]
     assert outs[0].lines[0]["action"] == "new" and outs[0].lines[0]["status"] == "ready"
     assert ws.revision(out.lines[1]["revision_id"])["status"] == "ready"   # the file's other line untouched
+
+
+def test_each_customer_chooses_his_cutting_files_folder(ws, tmp_path):
+    """Beside each customer: the folder his cutting files are sent to (a product follows its customer unless it has
+    its own); none chosen: his folder inside the cutting folder."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.services.auto_cut import cut_folder
+    from level7mtm.ui.main_window import MainWindow
+    ws.db.set_setting("cutting.output", str(tmp_path / "CUT"))
+    cid = customers.add_customer(ws, "Dubai", "From Dubai")
+    pid = customers.add_product(ws, cid, "Thobe", "1001")
+    assert cut_folder(ws, [pid]) == os.path.join(str(tmp_path / "CUT"), "Dubai")
+    ws.db.set_setting(f"cutting.folder@{cid}", str(tmp_path / "Dubai cutter"))
+    assert cut_folder(ws, [pid]) == str(tmp_path / "Dubai cutter")           # the product follows its customer
+    ws.db.set_setting(f"cutting.folder@{pid}", str(tmp_path / "Thobe"))
+    assert cut_folder(ws, [pid]) == str(tmp_path / "Thobe") and cut_folder(ws, [cid]) == str(tmp_path / "Dubai cutter")
+    assert cut_folder(ws, ["level7"]) == os.path.join(str(tmp_path / "CUT"), "LEVEL7")
+    assert cut_folder(ws, [cid, "level7"]).endswith("mixed")             # one marker of two customers
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    win = MainWindow(ws)
+    win.goto("Customers")
+    app.processEvents()
+    t = win.pages["Customers"].t
+    row = next(i for i in range(t.rowCount()) if t.item(i, 0).text().strip() == "Dubai")
+    assert "Dubai cutter" in t.cellWidget(row, 1).findChildren(QtWidgets.QToolButton)[0].text()
+    win.close()
+    app.processEvents()

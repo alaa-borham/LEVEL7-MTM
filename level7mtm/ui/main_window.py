@@ -2976,8 +2976,9 @@ class CustomersPage(Page):
                            "it names; an XML naming no customer goes to ER."))
         body = QHBoxLayout()                          # the list on one side (full height), the settings beside it
         left = QVBoxLayout()
-        self.t = table(["Customer / product", "XML name (Reference)", "Reseller in the XML", "Item Number",
-                        "Measurement table (XML)", "Basic-Size in the XML", "Cutting file", "Patterns"])
+        self.t = table(["Customer / product", "Cutting files folder", "XML name (Reference)", "Reseller in the XML",
+                        "Item Number", "Measurement table (XML)", "Basic-Size in the XML", "Cutting file",
+                        "Patterns"])
         self.t.itemSelectionChanged.connect(self._picked)
         left.addWidget(self.t, 1)
         bar = QHBoxLayout()
@@ -3089,7 +3090,7 @@ class CustomersPage(Page):
             # patterns are the products' — none in front of the customer
             pats = [] if c["id"] in with_products else patterns(self.ws, c["id"])
             mark = "● " if c["id"] == cur else ""
-            rows.append([(f"      ↳ {mark}" if c.get("parent") else mark) + c["name"], c["reference"],
+            rows.append([(f"      ↳ {mark}" if c.get("parent") else mark) + c["name"], "", c["reference"],
                          c.get("reseller") or "—", c.get("item") or ("—" if not c.get("parent") else ""),
                          measurement_table(self.ws, c["id"]) or "—",
                          _few(basic_sizes_seen(self.ws, c["id"])),
@@ -3102,11 +3103,46 @@ class CustomersPage(Page):
         pb.setToolTip(tr("Patterns are set for each product of this customer") if cur in with_products else "")
         self.t.blockSignals(True)
         fill(self.t, rows, None, [c["id"] for c in cs])
+        for i, c in enumerate(cs):                       # beside each customer: where his cutting files go
+            self.t.setCellWidget(i, 1, self._folder_cell(c))
+        self.t.resizeColumnToContents(1)
         k = next((i for i, c in enumerate(cs) if c["id"] == cur), 0)
         self.t.selectRow(k)
         self.t.blockSignals(False)
         from ..services.customers import names
         self.head.setText(f"{tr('Settings of')} {names(self.ws).get(cur, '')}")
+
+    def _folder_cell(self, c) -> QWidget:
+        from PySide6.QtWidgets import QToolButton
+
+        from ..services.auto_cut import cut_folder
+        own = self.ws.db.get_setting(f"cutting.folder@{c['id']}")
+        w = QWidget()
+        h = QHBoxLayout(w)
+        h.setContentsMargins(2, 0, 2, 0)
+        h.setSpacing(2)
+        b = QToolButton()
+        where = cut_folder(self.ws, [c["id"]])
+        b.setText(("📁 " + where) if own else (tr("as his customer") + " — " + where if c.get("parent") and
+                                                 self.ws.db.get_setting(f"cutting.folder@{c['parent']}")
+                                                 else "📁 " + tr("Cutting folder") + " / " + os.path.basename(where)))
+        b.setToolTip(tr("Choose the folder this customer's cutting files are sent to") + f"\n{where}")
+        b.clicked.connect(lambda _=False, cid=c["id"], cur=where: self.choose_cut_folder(cid, cur))
+        h.addWidget(b, 1)
+        if own:
+            r = QToolButton()
+            r.setText("↺")
+            r.setToolTip(tr("Back to the customer's folder inside the cutting folder"))
+            r.clicked.connect(lambda _=False, cid=c["id"]: (
+                self.ws.db.set_setting(f"cutting.folder@{cid}", None), self.refresh()))
+            h.addWidget(r)
+        return w
+
+    def choose_cut_folder(self, cid: str, current: str):
+        d = QFileDialog.getExistingDirectory(self, tr("Cutting files folder…"), current)
+        if d:
+            self.ws.db.set_setting(f"cutting.folder@{cid}", d)
+            self.refresh()
 
     def _cid(self):
         ids = selected_data(self.t)
