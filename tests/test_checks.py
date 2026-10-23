@@ -117,3 +117,23 @@ def test_old_markers_leave_the_cutting_folder_and_are_found(ws, tmp_path):
     moved.write_bytes(b"zip")
     assert find_marker(ws, str(tmp_path / "gone" / "J-1.l7n")) == str(moved)
     assert find_marker(ws, str(tmp_path / "gone" / "none.l7n")) is None
+
+
+def test_markers_folder_chosen_by_the_owner(ws, tmp_path):
+    """The owner chooses where the markers are kept: the ones written before move there."""
+    import json
+
+    from level7mtm.services.auto_cut import find_marker, markers_folder, tidy_markers
+    assert markers_folder(ws) == os.path.join(ws.folder, "markers")
+    old = os.path.join(ws.folder, "markers", "A-1.l7n")
+    os.makedirs(os.path.dirname(old))
+    open(old, "wb").write(b"zip")
+    with ws.db.tx() as c:
+        c.execute("INSERT INTO cutting_jobs(sha256, scb_path, created_at, status, outputs, info, log) VALUES "
+                  "('s', 'x.scb', '2026-10-23T09:45:00', 'done', '[]', ?, '')", (json.dumps({"l7n": old}),))
+    mine = tmp_path / "MyMarkers"
+    ws.db.set_setting("cutting.markers", str(mine))
+    assert markers_folder(ws) == str(mine)
+    assert find_marker(ws, old) == old                                   # still found before it moved
+    assert tidy_markers(ws) == 1 and (mine / "A-1.l7n").exists() and not os.path.exists(old)
+    assert json.loads(ws.db.one("SELECT info FROM cutting_jobs")["info"])["l7n"] == str(mine / "A-1.l7n")

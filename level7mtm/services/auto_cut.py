@@ -103,6 +103,11 @@ def customer_folder(ws, cids) -> str:
     return name
 
 
+def markers_folder(ws) -> str:
+    """Where the markers (.l7n) are kept: the folder the owner chose, else the program's data folder."""
+    return ws.db.get_setting("cutting.markers") or os.path.join(ws.folder, "markers")
+
+
 def find_marker(ws, l7n: str | None, outputs=()) -> str | None:
     """The marker file (.l7n) of a nesting: where it was saved, else in the program's markers folder, the cutting
     folder (and its customer folders) or next to its cutting files — a marker moved from the cutting folder (owner:
@@ -113,17 +118,19 @@ def find_marker(ws, l7n: str | None, outputs=()) -> str | None:
         return l7n
     name = os.path.basename(l7n)
     out = settings(ws)["out"]
-    places = [os.path.join(ws.folder, "markers"), out] + [os.path.dirname(p) for p in outputs or ()]
+    places = [markers_folder(ws), os.path.join(ws.folder, "markers"), out] + \
+        [os.path.dirname(p) for p in outputs or ()]
     if os.path.isdir(out):
         places += [os.path.join(out, d) for d in os.listdir(out) if os.path.isdir(os.path.join(out, d))]
     return next((os.path.join(d, name) for d in places if os.path.isfile(os.path.join(d, name))), None)
 
 
 def tidy_markers(ws) -> int:
-    """Markers (.l7n) written into the cutting folder before it held cutting files only: moved to the program's
-    markers folder, the nestings pointing at them. Returns how many."""
+    """Markers (.l7n) elsewhere than the markers folder (written into the cutting folder before it held cutting
+    files only, or kept in the folder used before another was chosen): moved there, the nestings pointing at
+    them. Returns how many."""
     import shutil
-    dest = os.path.join(ws.folder, "markers")
+    dest = markers_folder(ws)
     moved = 0
     for r in ws.db.q("SELECT id, outputs, info FROM cutting_jobs"):
         info = json.loads(r["info"])
@@ -244,7 +251,7 @@ def _auto_cut_inner(ws, chk, scb_path: str, force: bool = False) -> dict:
     # is kept in the program's data folder (it opens from the order list)
     name = os.path.splitext(os.path.basename(scb_path))[0]
     cut_dir = os.path.join(st["out"], customer_folder(ws, custs_all))
-    l7n_dir = os.path.join(ws.folder, "markers")
+    l7n_dir = markers_folder(ws)
     os.makedirs(cut_dir, exist_ok=True)
     os.makedirs(l7n_dir, exist_ok=True)
     stem = os.path.join(l7n_dir, name)

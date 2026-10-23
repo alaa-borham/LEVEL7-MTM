@@ -1314,7 +1314,7 @@ class GrafisPage(Page):
                                       "(cutting files); each can also be chosen alone.",
              (("Folders MDL / SCB / ER / CUT…", self.choose_folders), ("GRAFIS input folder…", self.choose_input),
               ("Errors folder (ER)…", self.choose_errors), ("Cutting files folder…", self.choose_out),
-              ("Order models archive…", self.choose_archive)))
+              ("Markers folder…", self.choose_markers), ("Order models archive…", self.choose_archive)))
         step("nesting", 3, "LEVEL7 Nesting", "The nesting program that writes the marker and the cutting files.",
              (("LEVEL7 Nesting program…", self.choose_cli),))
 
@@ -1534,12 +1534,13 @@ class GrafisPage(Page):
                      (robot_on, f"{tr('GRAFIS robot')}: {tr('on') if robot_on else tr('off')}"),
                      (cli_ok, "LEVEL7 Nesting"),
                      (bool(st["formats"]), f"{tr('Cutting files')}: {', '.join(st['formats']).upper()}")])
+        from ..services.auto_cut import markers_folder
         er = self.ws.db.get_setting("errors.folder")
         menu = self.ws.db.get_setting("robot.menu", {}) or {}
         rmode = self.ws.db.get_setting("robot.mode", "auto")
         done = {"model": (mdl_ok, os.path.basename(mdl or "") or tr("not set")),
                 "folders": (bool(er) and os.path.isdir(gs["out"]), f"MDL: {gs['out']}   ER: {er or '—'}   "
-                                                                    f"CUT: {st['out']}"),
+                                                                    f"CUT: {st['out']}   L7N: {markers_folder(self.ws)}"),
                 "nesting": (cli_ok, cli),
                 "robot": ("test_run" in rb or bool(menu.get("test_run")),
                           " · ".join(f"{k}: {self._how(k, menu, rb)}" for k in ("test_run", "save", "close"))
@@ -1882,6 +1883,16 @@ class GrafisPage(Page):
         if d:
             self.ws.db.set_setting("grafis.mdl_archive", d)
             self.refresh()
+
+    def choose_markers(self):
+        """The folder where the markers (.l7n) of the nestings are kept; the ones already written move there."""
+        from ..services.auto_cut import markers_folder, tidy_markers
+        d = QFileDialog.getExistingDirectory(self, tr("Markers folder…"), markers_folder(self.ws))
+        if not d:
+            return
+        self.ws.db.set_setting("cutting.markers", d)
+        self.win.run(lambda: tidy_markers(self.ws), lambda n: (
+            self.win.status(f"{tr('Markers folder')}: {d} — {tr('markers moved')}: {n}"), self.refresh()))
 
     def choose_out(self):
         from ..services.auto_cut import settings
@@ -3908,6 +3919,7 @@ class MainWindow(QMainWindow):
                              ("markers", "nest", tr("Marker name"), lambda: self.goto("GRAFIS markers"))]),
             ("output", tr("Output"), [("cut", "folder", tr("Files"),
                              [(tr("Cutting files"), self.open_cutting),
+                              (tr("Markers (L7N)"), self.open_markers),
                               (tr("Order models (MDL, saved)"), self.open_mdl_archive),
                               (tr("Finished XML (done)"), self.open_done_xml),
                               (tr("Errors (ER)"), lambda: self.pages["Home"]._open_er())])]),
@@ -4128,6 +4140,16 @@ class MainWindow(QMainWindow):
             os.startfile(d)
         else:
             QMessageBox.information(self, title, d or tr("not set"))
+
+    def open_markers(self):
+        """The markers (.l7n) of the nestings (the folder chosen in Setup, else the program's data folder)."""
+        from ..services.auto_cut import markers_folder
+        d = markers_folder(self.ws)
+        try:
+            os.makedirs(d, exist_ok=True)
+        except OSError:
+            pass
+        self._open_folder(d, tr("Markers (L7N)"))
 
     def open_mdl_archive(self):
         """The copy of every order model as GRAFIS saved it (MDL-ARCHIVE): the reference when something is wrong."""

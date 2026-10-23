@@ -517,8 +517,8 @@ def test_nest_again_button_with_level7_nesting_in_its_arrow(ws):
     b = win.ribbon.buttons["renest"]
     assert b.popupMode() == QtWidgets.QToolButton.InstantPopup and "nesting" not in win.ribbon.buttons
     assert len(b.menu().actions()) == 2
-    f = win.ribbon.buttons["cut"]                                 # cutting files, saved MDL, done XML and ER under "Files"
-    assert len(f.menu().actions()) == 4 and "er" not in win.ribbon.buttons
+    f = win.ribbon.buttons["cut"]                     # cutting files, markers, saved MDL, done XML and ER under "Files"
+    assert len(f.menu().actions()) == 5 and "er" not in win.ribbon.buttons
 
 
 def test_owner_arranges_the_ribbon(ws):
