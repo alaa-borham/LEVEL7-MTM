@@ -3976,7 +3976,7 @@ class MainWindow(QMainWindow):
         split.setHandleWidth(1)
         split.setChildrenCollapsible(False)
         self.browser = cad.OrderBrowser()
-        self.browser.setMinimumWidth(210)
+        self.browser.setMinimumWidth(150)                 # narrow sides (owner): a larger work area
         self.browser.selected.connect(self.select_row)
         self.browser.remove.connect(self.remove_orders)
         self.browser.reread.connect(self.reread_orders)
@@ -4010,11 +4010,17 @@ class MainWindow(QMainWindow):
         b["renest"].clicked.connect(self.renest_selected)
         b["details"].clicked.connect(self.open_details)
         sl.addWidget(self.inspector, 1)
-        side.setMinimumWidth(240)
+        side.setMinimumWidth(160)
+        self.tabs.setMinimumWidth(240)                    # a small window: the sides and the work area all fit
         for w in (self.browser, self.tabs, side):
             split.addWidget(w)
-        split.setStretchFactor(1, 1)
-        split.setSizes([260, 900, 280])
+        for i, k in enumerate((0, 1, 0)):                 # the window made smaller: the work area gives, the
+            split.setStretchFactor(i, k)                  # sides keep their width
+        saved = self.ws.db.get_setting("ui.sides")        # the widths the owner dragged them to
+        split.setSizes([saved[0], 1000, saved[1]] if saved else [190, 1000, 200])
+        split.splitterMoved.connect(lambda *_: self.ws.db.set_setting(
+            "ui.sides", [split.sizes()[0], split.sizes()[2]]))
+        self.split = split
         lay.addWidget(split, 1)
         self.setCentralWidget(root)
         if old is not None:

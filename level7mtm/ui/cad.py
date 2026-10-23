@@ -1392,8 +1392,16 @@ class OrderBrowser(QWidget):
         self.queue_button = b
         return b
 
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        narrow = self.width() < 250
+        if getattr(self, "_narrow", None) not in (None, narrow) and getattr(self, "_counts", None) is not None:
+            self._heads(self._counts, themes.colours())   # the queue button: full text / the sign only
+        self._narrow = narrow
+
     def _heads(self, counts: dict, c):
         """The lists' titles above the list (always in sight): a click opens that list below, again closes it."""
+        self._counts = counts
         while self.heads.count():
             w = self.heads.takeAt(0).widget()
             if w is not None:
@@ -1404,15 +1412,24 @@ class OrderBrowser(QWidget):
             f = QFrame()
             f.setObjectName("listHead")
             f.setCursor(Qt.PointingHandCursor)
-            f.setStyleSheet(f"QFrame#listHead {{ background: rgba({col.red()},{col.green()},{col.blue()},"
-                            f"{70 if on else 28}); border-radius: 3px; }} QLabel {{ background: transparent; "
-                            f"color: {col.name()}; font-weight: 800; }}")
+            rgb = f"{col.red()},{col.green()},{col.blue()}"
+            f.setStyleSheet(f"QFrame#listHead {{ background: rgba({rgb},{95 if on else 40}); border-radius: 3px; "
+                            f"border: 1px solid rgba({rgb},{230 if on else 110}); }} QLabel {{ background: "
+                            f"transparent; border: none; color: {col.name()}; font-weight: 800; "
+                            f"{'font-size: 8pt; ' if self.width() < 250 else ''}}}")
             h = QHBoxLayout(f)
-            h.setContentsMargins(8, 5, 8, 5)
-            h.setSpacing(6)
-            h.addWidget(QLabel(("▾ " if on else "▸ ") + tr(title)), 1)
+            h.setContentsMargins(6, 5, 6, 5)
+            h.setSpacing(4)
+            t_ = QLabel(("▾ " if on else "▸ ") + tr(title))
+            t_.setToolTip(tr(title))
+            t_.setMinimumWidth(0)
+            t_.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)   # cut, never pushing the count away
+            h.addWidget(t_, 1)
             if key == "queue":                            # start / stop the nesting right on its list
-                h.addWidget(self._queue_button(c))
+                qb = self._queue_button(c)
+                if self.width() < 250:                    # a narrow list: the sign only, the title stays readable
+                    qb.setText(qb.text().split(" ")[0])
+                h.addWidget(qb)
             h.addWidget(QLabel(str(counts.get(key, 0))))
             f.mousePressEvent = lambda e, k=key: self.open_list(k)
             self.heads.addWidget(f)
@@ -1632,8 +1649,10 @@ class Inspector(QScrollArea):
         w.setObjectName("inspector")
         self.setWidget(w)
         self.lay = QVBoxLayout(w)
-        self.lay.setContentsMargins(12, 8, 12, 12)
+        self.lay.setContentsMargins(8, 8, 8, 10)
         self.lay.setSpacing(4)
+        from PySide6.QtWidgets import QLayout
+        self.lay.setSizeConstraint(QLayout.SetMinimumSize)   # a short window: it scrolls, rows never overlap
         self.title = QLabel("—")
         self.title.setObjectName("bigTitle")
         self.pill = QLabel()
@@ -1662,6 +1681,9 @@ class Inspector(QScrollArea):
             b = QPushButton(text)
             if primary:
                 b.setObjectName("primary")
+            b.setToolTip(text)
+            b.setMinimumWidth(0)                          # a narrow panel: the text is cut, never the panel held wide
+            b.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
             self.buttons[key] = b
             self.lay.addWidget(b)
         self.kv: dict[str, QLabel] = {}
