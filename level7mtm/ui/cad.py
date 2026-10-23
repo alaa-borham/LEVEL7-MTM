@@ -1792,7 +1792,7 @@ class Inspector(QScrollArea):
         self.waiting.setText("⏳ " + wait if wait else "")
         self.waiting.setVisible(bool(wait))
         self.buttons.get("open_cut") and self.buttons["open_cut"].setEnabled(bool(r["outputs"]))
-        self.buttons.get("renest") and self.buttons["renest"].setEnabled(bool(r["result"]))
+        self.buttons.get("renest") and self.buttons["renest"].setEnabled(True)   # from the base pattern
         self.buttons.get("nesting") and self.buttons["nesting"].setEnabled(bool(r["l7n"]))
         if "robot" in self.buttons:
             self.buttons["robot"].setVisible(bool(r.get("robot_failed")))

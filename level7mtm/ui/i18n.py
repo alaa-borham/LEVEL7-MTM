@@ -369,6 +369,11 @@ AR = {
     "Read again with the current settings": "إعادة القراءة بالإعدادات الحالية",
     "Measurement limits…": "حدود القياس…",
     "Measurement checks": "فحص القياسات",
+    "Nest again from the base pattern?": "إعادة التعشيق من البترون الأساسي؟",
+    "The model of each order chosen is written again from the base pattern with today's settings (a new number "
+    "_v2, _v3 …), CAD saves it and it is nested; the copy saved before is kept in the archive.":
+        "يُكتب موديل كل طلب محدد من جديد من البترون الأساسي بالإعدادات الحالية (برقم جديد _v2، _v3 …)، ثم يحفظه CAD "
+        "ويُعشّق؛ النسخة المحفوظة سابقًا تبقى في الأرشيف.",
     "the nesting is stopped: press «Start» on the nesting queue": "التعشيق متوقف: اضغط «تشغيل» على قائمة انتظار التعشيق",
     "The marker file of this nesting is no longer there": "ملف الماركر لهذا التعشيق لم يعد موجودًا",
     "The marker file of this nesting could not be read": "تعذّرت قراءة ملف الماركر لهذا التعشيق",
@@ -724,8 +729,7 @@ MSG_AR = [
     (r"this XML has order lines that went further \(model written to GRAFIS, nested\)",
      "لهذا الملف طلبات تقدمت (كُتب موديلها أو تم تعشيقها)"),
     (r"(.+): went further, not read again", "{0}: تقدّم (حفظه CAD أو عُشّق) — لا يُقرأ من جديد"),
-    (r"(.+): has its cutting files or is being nested now, not read again",
-     "{0}: له ملفات قص أو يُعشّق الآن — لا يُقرأ من جديد"),
+    (r"(.+): being nested now, not read again", "{0}: يُعشّق الآن — لا يُقرأ من جديد"),
     (r"this XML has no held order line \(they went further: model written to GRAFIS, nested\)",
      "لا يوجد في هذا الملف سطر طلب معلّق (تقدّمت كلها: حفظها CAD أو عُشّقت)"),
     (r"(\S+) = (\S+) (\S+) from the formula (.+) \(XML: (.+)\)", "{0} = {1} {2} محسوب بالمعادلة {3} (في XML: {4})"),

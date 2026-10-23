@@ -615,10 +615,10 @@ def test_held_line_read_again_although_another_line_of_its_xml_went_further(ws, 
     assert [ln["line_number"] for ln in outs[0].lines] == [held["line_number"]]
     assert outs[0].lines[0]["status"] == "ready"
     assert ws.revision(other["revision_id"])["status"] == "sent_to_nesting"      # untouched
-    with ws.db.tx() as c:
-        c.execute("UPDATE revisions SET status='completed' WHERE id=?", (other["revision_id"],))
-    _, skipped = reread_lines(ws, [other["revision_id"]])
-    assert skipped and "cutting files" in skipped[0]                     # cut already: never read again
+    from level7mtm.services.activity import working
+    with working([other["revision_id"]], "nesting"):
+        _, skipped = reread_lines(ws, [other["revision_id"]])
+    assert skipped and "being nested now" in skipped[0]                  # never while it is being nested
 
 
 def test_line_blocked_at_the_model_is_read_again_after_saving(ws, xml53):

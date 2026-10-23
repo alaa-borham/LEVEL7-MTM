@@ -430,9 +430,10 @@ def reread_file(ws, path: str):
 
 
 HELD = ("needs_review", "ready", "imported", "validation_failed")
-# chosen by the owner (right click → Read again): also a line saved by CAD whose nesting failed or waits — its model
-# is written again from today's pattern (e.g. a grain line added to a piece); never one with cutting files
-AGAIN = HELD + ("sent_to_nesting",)
+# chosen by the owner (right click → Read again, Nest again): also a line saved by CAD, nested or with its cutting
+# files — its model is written again from the base pattern with today's settings (a new number), never from the
+# copy CAD saved before (owner: e.g. a grain line added to a piece)
+AGAIN = HELD + ("sent_to_nesting", "completed", "approved")
 
 
 def _nesting_now(rid: int) -> bool:
@@ -540,7 +541,7 @@ def reread_lines(ws, rids: list[int]) -> tuple[list, list[str]]:
         if not r or not r["import_file"]:
             continue
         if r["status"] not in AGAIN or _nesting_now(rid):
-            skipped.append(f"{r['line_number']}: has its cutting files or is being nested now, not read again")
+            skipped.append(f"{r['line_number']}: being nested now, not read again")
             continue
         by_file.setdefault(r["import_file"], []).append(rid)
     return [_reread(ws, fid, mine) for fid, mine in by_file.items()], skipped

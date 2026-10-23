@@ -209,7 +209,15 @@ def _order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = 
     with open(template, "rb") as fh:
         tsha = hashlib.sha256(fh.read()).hexdigest()
     tsha += f":catalog{ws.active('catalog')[0]}"           # a new rules / parts version (this customer's) writes again
-    path = os.path.join(out_dir, mdl_name(ws, rev))
+    # owner: a model written again (read again, nested again, pattern changed) always comes from the base pattern
+    # and has a new number: Order-…__line.mdl, then …_v2.mdl, _v3.mdl …; the one before goes to the archive
+    stem, ext = os.path.splitext(mdl_name(ws, rev))
+    key = f"mdl.version@{os.path.normcase(os.path.abspath(os.path.join(out_dir, stem)))}"
+    n = int(ws.db.get_setting(key) or 0)
+    if n == 0 and os.path.exists(os.path.join(out_dir, stem + ext)):
+        n = 1                                          # written before the numbering
+    numbered = lambda k: os.path.join(out_dir, stem + (f"_v{k}" if k > 1 else "") + ext)   # noqa: E731
+    path = numbered(max(n, 1))
     dup = ws.db.one("SELECT * FROM grafis_orders WHERE revision_id=? AND status='written' AND template_sha256=? "
                     "AND archived=0 ORDER BY id DESC", (rid, tsha))
     if dup and not force and dup["path"] == path and os.path.exists(path):
@@ -227,16 +235,38 @@ def _order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = 
     if not plan["values"]:
         res["problems"] = ["no X value to write"]
         return _save(ws, res, tsha)
+    before = path if n and os.path.exists(path) else None
+    if n:
+        path = numbered(n + 1)
     try:
         write_order_mdl(template, plan["values"], path, plan["parts"])
     except (XWriteError, OSError) as e:
         res["problems"] = [str(e)]
         return _save(ws, res, tsha)
+    ws.db.set_setting(key, max(n, 0) + 1)
+    if before:
+        _retire(ws, before)
     with open(path, "rb") as fh:                   # recognises the file as written (before GRAFIS saves it)
         res["sha256"] = hashlib.sha256(fh.read()).hexdigest()
     res.update(status="written", path=path)
     res["archive"] = archive_mdl(ws, path)          # kept as a reference
     return _save(ws, res, tsha)
+
+
+def _retire(ws, path: str) -> None:
+    """The model written before (another number): kept in the archive as it was, out of the MDL folder — not while
+    CAD has it open."""
+    from .grafis_robot import current_model
+    cur = current_model()
+    if cur and os.path.normcase(os.path.abspath(cur)) == os.path.normcase(os.path.abspath(path)):
+        return
+    try:
+        archive_mdl(ws, path)
+        os.remove(path)
+    except OSError:
+        pass
+    with ws.db.tx() as c:                          # its older writings are over (the robot leaves them)
+        c.execute("UPDATE grafis_orders SET archived=1 WHERE path=? AND status='written'", (path,))
 
 
 def _save(ws, res, tsha) -> dict:

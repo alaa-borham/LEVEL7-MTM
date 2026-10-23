@@ -4533,13 +4533,20 @@ class MainWindow(QMainWindow):
             self.pages["GRAFIS markers"].open_out()
 
     def renest_selected(self):
-        r = self._need_row()
-        if r is None:
+        """Nest again (owner): never from the copy CAD saved before — the model of each order chosen is written
+        again from the base pattern with today's settings (a new number), CAD saves it, then it is nested."""
+        rids = self.browser.selected_rids() if hasattr(self, "browser") else []
+        if not rids:
+            r = self._need_row()
+            if r is None:
+                return
+            rids = [r["rid"]]
+        if QMessageBox.question(self, tr("Nest again"), tr("Nest again from the base pattern?") + f" ({len(rids)})\n\n"
+                                + tr("The model of each order chosen is written again from the base pattern with "
+                                     "today's settings (a new number _v2, _v3 …), CAD saves it and it is nested; the "
+                                     "copy saved before is kept in the archive.")) != QMessageBox.Yes:
             return
-        if not r["result"]:
-            QMessageBox.information(self, "LEVEL7 Nesting", tr("This row has no marker yet"))
-            return
-        self.pages["GRAFIS markers"].renest(r["result"])
+        self.reread_orders(rids)
 
     def robot_retry_selected(self):
         """Let the robot take the selected order's model again (after GRAFIS was closed / a dialog answered)."""

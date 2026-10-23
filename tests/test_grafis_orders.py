@@ -299,3 +299,29 @@ def test_codes_left_on_a_part_the_model_lacks_are_deleted(ws):
     assert drop_codes(ws, "009")["removed"] == 3
     assert codes_elsewhere(ws, MDL) == {} and x_table(ws, MDL, 2) == before     # this model's codes untouched
     assert drop_codes(ws, "009") == {"removed": 0, "catalog_version": None}
+
+
+@needs_mdl
+def test_model_written_again_has_a_new_number_from_the_base_pattern(ws, tmp_path):
+    """Owner: a model written again (read again, nested again) comes from the base pattern, never from the copy CAD
+    saved, and has the next number; the one before goes to the archive, out of the MDL folder."""
+    from level7mtm.services.customers import reread_lines
+    ws.db.set_setting("grafis.mdl", MDL)
+    ws.db.set_setting("grafis.input", str(tmp_path / "in"))
+    o = import_and_prepare(ws, XML_53)
+    first = o.grafis[0]["path"]
+    with open(first, "ab") as fh:
+        fh.write(b"saved by CAD")                                        # CAD saved it (another content)
+    rid = o.grafis[0]["revision_id"]
+    with ws.db.tx() as c:
+        c.execute("UPDATE revisions SET status='completed' WHERE id=?", (rid,))   # nested, cutting files made
+    outs, skipped = reread_lines(ws, [rid])
+    assert not skipped
+    again = outs[0].grafis[0]["path"]
+    assert os.path.basename(again) == "Order-9-53-1_2__9-53-1_2_v2.mdl"
+    assert not os.path.exists(first)                                     # out of the MDL folder …
+    from level7mtm.services.grafis_orders import archive_folder
+    assert read(os.path.join(archive_folder(ws), os.path.basename(first))).endswith(b"saved by CAD")   # … archived
+    assert b"saved by CAD" not in read(again)                            # from the base pattern
+    outs, _ = reread_lines(ws, [outs[0].lines[0]["revision_id"]])
+    assert os.path.basename(outs[0].grafis[0]["path"]) == "Order-9-53-1_2__9-53-1_2_v3.mdl"
