@@ -369,6 +369,7 @@ AR = {
     "Read again with the current settings": "إعادة القراءة بالإعدادات الحالية",
     "Measurement limits…": "حدود القياس…",
     "Measurement checks": "فحص القياسات",
+    "Part / X": "البارت / X",
     "«Nest and write cutting files» is off in Setup: press «Start» on the nesting queue":
         "«التعشيق وكتابة ملفات القص» متوقف في الإعداد: اضغط «تشغيل» على قائمة انتظار التعشيق",
     "the nesting stopped on an error": "توقف التعشيق بسبب خطأ",

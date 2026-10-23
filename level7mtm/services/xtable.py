@@ -140,6 +140,17 @@ def _save_tables(ws, cat, st, new_codes, note) -> dict:
     return out
 
 
+def targets_of_codes(ws) -> dict[str, list[str]]:
+    """{XML measurement code: ["011/X15", "010/X15" …]} — where each measurement goes in the size table of the
+    current customer / product."""
+    _, cat = ws.active("catalog")
+    out: dict[str, list[str]] = {}
+    for r in sorted(_style(cat)["rules"], key=lambda r: (r["target"]["piece"], r["target"]["variable"])):
+        if r["source"]["type"] == "measurement":
+            out.setdefault(r["source"]["code"], []).append(f"{r['target']['piece']}/{r['target']['variable']}")
+    return out
+
+
 def codes_elsewhere(ws, mdl_path: str) -> dict[str, int]:
     """{piece: number of X with XML codes} for the parts that hold codes but are not an X table of this model —
     e.g. a new customer copied from another whose model numbers its main part 002 while his own uses 007."""

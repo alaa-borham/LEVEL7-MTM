@@ -70,8 +70,12 @@ def test_measurement_checks_window(ws):
         app.processEvents()
         page = cp.editor_page
         row = next(i for i in range(page.t.rowCount()) if page.t.item(i, 0).text() == "FL")
-        page.t.cellWidget(row, 2).setCurrentIndex(2)                      # Formula
-        page.t.item(row, 5).setText("SH * 3")
+        from level7mtm.services.xtable import targets_of_codes
+        fl = targets_of_codes(ws).get("FL", [])
+        assert fl and page.t.item(row, 2).text() == ", ".join(fl)        # the part / X it goes to, e.g. 002/X1
+        assert all("/X" in t for t in fl)
+        page.t.cellWidget(row, 3).setCurrentIndex(2)                      # Formula
+        page.t.item(row, 6).setText("SH * 3")
         assert page.save() is True and asked
         assert get_checks(ws, "level7")[ALL]["FL"]["formula"] == "SH * 3"
         cp.editor_dialog.close()

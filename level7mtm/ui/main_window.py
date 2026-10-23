@@ -2772,7 +2772,7 @@ CHECK_MODES = (("range", "From … to"), ("none", "No check"), ("formula", "Form
 class MeasureChecksPanel(QWidget):
     """The customer's / product's checks of each XML measurement, for all his patterns or one pattern: from … to,
     no check, or a value computed by a formula from the other measurements (services/checks.py)."""
-    COLS = ["Code", "Measurement", "Check", "From", "To", "Formula", "ERP mapping range"]
+    COLS = ["Code", "Measurement", "Part / X", "Check", "From", "To", "Formula", "ERP mapping range"]
 
     def __init__(self, page):
         super().__init__()
@@ -2833,7 +2833,9 @@ class MeasureChecksPanel(QWidget):
     def _show(self, pat):
         self._cur = pat
         rules = self.edits.get(pat, self.saved.get(pat, {}))
+        from ..services.xtable import targets_of_codes
         fields = self._codes()
+        where = targets_of_codes(self.ws)                 # the part / X each measurement goes to
         codes = list(fields) + [c for c in rules if c not in fields]
         self.t.setRowCount(len(codes))
         for i, code in enumerate(codes):
@@ -2844,26 +2846,30 @@ class MeasureChecksPanel(QWidget):
             it = QTableWidgetItem(label(f.get("label")) or code)
             it.setFlags(it.flags() & ~Qt.ItemIsEditable)
             self.t.setItem(i, 1, it)
+            it = QTableWidgetItem(", ".join(where.get(code, [])) or "—")
+            it.setFlags(it.flags() & ~Qt.ItemIsEditable)
+            it.setToolTip(it.text())
+            self.t.setItem(i, 2, it)
             cb = QComboBox()
             for k, text in CHECK_MODES:
                 cb.addItem(tr(text), k)
             cb.setCurrentIndex([k for k, _ in CHECK_MODES].index(r.get("mode", "range")))
-            self.t.setCellWidget(i, 2, cb)
-            for j, k in ((3, "min"), (4, "max")):
+            self.t.setCellWidget(i, 3, cb)
+            for j, k in ((4, "min"), (5, "max")):
                 self.t.setItem(i, j, QTableWidgetItem("" if r.get(k) is None else f"{r[k]:g}"))
-            self.t.setItem(i, 5, QTableWidgetItem(r.get("formula", "")))
+            self.t.setItem(i, 6, QTableWidgetItem(r.get("formula", "")))
             rng = f.get("range")
             it = QTableWidgetItem(f"{rng[0]:g}–{rng[1]:g} {f.get('unit', '')}" if rng else "—")
             it.setFlags(it.flags() & ~Qt.ItemIsEditable)
-            self.t.setItem(i, 6, it)
+            self.t.setItem(i, 7, it)
         self.t.resizeColumnsToContents()
 
     def rows(self) -> dict:
         out = {}
         for i in range(self.t.rowCount()):
             code = self.t.item(i, 0).text()
-            mode = self.t.cellWidget(i, 2).currentData()
-            vals = [self.t.item(i, j).text().strip().replace(",", ".") if self.t.item(i, j) else "" for j in (3, 4, 5)]
+            mode = self.t.cellWidget(i, 3).currentData()
+            vals = [self.t.item(i, j).text().strip().replace(",", ".") if self.t.item(i, j) else "" for j in (4, 5, 6)]
             if mode == "range" and not vals[0] and not vals[1]:
                 continue                                  # nothing set: as the ERP mapping
             out[code] = {"mode": mode, "min": vals[0], "max": vals[1], "formula": vals[2]}
