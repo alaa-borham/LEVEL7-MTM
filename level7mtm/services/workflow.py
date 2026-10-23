@@ -34,7 +34,15 @@ BUILTIN = [
 ]
 STATUSES = ("imported", "needs_review", "ready", "calculating", "validation_failed", "ready_for_review",
             "approved", "sent_to_nesting", "completed", "cancelled", "superseded")
-OPEN_FOR_EDIT = ("imported", "needs_review", "ready", "validation_failed", "ready_for_review")
+OPEN_FOR_EDIT = ("imported", "needs_review", "ready", "validation_failed", "ready_for_review",
+                 # owner: an order saved by CAD, nested or with its cutting files is corrected too — its model is
+                 # then written again from the base pattern (a new number), goes through CAD and is nested again
+                 "sent_to_nesting", "completed", "approved")
+
+
+def _nesting_now(rid: int) -> bool:
+    from .activity import snapshot
+    return (snapshot().get(rid) or {}).get("what") == "nesting"
 
 
 def order_cancelled(c, oid: int) -> bool:
@@ -397,7 +405,7 @@ class Workspace:
     def edit_measurement(self, rid: int, code: str, value_mm: float, reason: str) -> None:
         """Manual correction of a measurement (recorded). Any earlier generation becomes invalid."""
         rev = self.revision(rid)
-        if rev["status"] not in OPEN_FOR_EDIT:
+        if rev["status"] not in OPEN_FOR_EDIT or _nesting_now(rid):
             raise WorkflowError(f"revision is {rev['status']}; it cannot be edited")
         norm = rev["normalized"]
         old = norm["measurements"].get(code, {}).get("value_mm")
@@ -418,7 +426,7 @@ class Workspace:
 
     def set_option(self, rid: int, group: str, value: str, reason: str) -> None:
         rev = self.revision(rid)
-        if rev["status"] not in OPEN_FOR_EDIT:
+        if rev["status"] not in OPEN_FOR_EDIT or _nesting_now(rid):
             raise WorkflowError(f"revision is {rev['status']}; it cannot be edited")
         norm = rev["normalized"]
         old = norm["options"].get(group)

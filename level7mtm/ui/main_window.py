@@ -804,7 +804,8 @@ class OrderPage(Page):
         got = measurement_dialog(self, code, label(m.get("label")) or code, m["value_mm"] or 0.0)
         if got:
             val, reason = got
-            self.win.guard(lambda: self.ws.edit_measurement(rid, code, val, reason))
+            if self.win.guard(lambda: self.ws.edit_measurement(rid, code, val, reason) or True):
+                self.win.model_again(rid)                # through CAD again, then nested again
             self.refresh()
 
     def _range_code(self, rid):
@@ -893,7 +894,8 @@ class OrderPage(Page):
         rid = self.win.current_rid
         reason = ask_reason(self, tr("Confirm problems handled…")) if rid is not None else None
         if reason:
-            self.win.guard(lambda: self.ws.resolve_problems(rid, reason))
+            if self.win.guard(lambda: self.ws.resolve_problems(rid, reason) or True):
+                self.win.model_again(rid)
             self.refresh()
 
     def cancel(self):
@@ -976,8 +978,8 @@ class ModelPage(Page):
         if rid is None or value is None:
             return
         reason = ask_reason(self, f"{group} = {value}")
-        if reason:
-            self.win.guard(lambda: self.ws.set_option(rid, group, value, reason))
+        if reason and self.win.guard(lambda: self.ws.set_option(rid, group, value, reason) or True):
+            self.win.model_again(rid)
         self.refresh()
 
     def calculate(self):
@@ -4752,6 +4754,19 @@ class MainWindow(QMainWindow):
 
     def status(self, text):
         self.statusBar().showMessage(text, 10000)
+
+    def model_again(self, rid: int):
+        """An order corrected by hand: its model written again from the base pattern (a new number) — CAD saves it
+        and it is nested again, also when it was nested or cut before."""
+        from ..services.grafis_orders import model_again
+
+        def done(g):
+            self.refresh_cad(force=True)
+            if g and g.get("path"):
+                self.status(f"{tr('Model written again')}: {os.path.basename(g['path'])}")
+            elif g and g.get("problems"):
+                self.status(tr_msg(g["problems"][0])[:200])
+        self.run(lambda: model_again(self.ws, rid), done)
 
     def guard(self, fn):
         try:

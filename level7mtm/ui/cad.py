@@ -270,6 +270,8 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
                     row["waiting"] = _grafis_wait(db, go, rj, tried.get(go["id"], 0), robot_on)   # never silent
                     row["nest_queue"] = row["waiting"] == tr("Saved by GRAFIS: waiting for nesting")
         res = results.get(rid)
+        if res and go and go["status"] == "written" and res["checked_at"] < go["created_at"]:
+            res = None                                        # a model written again since: CAD, then nested again
         if res:
             row["result"] = res["path"]
             row["times"]["nest"] = res["checked_at"]

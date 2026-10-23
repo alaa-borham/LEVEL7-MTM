@@ -369,6 +369,7 @@ AR = {
     "Read again with the current settings": "إعادة القراءة بالإعدادات الحالية",
     "Measurement limits…": "حدود القياس…",
     "Measurement checks": "فحص القياسات",
+    "Model written again": "كُتب الموديل من جديد",
     "Nest again from the base pattern?": "إعادة التعشيق من البترون الأساسي؟",
     "The model of each order chosen is written again from the base pattern with today's settings (a new number "
     "_v2, _v3 …), CAD saves it and it is nested; the copy saved before is kept in the archive.":

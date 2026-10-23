@@ -253,6 +253,15 @@ def _order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = 
     return _save(ws, res, tsha)
 
 
+def model_again(ws, rid: int) -> dict | None:
+    """After the owner corrected an order (a measurement, an option, problems confirmed): its model is written
+    again from the base pattern with a new number, goes through CAD and is nested again — also when it was nested
+    or cut before. None: the order still waits for review (or models are not written by themselves)."""
+    if not settings(ws)["enabled"] or ws.revision(rid)["status"] != "ready":
+        return None
+    return order_mdl(ws, rid, force=True)
+
+
 def _retire(ws, path: str) -> None:
     """The model written before (another number): kept in the archive as it was, out of the MDL folder — not while
     CAD has it open."""

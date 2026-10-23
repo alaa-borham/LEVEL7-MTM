@@ -325,3 +325,25 @@ def test_model_written_again_has_a_new_number_from_the_base_pattern(ws, tmp_path
     assert b"saved by CAD" not in read(again)                            # from the base pattern
     outs, _ = reread_lines(ws, [outs[0].lines[0]["revision_id"]])
     assert os.path.basename(outs[0].grafis[0]["path"]) == "Order-9-53-1_2__9-53-1_2_v3.mdl"
+
+
+@needs_mdl
+def test_a_finished_order_corrected_goes_through_cad_again(ws, tmp_path):
+    """Owner: an order nested and cut, then a measurement corrected: its model is written again from the base
+    pattern with a new number and the list shows it in CAD again (not the old nesting)."""
+    from level7mtm.services.grafis_orders import model_again
+    from level7mtm.ui.cad import order_rows
+    ws.db.set_setting("grafis.mdl", MDL)
+    ws.db.set_setting("grafis.input", str(tmp_path / "in"))
+    o = import_and_prepare(ws, XML_53)
+    rid = o.grafis[0]["revision_id"]
+    with ws.db.tx() as c:
+        c.execute("UPDATE revisions SET status='completed' WHERE id=?", (rid,))
+        c.execute("INSERT INTO grafis_results(sha256, path, checked_at, info, pieces, lines, issues, status, "
+                  "handed_over) VALUES ('r1', ?, '2000-01-01T00:00:00', '{}', '[]', ?, '[]', 'handed_over', 1)",
+                  (o.grafis[0]["path"], json.dumps([{"revision_id": rid}])))
+    ws.edit_measurement(rid, "FL", 1600.0, "customer called")             # allowed although it was cut
+    g = model_again(ws, rid)
+    assert g["status"] == "written" and g["path"].endswith("_v2.mdl")
+    row = next(r for r in order_rows(ws) if r["rid"] == rid)
+    assert row["stage"] == "grafis" and row["mdl"] == g["path"]          # in CAD again, not the old result
