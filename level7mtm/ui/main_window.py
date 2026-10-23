@@ -387,22 +387,38 @@ def fill_customer_box(ws, box) -> None:
     box.blockSignals(False)
 
 
+_REREADING: set = set()                        # customers whose held orders are being read again now
+
+
 def reread_held_question(page, msg: str, cid: str | None = None) -> None:
-    """After the customer's settings were saved: read his held orders again (they may pass now)."""
+    """After the customer's settings were saved: his held orders are read again at once, in the background (owner:
+    asked first, an order missed the question and kept its old messages although its Variation had a meaning).
+    The status bar says how far it is; the result comes at the end."""
     from ..services.customers import held_files, held_lines, reread_held
     cid = cid or page.ws.customer()                      # the customer edited (in the background: no screen choice)
     fids = held_files(page.ws, cid)
-    n = len(fids)
-    if not n:
+    if not fids:
         QMessageBox.information(page, tr("Saved"), msg)
         return
-    lines = held_lines(page.ws, fids)                   # held in the program (read before), not the folder's files
-    if QMessageBox.question(page, tr("Saved"), msg + "\n\n" + tr("Read this customer's held orders again now?") +
-                            "\n" + tr("{n} XML files read before ({lines} order lines) wait in the program for "
-                                       "review").format(n=n, lines=lines)) == QMessageBox.Yes:
-        page.win.run(lambda: reread_held(page.ws, cid, fids), lambda outs: (
-            page.win.refresh_cad(force=True),
-            QMessageBox.information(page, tr("Saved"), reread_report(page.ws, outs))))
+    win = page.win
+    if cid in _REREADING:                                # read again already (an earlier save): it takes this one
+        win.status(tr("Reading the held orders again") + "…")
+        return
+    _REREADING.add(cid)
+    lines = held_lines(page.ws, fids)
+    win.status(f"{tr('Saved')} — {tr('Reading the held orders again')}: {len(fids)} XML ({lines})")
+
+    def done(outs):
+        _REREADING.discard(cid)
+        win.refresh_cad(force=True)
+        QMessageBox.information(win, tr("Saved"), msg + "\n\n" + reread_report(win.ws, outs))
+
+    def work():
+        try:
+            return reread_held(page.ws, cid, fids)
+        finally:
+            _REREADING.discard(cid)
+    win.run(work, done)
 
 
 def reread_report(ws, outs) -> str:

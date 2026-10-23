@@ -681,3 +681,36 @@ def test_each_customer_chooses_his_cutting_files_folder(ws, tmp_path):
     assert "Dubai cutter" in t.cellWidget(row, 1).findChildren(QtWidgets.QToolButton)[0].text()
     win.close()
     app.processEvents()
+
+
+def test_held_orders_read_again_at_once_after_saving(ws, xml53, monkeypatch):
+    """Owner: an order kept its old messages ("Variation … has no meaning") although the Variation was given one
+    — the question after saving was missed. Saving now reads the held orders again at once, without asking."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    import time
+
+    from level7mtm.services.options import option_table, save_options
+    from level7mtm.ui.main_window import MainWindow, reread_held_question
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    asked, told = [], []
+    monkeypatch.setattr(QtWidgets.QMessageBox, "question", staticmethod(lambda *a, **k: asked.append(a)))
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information", staticmethod(lambda *a, **k: told.append(a[2])))
+    rid = ws.import_data(open(xml53, "rb").read().replace(b"Collar Square", b"Collar Weird"), "w.xml") \
+        .lines[0]["revision_id"]
+    g = option_table(ws)
+    next(v for v in next(x for x in g if x["group"] == "collar")["values"]
+         if v["value"] == "square")["erp_names"].append("Collar Weird")
+    save_options(ws, g)
+    line = ws.revision(rid)["line_number"]
+    win = MainWindow(ws)
+    reread_held_question(win.pages["Design options"], "Saved")
+    t0 = time.time()
+    while not told and time.time() - t0 < 20:
+        app.processEvents()
+        time.sleep(0.05)
+    assert not asked and told                                             # no question; the result at the end
+    now_ = ws.db.one("SELECT status FROM revisions WHERE line_number=? ORDER BY id DESC", (line,))
+    assert now_["status"] == "ready"
+    win.close()
+    app.processEvents()
