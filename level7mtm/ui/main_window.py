@@ -5021,8 +5021,9 @@ class MainWindow(QMainWindow):
                                      known=self.ws.already_read)     # files read before stay read
         self.ws.db.set_setting("watch.folder", folder)
         self.ws.db.set_setting("watch.enabled", True)
-        from ..services.done_folder import sweep_finished
+        from ..services.done_folder import sweep_finished, sweep_held
         moved = self.guard(lambda: sweep_finished(self.ws)) or []       # finished before: on to done now
+        self.guard(lambda: sweep_held(self.ws))                          # needs attention: into error
         if moved:
             self.status(f"{tr('Finished XML (done)')}: {len(moved)}")
         self.timer.start(self.watch_interval_s() * 1000)

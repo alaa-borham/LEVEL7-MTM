@@ -120,3 +120,36 @@ def test_finished_xml_moved_by_hand_into_process_still_goes_to_done(ws, tmp_path
     with ws.db.tx() as c:
         c.execute("UPDATE revisions SET status='completed'")
     assert sweep_finished(ws) == [str(main / "done" / src.name)] and not (proc / src.name).exists()
+
+
+def test_needs_review_goes_to_error_and_back_in_process_is_done_again(ws, tmp_path):
+    """Owner: everything that needs attention goes to error — also an order held when read (a Variation without
+    meaning); moved back into process, it is read again with today's settings and goes on."""
+    from level7mtm.services.done_folder import sweep_held
+    from level7mtm.services.grafis_orders import import_and_prepare
+    from level7mtm.services.options import option_table, save_options
+    main = tmp_path / "ERP"
+    proc = main / "process"
+    proc.mkdir(parents=True)
+    ws.db.set_setting("watch.folder", str(proc))
+    ws.db.set_setting("grafis.auto_mdl", False)                          # models aside: the XML's own way
+    src = proc / "Order-w.xml"
+    src.write_bytes(open(XML_53, "rb").read().replace(b"Collar Square", b"Collar Weird"))
+    out = import_and_prepare(ws, str(src))
+    assert out.lines[0]["status"] == "needs_review"
+    err = main / "error" / "Order-w.xml"
+    assert err.exists() and not src.exists()                              # into error, with the reason
+    assert "Collar Weird" in (main / "error" / "Order-w.txt").read_text(encoding="utf-8-sig")
+    g = option_table(ws)
+    next(v for v in next(x for x in g if x["group"] == "collar")["values"]
+         if v["value"] == "square")["erp_names"].append("Collar Weird")
+    save_options(ws, g)
+    shutil.move(str(err), str(src))                                       # the owner moves it back
+    again = import_and_prepare(ws, str(src))
+    assert again.status == "imported" and all(ln["status"] == "ready" for ln in again.lines)
+    assert src.exists()                                                   # fine now: stays until it is finished
+    # a file held before this version, still in process: moved when the watch starts
+    other = proc / "Order-x.xml"
+    other.write_bytes(open(XML_53, "rb").read().replace(b"9-53-", b"9-77-").replace(b"Collar Square", b"Collar X"))
+    ws.import_file(str(other))
+    assert sweep_held(ws) == [str(main / "error" / "Order-x.xml")] and not other.exists()

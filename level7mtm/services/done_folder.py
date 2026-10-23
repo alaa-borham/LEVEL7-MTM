@@ -133,6 +133,21 @@ def sweep_finished(ws) -> list[str]:
     return move_finished(ws, rids) if rids else []
 
 
+def sweep_held(ws) -> list[str]:
+    """XML files still in process whose order lines wait for review or got no model: into error with the reason
+    (owner: everything that needs attention in one folder). Run when the folder watch starts."""
+    rows = ws.db.q("SELECT id, line_number, normalized FROM revisions WHERE status='needs_review' OR id IN (SELECT "
+                   "r.id FROM revisions r WHERE r.status='ready' AND (SELECT g.status FROM grafis_orders g WHERE "
+                   "g.revision_id=r.id ORDER BY g.id DESC LIMIT 1) IN ('blocked','not_configured'))")
+    out = []
+    import json as _json
+    for r in rows:
+        probs = [p["message"] for p in _json.loads(r["normalized"]).get("problems", [])
+                 if p.get("severity") in ("review", "error")] or ["no model written"]
+        out += move_failed(ws, [r["id"]], [f"{r['line_number']}: {m}" for m in probs], "order line needs attention")
+    return out
+
+
 def move_failed(ws, revision_ids, problems: list[str], kind: str) -> list[str]:
     """The XML of these order lines into <ERP>/ER (one of its lines has an error)."""
     out = []

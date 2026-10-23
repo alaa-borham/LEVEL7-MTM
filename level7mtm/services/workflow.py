@@ -296,7 +296,10 @@ class Workspace:
                 sha = hashlib.sha256(fh.read()).hexdigest()
         except OSError:
             return False
-        f = self.db.one("SELECT id, status FROM import_files WHERE sha256=?", (sha,))
+        f = self.db.one("SELECT id, status, source_path FROM import_files WHERE sha256=?", (sha,))
+        if f and f["source_path"] and os.path.normcase(os.path.dirname(os.path.abspath(f["source_path"]))) != \
+                os.path.normcase(os.path.dirname(os.path.abspath(path))):
+            return False                               # moved back by the owner (e.g. from error): read again
         return bool(f) and f["status"] == "imported" and not self._all_removed(f["id"])
 
     def _all_removed(self, fid: int) -> bool:

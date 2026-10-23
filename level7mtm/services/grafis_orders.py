@@ -303,24 +303,56 @@ def import_and_prepare(ws, path: str):
         for ln in out.lines:
             if ln["action"] in ("new", "new_revision"):
                 out.grafis.append(order_mdl(ws, ln["revision_id"]))
-    elif settings(ws)["enabled"] and out.status == "duplicate":
-        again = _prepare_cleaned(ws, path)               # the same XML again after its lines were cleaned
-        if again:
+    elif out.status == "duplicate":
+        redo = _moved_back(ws, path)                     # owner: from error back into process — done again
+        again = [] if redo is not None or not settings(ws)["enabled"] else _prepare_cleaned(ws, path)
+        if redo is not None:
+            out = redo
+        elif again:                                      # the same XML again after its lines were cleaned
             out.grafis += again
             out.message = "the same file was already imported; its order lines had been cleaned from the list — " \
                           "their GRAFIS models are written again"
+    held, why = [], []                                   # owner: everything that needs attention goes to error
+    if out.status == "imported":
+        held = [ln["revision_id"] for ln in out.lines if ln.get("status") == "needs_review" and ln.get("revision_id")]
+        why = [f"{ws.revision(r)['line_number']}: {p['message']}" for r in held
+               for p in ws.revision(r)["normalized"].get("problems", []) if p.get("severity") in ("review", "error")]
     if settings(ws)["enabled"]:
         bad = [g for g in out.grafis if g["status"] in ("blocked", "not_configured")]
         for k, g in enumerate(bad):
             errors_folder.report(ws, f"{stem}__{g['line_number']}", g["problems"],
                                  f"order line {g['line_number']}: no GRAFIS model written",
                                  copy_file=path if k == 0 else None)
-        if bad:
-            from .done_folder import move_failed
-            move_failed(ws, [g["revision_id"] for g in bad],
-                        [f"{g['line_number']}: {p}" for g in bad for p in g["problems"]],
-                        "order line: no GRAFIS model written")
+        held += [g["revision_id"] for g in bad]
+        why += [f"{g['line_number']}: {p}" for g in bad for p in g["problems"]]
+    if held:                                             # one move, every reason in its .txt
+        from .done_folder import move_failed
+        move_failed(ws, held, why, "order line needs attention")
     return out
+
+
+def _moved_back(ws, path: str):
+    """An XML read before and moved back into process by the owner (from error): its order lines that did not
+    get their cutting files are read again with today's settings and their models written again from the base
+    pattern (a new number) — through CAD and the nesting again. None: nothing to do again."""
+    from .customers import reread_lines
+    with open(path, "rb") as fh:
+        sha = hashlib.sha256(fh.read()).hexdigest()
+    f = ws.db.one("SELECT id, source_path FROM import_files WHERE sha256=?", (sha,))
+    if not f or not f["source_path"] or os.path.normcase(os.path.dirname(os.path.abspath(f["source_path"]))) == \
+            os.path.normcase(os.path.dirname(os.path.abspath(path))):
+        return None                                      # not moved: the same file read again where it was
+    rids = [r["id"] for r in ws.db.q("SELECT id FROM revisions WHERE import_file=? AND status NOT IN "
+                                     "('superseded','cancelled','completed') ORDER BY id", (f["id"],))]
+    if not rids:
+        return None
+    with ws.db.tx() as c:                                # the file is here now (moved by hand)
+        c.execute("UPDATE import_files SET source_path=? WHERE id=?", (path, f["id"]))
+    outs, _skipped = reread_lines(ws, rids)
+    if not outs:
+        return None
+    outs[0].message = "moved back into process: its order lines read again and their models written again"
+    return outs[0]
 
 
 def _prepare_cleaned(ws, path: str) -> list[dict]:

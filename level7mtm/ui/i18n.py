@@ -369,6 +369,10 @@ AR = {
     "Read again with the current settings": "إعادة القراءة بالإعدادات الحالية",
     "Measurement limits…": "حدود القياس…",
     "Measurement checks": "فحص القياسات",
+    "moved back into process: its order lines read again and their models written again":
+        "أُعيد إلى process: قُرئت أسطر طلباته من جديد وكُتبت موديلاتها من جديد",
+    "order line needs review": "سطر الطلب يحتاج مراجعة",
+    "order line needs attention": "سطر الطلب يحتاج تدخل",
     "Orders this shift": "طلبات هذه الوردية",
     "Cutting files this shift": "تعشيقات هذه الوردية",
     "End the shift": "إنهاء الوردية",
