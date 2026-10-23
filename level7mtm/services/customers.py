@@ -526,6 +526,40 @@ def measurement_table(ws, cid: str | None = None) -> str:
         return prof.get("measurements", {}).get("measurement_table") or ""
 
 
+def measure_range(ws, cid: str, code: str):
+    """The range the customer's / product's XML value of this measurement must be in ([low, high] in the XML's
+    unit), None = not checked; also the unit."""
+    with ws.for_customer(cid):
+        _, prof = ws.active("mapping")
+    f = prof["measurements"]["fields"].get(code) or {}
+    return (list(f["range"]) if f.get("range") else None), f.get("unit", "cm")
+
+
+def set_measure_range(ws, cid: str, code: str, rng) -> bool:
+    """Set (or with None remove) the range of a measurement for this customer / product only (a new mapping
+    version; another customer keeps his). Returns True when changed."""
+    from .xtable import _next_version
+    with ws.for_customer(cid):
+        _, prof = ws.active("mapping")
+        f = prof["measurements"]["fields"].get(code)
+        if f is None:
+            raise WorkflowError(f"measurement {code} is not in this customer's measurements")
+        new = [float(rng[0]), float(rng[1])] if rng else None
+        if new and new[0] > new[1]:
+            raise WorkflowError(f"measurement {code}: the lowest value is above the highest")
+        if (list(f["range"]) if f.get("range") else None) == new:
+            return False
+        prof = copy.deepcopy(prof)
+        f = prof["measurements"]["fields"][code]
+        if new:
+            f["range"] = new
+        else:
+            f.pop("range", None)
+        prof["version"] = _next_version(ws, "mapping", prof["profile_id"], prof["version"])
+        ws.set_active("mapping", ws.save_document("mapping", prof, f"range of {code}: {new or '(any)'}"))
+    return True
+
+
 def set_measurement_table(ws, cid: str, name: str) -> bool:
     """Set the Measurement-Table-Name of the customer / product (a new mapping version; an order whose XML has
     another name waits for review). Returns True when changed."""

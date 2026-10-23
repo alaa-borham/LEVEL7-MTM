@@ -546,3 +546,46 @@ def test_one_xml_with_lines_of_two_products_each_line_its_own_settings(ws, xml53
     data2 = data.replace(b'Item Number="91002"', b'Item Number="99999"')
     o2 = ws.import_data(data2.replace(b"9-53-", b"9-54-"), "unknown.xml")
     assert o2.status == "failed" and "99999" in o2.message                          # a product not set up: said
+
+
+def test_measurement_limits_set_for_one_customer_only(ws, xml53):
+    """"FL = 83 cm outside 100–200 cm": the owner sets the limits (or none) for this customer / product; the
+    held order then passes when read again, another customer keeps his limits."""
+    from level7mtm.services.customers import held_files, measure_range, reread_held, set_measure_range
+    cid = customers.add_customer(ws, "Richy", "From Richy")
+    code = "FL"
+    assert measure_range(ws, cid, code)[0]                               # copied from LEVEL7 (100–200 cm)
+    data = _xml(xml53, "From Richy").replace(b'Abbreviation="FL" Value="157.00"', b'Abbreviation="FL" Value="83.00"')
+    out = ws.import_data(data, "r.xml")
+    rev = ws.revision(out.lines[0]["revision_id"])
+    assert any(p["code"] == "measure.range" for p in rev["normalized"]["problems"])
+    level7 = measure_range(ws, "level7", code)
+    assert set_measure_range(ws, cid, code, None) and measure_range(ws, cid, code)[0] is None
+    assert not set_measure_range(ws, cid, code, None)                    # unchanged: no new version
+    assert measure_range(ws, "level7", code) == level7                   # the other customer keeps his
+    reread_held(ws, cid, held_files(ws, cid))
+    rid = ws.db.one("SELECT id FROM revisions WHERE line_number=? AND status NOT IN ('cancelled','superseded') "
+                    "ORDER BY id DESC", (rev["line_number"],))["id"]
+    assert not any(p["code"] == "measure.range" for p in ws.revision(rid)["normalized"]["problems"])
+    set_measure_range(ws, cid, code, (0.5, 300))
+    assert measure_range(ws, cid, code)[0] == [0.5, 300.0]
+    with pytest.raises(Exception):
+        set_measure_range(ws, cid, code, (5, 1))
+
+
+def test_order_page_limits_button_finds_the_measurement_out_of_range(ws, xml53):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    data = open(xml53, "rb").read().replace(b'Abbreviation="FL" Value="157.00"', b'Abbreviation="FL" Value="83.00"')
+    rid = ws.import_data(data, "r.xml").lines[0]["revision_id"]
+    win = MainWindow(ws)
+    win.current_rid = rid
+    page = win.pages["Order details"]
+    page.refresh()
+    assert page._range_code(rid) == "FL"                                  # from "FL = 83 cm outside …"
+    assert any(b.text() == "حدود القياس…" or b.text() == "Measurement limits…"
+               for b in page.findChildren(QtWidgets.QPushButton))
+    win.close()
+    app.processEvents()

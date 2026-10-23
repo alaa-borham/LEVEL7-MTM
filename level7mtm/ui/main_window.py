@@ -387,10 +387,10 @@ def fill_customer_box(ws, box) -> None:
     box.blockSignals(False)
 
 
-def reread_held_question(page, msg: str) -> None:
+def reread_held_question(page, msg: str, cid: str | None = None) -> None:
     """After the customer's settings were saved: read his held orders again (they may pass now)."""
     from ..services.customers import held_files, held_lines, reread_held
-    cid = page.ws.customer()                             # the customer edited (in the background: no screen choice)
+    cid = cid or page.ws.customer()                      # the customer edited (in the background: no screen choice)
     fids = held_files(page.ws, cid)
     n = len(fids)
     if not n:
@@ -752,7 +752,8 @@ class OrderPage(Page):
         sp.addWidget(self.probs)
         lay.addWidget(sp, 2)
         bar = QHBoxLayout()
-        for text, fn in (("Edit measurement…", self.edit_measure), ("Confirm problems handled…", self.resolve),
+        for text, fn in (("Edit measurement…", self.edit_measure), ("Measurement limits…", self.edit_range),
+                         ("Confirm problems handled…", self.resolve),
                          ("Cancel order…", self.cancel), ("Calculate", self.calculate)):
             b = QPushButton(tr(text))
             b.clicked.connect(fn)
@@ -805,6 +806,65 @@ class OrderPage(Page):
             val, reason = got
             self.win.guard(lambda: self.ws.edit_measurement(rid, code, val, reason))
             self.refresh()
+
+    def _range_code(self, rid):
+        """The measurement chosen in the table, else the one an "outside the range" message names."""
+        codes = selected_data(self.meas)
+        if codes:
+            return codes[0]
+        for p in self.ws.revision(rid)["normalized"]["problems"]:
+            if p.get("code") == "measure.range":
+                return p.get("field") or (re.match(r"(\S+) = ", p["message"]) or [None, None])[1]
+        return None
+
+    def edit_range(self):
+        """The lowest / highest value this order's customer (or product) accepts for a measurement — or no check:
+        his settings only, another customer keeps his own; then his held orders may be read again."""
+        from PySide6.QtCore import QLocale
+
+        from ..services.customers import measure_range, names, set_measure_range
+        rid = self.win.current_rid
+        code = self._range_code(rid) if rid is not None else None
+        if not code:
+            QMessageBox.information(self, tr("Measurement limits…"), tr("Choose a measurement in the table"))
+            return
+        cid = self.ws.customer_of(rid)
+        rng, unit = measure_range(self.ws, cid, code)
+        d = QDialog(self)
+        d.setWindowTitle(f"{tr('Measurement limits…')} — {names(self.ws).get(cid, cid)}")
+        f = QFormLayout(d)
+        f.addRow(QLabel(f"<b>{code}</b> — {tr('for this customer / product only')}"))
+        boxes = []
+        for text, v in ((tr("Lowest"), rng[0] if rng else 0), (tr("Highest"), rng[1] if rng else 0)):
+            b = QDoubleSpinBox()
+            b.setLocale(QLocale(QLocale.English, QLocale.UnitedStates))
+            b.setLayoutDirection(Qt.LeftToRight)
+            b.setRange(0, 10000)
+            b.setDecimals(1)
+            b.setSuffix(f" {unit}")
+            b.setValue(v)
+            f.addRow(text + ":", b)
+            boxes.append(b)
+        free = QCheckBox(tr("No limit (any value is accepted)"))
+        free.setChecked(rng is None)
+        free.toggled.connect(lambda on: [b.setEnabled(not on) for b in boxes])
+        for b in boxes:
+            b.setEnabled(rng is not None)
+        f.addRow(free)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(d.accept)
+        bb.rejected.connect(d.reject)
+        f.addRow(bb)
+        if d.exec() != QDialog.Accepted:
+            return
+        new = None if free.isChecked() else (boxes[0].value(), boxes[1].value())
+        try:
+            changed = set_measure_range(self.ws, cid, code, new)
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(self, tr("Error"), tr_msg(str(e)))
+            return
+        if changed:
+            reread_held_question(self, tr("Saved"), cid)
 
     def resolve(self):
         rid = self.win.current_rid
