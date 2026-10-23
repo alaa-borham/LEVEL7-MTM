@@ -214,13 +214,34 @@ class Workspace:
                                      "{}")).lastrowid
                 self.db.audit(c, self.actor, "import.failed", "import_file", fid, {"file": name, "message": msg})
             return FileOutcome(name, status, msg)
+        if isinstance(cid, dict):          # lines of several products: each read with its own product's settings
+            return self._import_split(data, name, source_path, sha, dup, cid)
         with self.for_customer(cid):
             return self._import_for(data, name, source_path, sha, dup, cid)
 
-    def _import_for(self, data, name, source_path, sha, dup, cid) -> FileOutcome:
+    def _import_split(self, data, name, source_path, sha, dup, by_item: dict) -> FileOutcome:
+        """One XML with order lines of several products: each product reads its own lines (its size table,
+        options, patterns), all under the one imported file."""
+        out = FileOutcome(name, "imported")
+        fid = None
+        for item, pid in sorted(by_item.items()):
+            with self.for_customer(pid):
+                o = self._import_for(data, name, source_path, sha, dup if fid is None else None, pid, {item}, fid)
+            fid = fid or self.db.one("SELECT id FROM import_files WHERE sha256=?", (sha,))["id"]
+            out.lines += o.lines
+            if o.status != "imported":
+                out.status, out.message = o.status, "; ".join(x for x in (out.message, o.message) if x)
+        if out.status != "imported":
+            with self.db.tx() as c:
+                c.execute("UPDATE import_files SET status=?, message=? WHERE id=?", (out.status, out.message, fid))
+        return out
+
+    def _import_for(self, data, name, source_path, sha, dup, cid, items=None, fid=None) -> FileOutcome:
         map_pk, profile = self.active("mapping")
         res: ImportResult = import_bytes(data, profile)
         res.customer = cid
+        if items is not None:                           # this product's lines only (the others read with theirs)
+            res.lines = [ln for ln in res.lines if (ln.item or "").strip() in items]
         from .customers import _plain, patterns
         pats = {_plain(p["variation"]) for p in patterns(self, cid)}
         for ln in res.lines:                            # a pattern's Variation chooses the model: not an option
@@ -229,7 +250,9 @@ class Workspace:
         msg = "; ".join(p.message for p in res.problems if p.severity == "error")
         out = FileOutcome(name, status, msg)
         with self.db.tx() as c:
-            if dup:      # a failed file imported again (e.g. after a mapping fix) — update the record
+            if fid is not None:                         # the same file, read already for another product
+                pass
+            elif dup:    # a failed file imported again (e.g. after a mapping fix) — update the record
                 c.execute("UPDATE import_files SET status=?, message=?, mapping_doc=?, received_at=? WHERE id=?",
                           (status, msg, map_pk, now(), dup["id"]))
                 fid = dup["id"]

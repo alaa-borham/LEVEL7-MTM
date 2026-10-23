@@ -85,9 +85,10 @@ def _items_of(ws, cid: str, root) -> list[str]:
     return [(select_one(el, L.get("item", "Item/@Number"), ns) or "").strip() for el in select(root, L["path"], ns)]
 
 
-def customer_for_xml(ws, data: bytes) -> tuple[str | None, str]:
-    """The customer an XML belongs to, by its ``Reference``: (id, "") or (None, why). An XML that cannot be read
-    goes to the first customer (the import then says what is wrong with it)."""
+def customer_for_xml(ws, data: bytes) -> tuple[str | dict | None, str]:
+    """The customer an XML belongs to, by its ``Reference``: (id, "") or (None, why); lines of several products
+    of the customer: ({Item Number: product id}, ""). An XML that cannot be read goes to the first customer (the
+    import then says what is wrong with it)."""
     try:
         root = load_bytes(data).root
     except XmlError:
@@ -104,8 +105,13 @@ def customer_for_xml(ws, data: bytes) -> tuple[str | None, str]:
         if not prods:
             return hit["id"], ""
         items = sorted(set(_items_of(ws, hit["id"], root)))       # the product: by the Item Number of the lines
-        if len(items) > 1:
-            return None, f"the XML has order lines of several products (Item {', '.join(items)}) — one per file"
+        if len(items) > 1:                         # one XML, lines of several products: each line to its own
+            by_item = {it: next((p["id"] for p in prods if p.get("item") == it), None) for it in items}
+            missing = [it for it, pid in by_item.items() if pid is None]
+            if missing:
+                return None, (f"no product of {hit['name']} has the Item Number '{', '.join(missing)}' — add it "
+                              f"in Customers (known: {', '.join(p.get('item', '') for p in prods)})")
+            return by_item, ""
         prod = next((p for p in prods if items and p.get("item") == items[0]), None)
         if prod is None:
             return None, (f"no product of {hit['name']} has the Item Number '{items[0] if items else ''}' — add it "

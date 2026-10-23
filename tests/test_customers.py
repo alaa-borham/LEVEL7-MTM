@@ -517,3 +517,32 @@ def test_one_file_failing_does_not_stop_the_others(ws, xml53, monkeypatch):
                         else real(w, fid))
     outs = cs.reread_held(ws, "level7", fids)
     assert [o.status for o in outs] == ["imported", "failed", "imported"] and outs[1].file_name == "o1.xml"
+
+
+@pytest.mark.skipif(not os.path.exists(__import__("conftest").MDL), reason="customer MDL not in the checkout")
+def test_one_xml_with_lines_of_two_products_each_line_its_own_settings(ws, xml53, tmp_path):
+    """One XML for one customer with lines of two products (Item Numbers): each line is read with its own
+    product's settings and its model written from its own product's pattern."""
+    import shutil
+
+    from conftest import MDL
+    from level7mtm.services.grafis_orders import import_and_prepare
+    a, b = tmp_path / "thobe.mdl", tmp_path / "shirt.mdl"
+    shutil.copy(MDL, a)
+    shutil.copy(MDL, b)
+    cid = customers.add_customer(ws, "Dubai", "From Dubai")
+    p1 = customers.add_product(ws, cid, "Thobe", "91001", mdl=str(a))
+    p2 = customers.add_product(ws, cid, "Shirt", "91002", mdl=str(b))
+    data = _xml(xml53, "From Dubai")
+    i = data.rfind(b'Item Number="91001"')
+    data = data[:i] + b'Item Number="91002"' + data[i + len(b'Item Number="91001"'):]
+    ws.db.set_setting("grafis.input", str(tmp_path / "MDL"))
+    x = tmp_path / "Order-mixed.xml"
+    x.write_bytes(data)
+    out = import_and_prepare(ws, str(x))
+    assert out.status == "imported" and len(out.lines) == 2
+    assert [ws.customer_of(ln["revision_id"]) for ln in out.lines] == [p1, p2]
+    assert sorted(g["template"] for g in out.grafis) == sorted([str(a), str(b)])     # each its own pattern
+    data2 = data.replace(b'Item Number="91002"', b'Item Number="99999"')
+    o2 = ws.import_data(data2.replace(b"9-53-", b"9-54-"), "unknown.xml")
+    assert o2.status == "failed" and "99999" in o2.message                          # a product not set up: said
