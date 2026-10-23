@@ -369,6 +369,7 @@ AR = {
     "Read again with the current settings": "إعادة القراءة بالإعدادات الحالية",
     "Measurement limits…": "حدود القياس…",
     "Measurement checks": "فحص القياسات",
+    "the nesting is stopped: press «Start» on the nesting queue": "التعشيق متوقف: اضغط «تشغيل» على قائمة انتظار التعشيق",
     "The marker file of this nesting is no longer there": "ملف الماركر لهذا التعشيق لم يعد موجودًا",
     "The marker file of this nesting could not be read": "تعذّرت قراءة ملف الماركر لهذا التعشيق",
     "The cutting files are kept; «Nest again» makes the marker anew":

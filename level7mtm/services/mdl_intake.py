@@ -30,10 +30,16 @@ def _sha(path):
         return hashlib.sha256(fh.read()).hexdigest()
 
 
+def identity(path: str, content: str | None = None) -> str:
+    """The nesting job of a saved model: its content + the file — two order lines with identical models are still
+    two jobs (two garments)."""
+    content = content or _sha(path)
+    return hashlib.sha256(f"{content}|{os.path.abspath(path).lower()}".encode()).hexdigest()
+
+
 def check_mdl(ws, path: str) -> tuple[ScbCheck, dict | None]:
     content = _sha(path)
-    # identity = content + file: two order lines with identical models are still two jobs (two garments)
-    chk = ScbCheck(path, hashlib.sha256(f"{content}|{os.path.abspath(path).lower()}".encode()).hexdigest())
+    chk = ScbCheck(path, identity(path, content))
     row = ws.db.one("SELECT * FROM grafis_orders WHERE status='written' AND path=? ORDER BY id DESC", (path,))
     if row is None:
         by_name = [r for r in ws.db.q("SELECT * FROM grafis_orders WHERE status='written' ORDER BY id DESC")
@@ -158,19 +164,42 @@ def next_queued(ws) -> str | None:
     from .grafis_robot import file_sha
     if not settings(ws)["enabled"]:
         return None                                   # cutting files are not made by themselves
-    for r in ws.db.q("SELECT path, sha256 FROM grafis_results WHERE archived=0 AND handed_over=1 AND path IS NOT NULL "
-                     "AND sha256 NOT IN (SELECT sha256 FROM cutting_jobs) ORDER BY id"):
-        if r["path"] and os.path.isfile(r["path"]):
-            return r["path"]
-    known = {r["path"] for r in ws.db.q("SELECT path FROM grafis_results WHERE path IS NOT NULL")}
+    stale = []
+    try:
+        for r in ws.db.q("SELECT id, path, sha256 FROM grafis_results WHERE archived=0 AND handed_over=1 AND path IS "
+                         "NOT NULL AND sha256 NOT IN (SELECT sha256 FROM cutting_jobs) ORDER BY id"):
+            if not (r["path"] and os.path.isfile(r["path"])):
+                continue
+            try:
+                same = identity(r["path"], file_sha(r["path"])) == r["sha256"]
+            except OSError:
+                continue                              # being written: looked at next time
+            if same:
+                return r["path"]
+            # the file changed since it was handed over (saved again by CAD, or written again after the order was
+            # read again): this old job is over — left in the queue it was taken again and again, and every model
+            # after it waited (owner: "the nesting does not work most of the time"); the file itself is looked at
+            # as it is now (below / by the folder watch)
+            stale.append(r["id"])
+    finally:
+        if stale:
+            with ws.db.tx() as c:
+                c.executemany("UPDATE grafis_results SET handed_over=0, archived=1, status='replaced' WHERE id=?",
+                              [(i,) for i in stale])
+    known = {r["sha256"] for r in ws.db.q("SELECT sha256 FROM grafis_results")}   # by content, not by name: a
+    latest: dict[str, str] = {}                       # model saved again is new; per file its newest writing
     for g in ws.db.q("SELECT path, info FROM grafis_orders WHERE status='written' AND archived=0 AND id IN "
                      "(SELECT MAX(id) FROM grafis_orders GROUP BY revision_id) ORDER BY id"):
-        p = g["path"]
-        if not p or p in known or not os.path.isfile(p):
+        if g["path"]:
+            latest.pop(g["path"], None)
+            latest[g["path"]] = json.loads(g["info"]).get("sha256")
+    for p, written in latest.items():                # oldest first
+        if not os.path.isfile(p):
             continue
         try:
-            if file_sha(p) != json.loads(g["info"]).get("sha256"):      # saved by GRAFIS, never looked at
-                return p
+            sha = file_sha(p)
+            if sha != written and identity(p, sha) not in known:
+                return p                              # saved by GRAFIS, never looked at
         except OSError:
             continue
     return None

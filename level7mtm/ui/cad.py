@@ -213,6 +213,7 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
     from ..services.customers import names as customer_names
     names = customer_names(ws)
     nesting_now = {r for r, m in snapshot().items() if m.get("what") == "nesting"}
+    paused = bool(db.get_setting("nesting.paused", False))
     # everything in a few queries (thousands of lines: one query per line held the database for seconds)
     gos_of: dict[int, list] = {}
     for g in db.q("SELECT * FROM grafis_orders ORDER BY id DESC"):
@@ -293,6 +294,9 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
         if res:                                               # GRAFIS saved it: an old robot failure is over
             row["problems"] = [p for p in row["problems"] if not p.startswith(tr("GRAFIS robot") + ":")]
             row["robot_failed"] = False
+        if row.get("nest_queue") and paused:              # never silent: why the queue does not move
+            row["waiting"] = (row["waiting"] or tr("Waiting for nesting")) + " — " + tr(
+                "the nesting is stopped: press «Start» on the nesting queue")
         if row["problems"] and row["stage"] != "cut":
             row["stage_reached"], row["stage"] = row["stage"], "err"
         out.append(row)

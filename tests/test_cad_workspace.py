@@ -772,6 +772,23 @@ def test_x_values_in_the_panel_are_in_order(ws):
     app.processEvents()
 
 
+def test_a_changed_model_never_holds_up_the_nesting_queue(ws, tmp_path):
+    """The oldest model in the queue was saved again (or written again after a re-read): its old job leaves the
+    queue — it was taken again and again and every model after it waited."""
+    from level7mtm.services.mdl_intake import identity, next_queued
+    from level7mtm.storage.db import now
+    a, b = tmp_path / "A.mdl", tmp_path / "B.mdl"
+    a.write_text("saved once")
+    b.write_text("saved")
+    old_a = identity(str(a))
+    a.write_text("saved again")                                          # changed after it was handed over
+    with ws.db.tx() as c:
+        for sha, p in ((old_a, a), (identity(str(b)), b)):
+            c.execute("INSERT INTO grafis_results(sha256, path, checked_at, info, pieces, lines, issues, status, "
+                      "handed_over) VALUES (?, ?, ?, '{}', '[]', '[]', '[]', 'handed_over', 1)", (sha, str(p), now()))
+    assert next_queued(ws) == str(b)                                     # the next one, not A for ever
+    assert ws.db.one("SELECT archived, handed_over FROM grafis_results WHERE sha256=?", (old_a,))["archived"] == 1
+
 def test_nesting_queue_start_stop_and_left_over_models(ws, tmp_path):
     """The button on the nesting queue stops / starts the nesting; models left in the queue (saved while it was
     stopped, handed over and never nested) are taken again in turn."""
@@ -781,15 +798,17 @@ def test_nesting_queue_start_stop_and_left_over_models(ws, tmp_path):
     from level7mtm.storage.db import now
     QtWidgets = pytest.importorskip("PySide6.QtWidgets")
     from level7mtm.ui.main_window import MainWindow
+    from level7mtm.services.mdl_intake import identity
     m = tmp_path / "Order-1.mdl"
     m.write_text("saved")
+    s1 = identity(str(m))
     with ws.db.tx() as c:
         c.execute("INSERT INTO grafis_results(sha256, path, checked_at, info, pieces, lines, issues, status, "
-                  "handed_over) VALUES ('s1', ?, ?, '{}', '[]', '[]', '[]', 'handed_over', 1)", (str(m), now()))
+                  "handed_over) VALUES (?, ?, ?, '{}', '[]', '[]', '[]', 'handed_over', 1)", (s1, str(m), now()))
     assert next_queued(ws) == str(m)                                     # handed over, never nested
     with ws.db.tx() as c:
         c.execute("INSERT INTO cutting_jobs(sha256, scb_path, created_at, status, outputs, info, log) "
-                  "VALUES ('s1', ?, ?, 'done', '[]', ?, '')", (str(m), now(), json.dumps({})))
+                  "VALUES (?, ?, ?, 'done', '[]', ?, '')", (s1, str(m), now(), json.dumps({})))
     assert next_queued(ws) is None                                       # nested: not again
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     win = MainWindow(ws)
