@@ -472,7 +472,7 @@ def test_many_held_files_counted_fast_and_reported_short(ws, xml53):
     for i in range(25):
         ws.import_data(data.replace(b"9-53-", f"9-{100 + i}-".encode()), f"o{i}.xml")
     fids = held_files(ws, "level7")
-    assert len(fids) == 25 and held_lines(ws, fids) == 50
+    assert len(fids) == 25 and held_lines(ws, fids) == 25                # the held line of each (not the ready)
     text = reread_report(ws, reread_held(ws, "level7", fids))
     assert text.count("\n") < 25 and "Collar Round" in text                # totals and reasons, not 25 files
 
@@ -589,3 +589,31 @@ def test_order_page_limits_button_finds_the_measurement_out_of_range(ws, xml53):
                for b in page.findChildren(QtWidgets.QPushButton))
     win.close()
     app.processEvents()
+
+
+def test_held_line_read_again_although_another_line_of_its_xml_went_further(ws, xml53):
+    """One XML, two order lines: one went on (sent to nesting), the other waits for a Variation that the owner
+    then gave a meaning. Saving reads the held line again — the file's other line is left as it is."""
+    from level7mtm.services.customers import held_files, held_lines, reread_held, reread_lines
+    from level7mtm.services.options import option_table, save_options
+    data = open(xml53, "rb").read()
+    i = data.rfind(b"Collar Square")
+    data = data[:i] + b"Collar Weird" + data[i + len(b"Collar Square"):]   # the first line only
+    out = ws.import_data(data, "two.xml")
+    st = {ln["line_number"]: ln["status"] for ln in out.lines}
+    held = next(ln for ln in out.lines if ln["status"] == "needs_review")
+    other = next(ln for ln in out.lines if ln["status"] == "ready")
+    with ws.db.tx() as c:
+        c.execute("UPDATE revisions SET status='sent_to_nesting' WHERE id=?", (other["revision_id"],))
+    g = option_table(ws)
+    next(v for v in next(x for x in g if x["group"] == "collar")["values"]
+         if v["value"] == "square")["erp_names"].append("Collar Weird")
+    save_options(ws, g)
+    fids = held_files(ws, "level7")
+    assert len(fids) == 1 and held_lines(ws, fids) == 1, st
+    outs = reread_held(ws, "level7", fids)
+    assert [ln["line_number"] for ln in outs[0].lines] == [held["line_number"]]
+    assert outs[0].lines[0]["status"] == "ready"
+    assert ws.revision(other["revision_id"])["status"] == "sent_to_nesting"      # untouched
+    _, skipped = reread_lines(ws, [other["revision_id"]])
+    assert skipped and "went further" in skipped[0]

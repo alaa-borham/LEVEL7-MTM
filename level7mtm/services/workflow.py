@@ -192,10 +192,12 @@ class Workspace:
             return FileOutcome(name, "failed", f"cannot read file: {e}")
         return self.import_data(data, name, path)
 
-    def import_data(self, data: bytes, name: str, source_path: str = "") -> FileOutcome:
+    def import_data(self, data: bytes, name: str, source_path: str = "", only_lines: set | None = None) -> FileOutcome:
+        """``only_lines``: read these order lines (numbers) of the file only — its held ones read again, the others
+        (in CAD, nested, deleted) left as they are."""
         sha = hashlib.sha256(data).hexdigest()
         dup = self.db.one("SELECT id, status FROM import_files WHERE sha256=?", (sha,))
-        if dup and dup["status"] == "imported" and not self._all_removed(dup["id"]):
+        if dup and dup["status"] == "imported" and not self._all_removed(dup["id"]) and only_lines is None:
             return FileOutcome(name, "duplicate", "the same file was already imported; nothing created")
         from .customers import customer_for_xml
         cid, why = customer_for_xml(self, data)
@@ -215,18 +217,19 @@ class Workspace:
                 self.db.audit(c, self.actor, "import.failed", "import_file", fid, {"file": name, "message": msg})
             return FileOutcome(name, status, msg)
         if isinstance(cid, dict):          # lines of several products: each read with its own product's settings
-            return self._import_split(data, name, source_path, sha, dup, cid)
+            return self._import_split(data, name, source_path, sha, dup, cid, only_lines)
         with self.for_customer(cid):
-            return self._import_for(data, name, source_path, sha, dup, cid)
+            return self._import_for(data, name, source_path, sha, dup, cid, lines=only_lines)
 
-    def _import_split(self, data, name, source_path, sha, dup, by_item: dict) -> FileOutcome:
+    def _import_split(self, data, name, source_path, sha, dup, by_item: dict, only_lines=None) -> FileOutcome:
         """One XML with order lines of several products: each product reads its own lines (its size table,
         options, patterns), all under the one imported file."""
         out = FileOutcome(name, "imported")
         fid = None
         for item, pid in sorted(by_item.items()):
             with self.for_customer(pid):
-                o = self._import_for(data, name, source_path, sha, dup if fid is None else None, pid, {item}, fid)
+                o = self._import_for(data, name, source_path, sha, dup if fid is None else None, pid, {item}, fid,
+                                     only_lines)
             fid = fid or self.db.one("SELECT id FROM import_files WHERE sha256=?", (sha,))["id"]
             out.lines += o.lines
             if o.status != "imported":
@@ -236,12 +239,14 @@ class Workspace:
                 c.execute("UPDATE import_files SET status=?, message=? WHERE id=?", (out.status, out.message, fid))
         return out
 
-    def _import_for(self, data, name, source_path, sha, dup, cid, items=None, fid=None) -> FileOutcome:
+    def _import_for(self, data, name, source_path, sha, dup, cid, items=None, fid=None, lines=None) -> FileOutcome:
         map_pk, profile = self.active("mapping")
         res: ImportResult = import_bytes(data, profile)
         res.customer = cid
         if items is not None:                           # this product's lines only (the others read with theirs)
             res.lines = [ln for ln in res.lines if (ln.item or "").strip() in items]
+        if lines is not None:                           # read again: the held lines only
+            res.lines = [ln for ln in res.lines if ln.number in lines]
         from .customers import _plain, patterns
         pats = {_plain(p["variation"]) for p in patterns(self, cid)}
         for ln in res.lines:                            # a pattern's Variation chooses the model: not an option

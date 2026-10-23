@@ -419,12 +419,18 @@ def reread_file(ws, path: str):
 HELD = ("needs_review", "ready", "imported", "validation_failed")
 
 
-def _take_back(ws, fid: int, name: str) -> None:
-    """The order lines of an imported XML that were held (and went no further) are removed, so it reads anew."""
-    revs = ws.db.q("SELECT id, order_id, status FROM revisions WHERE import_file=?", (fid,))
-    if any(r["status"] not in HELD for r in revs):
-        raise WorkflowError("this XML has order lines that went further (model written to GRAFIS, nested): "
-                            "it is not read again")
+WAITING = ("needs_review", "imported", "validation_failed")   # held: read again after the settings were saved
+
+
+def _take_back(ws, fid: int, name: str, rids: list[int] | None = None) -> set[str]:
+    """These order lines of an imported XML (default: its held ones) are removed, so they read anew; the file's
+    other lines (in CAD, nested, deleted, replaced) stay as they are. Returns their line numbers."""
+    revs = ws.db.q("SELECT id, order_id, status, line_number FROM revisions WHERE import_file=?", (fid,))
+    revs = [r for r in revs if (r["id"] in rids and r["status"] in HELD if rids is not None
+                                else r["status"] in WAITING)]
+    if not revs:
+        raise WorkflowError("this XML has no held order line (they went further: model written to GRAFIS, "
+                            "nested): it is not read again")
     with ws.db.tx() as c:
         for r in revs:
             for t in ("grafis_orders", "manual_edits", "generations", "nesting_items"):
@@ -434,6 +440,7 @@ def _take_back(ws, fid: int, name: str) -> None:
                 c.execute("DELETE FROM orders WHERE id=?", (r["order_id"],))
         c.execute("UPDATE import_files SET status='failed', message='read again' WHERE id=?", (fid,))
         ws.db.audit(c, ws.actor, "import.reread", "import_file", fid, {"file": name, "lines": [r["id"] for r in revs]})
+    return {r["line_number"] for r in revs}
 
 
 def _family(ws, cid: str) -> set[str]:
@@ -446,25 +453,27 @@ def _family(ws, cid: str) -> set[str]:
 
 
 def held_files(ws, cid: str | None = None) -> list[int]:
-    """Imported XML files of the customer (or his products) whose order lines all wait (nothing went further) —
-    one query (a thousand held files made the window wait)."""
+    """Imported XML files of the customer (or his products) with order lines held for review — one query (a
+    thousand held files made the window wait). The file's other lines (in CAD, nested …) do not stop it: only its
+    held lines are read again."""
     fam = _family(ws, cid or ws.customer())
-    files: dict[int, bool] = {}
-    for r in ws.db.q("SELECT import_file AS id, status, json_extract(normalized, '$.customer') AS cust FROM revisions "
-                     "WHERE import_file IN (SELECT DISTINCT import_file FROM revisions WHERE status='needs_review')"):
-        ok = r["status"] in HELD and (r["cust"] or DEFAULT_CUSTOMER) in fam
-        files[r["id"]] = files.get(r["id"], True) and ok
-    return [fid for fid, ok in files.items() if ok]
+    out = []
+    for r in ws.db.q("SELECT import_file AS id, json_extract(normalized, '$.customer') AS cust FROM revisions "
+                     "WHERE status='needs_review' AND import_file IS NOT NULL ORDER BY import_file"):
+        if (r["cust"] or DEFAULT_CUSTOMER) in fam and (not out or out[-1] != r["id"]):
+            out.append(r["id"])
+    return out
 
 
 def held_lines(ws, fids: list[int]) -> int:
+    """How many order lines of these files are held (read again)."""
     if not fids:
         return 0
     n = 0
     for i in range(0, len(fids), 500):
         part = fids[i:i + 500]
-        n += ws.db.one(f"SELECT COUNT(*) AS n FROM revisions WHERE import_file IN ({','.join('?' * len(part))})",
-                       tuple(part))["n"]
+        n += ws.db.one(f"SELECT COUNT(*) AS n FROM revisions WHERE import_file IN ({','.join('?' * len(part))}) "
+                       f"AND status IN ({','.join('?' * len(WAITING))})", tuple(part) + WAITING)["n"]
     return n
 
 
@@ -488,30 +497,27 @@ def reread_held(ws, cid: str | None = None, fids: list[int] | None = None) -> li
 
 
 def reread_lines(ws, rids: list[int]) -> tuple[list, list[str]]:
-    """Read the XML files of these order lines again with today's settings (right click → Read again). A file
-    with a line that went further (model written to GRAFIS, nested) is not read again. Returns (outcomes,
-    skipped reasons)."""
-    fids, skipped = [], []
+    """Read these order lines again from their XML with today's settings (right click → Read again). A line that
+    went further (model saved by GRAFIS, nested) is not read again; the file's other lines are not touched.
+    Returns (outcomes, skipped reasons)."""
+    by_file: dict[int, list[int]] = {}
+    skipped = []
     for rid in rids:
-        r = ws.db.one("SELECT import_file FROM revisions WHERE id=?", (rid,))
-        if r and r["import_file"] and r["import_file"] not in fids:
-            fids.append(r["import_file"])
-    outs = []
-    for fid in fids:
-        revs = ws.db.q("SELECT status FROM revisions WHERE import_file=?", (fid,))
-        if any(r["status"] not in HELD for r in revs):
-            name = ws.db.one("SELECT file_name FROM import_files WHERE id=?", (fid,))["file_name"]
-            skipped.append(f"{name}: has order lines that went further, not read again")
+        r = ws.db.one("SELECT import_file, status, line_number FROM revisions WHERE id=?", (rid,))
+        if not r or not r["import_file"]:
             continue
-        outs.append(_reread(ws, fid))
-    return outs, skipped
+        if r["status"] not in HELD:
+            skipped.append(f"{r['line_number']}: went further, not read again")
+            continue
+        by_file.setdefault(r["import_file"], []).append(rid)
+    return [_reread(ws, fid, mine) for fid, mine in by_file.items()], skipped
 
 
-def _reread(ws, fid: int):
+def _reread(ws, fid: int, rids: list[int] | None = None):
     from .grafis_orders import order_mdl, settings
     f = ws.db.one("SELECT file_name, source_path, raw FROM import_files WHERE id=?", (fid,))
-    _take_back(ws, fid, f["file_name"])
-    out = ws.import_data(bytes(f["raw"]), f["file_name"], f["source_path"] or "")
+    lines = _take_back(ws, fid, f["file_name"], rids)
+    out = ws.import_data(bytes(f["raw"]), f["file_name"], f["source_path"] or "", only_lines=lines)
     if settings(ws)["enabled"] and out.status == "imported":
         for ln in out.lines:
             if ln["action"] in ("new", "new_revision"):
