@@ -785,14 +785,16 @@ class OrderPage(Page):
                           f"{raw.get('measurement_table')} / Basic-Size {raw.get('basic_size')} — "
                           f"{raw.get('order_date')}")
         ms = r["normalized"]["measurements"]
-        fill(self.meas, [[k, label(v["label"]), v["source_value"], v["source_unit"],
-                          "—" if v["value_mm"] is None else f"{v['value_mm']:.1f}" + (" ✎" if v.get("manual") else ""),
+        from .cad import ltr                                  # -17.5 stays -17.5 (not 17.5- in Arabic)
+        fill(self.meas, [[k, label(v["label"]), ltr(v["source_value"]), v["source_unit"],
+                          "—" if v["value_mm"] is None else ltr(f"{v['value_mm']:.1f}") + (" ✎" if v.get("manual") else ""),
                           v["kind"], v["meaning"], v["status"]] for k, v in ms.items()],
              [None if v["value_mm"] is not None else STATUS_COLORS["review"] for v in ms.values()], list(ms))
         fill(self.opts, [[g, v] for g, v in r["normalized"]["options"].items()] +
              [["(ERP)", c] for c in raw.get("option_codes", [])])
         pr = r["normalized"]["problems"]
-        fill(self.probs, [[tr(p["severity"]), p["message"]] for p in pr], [STATUS_COLORS.get(p["severity"]) for p in pr])
+        fill(self.probs, [[tr(p["severity"]), tr_msg(p["message"])] for p in pr],
+             [STATUS_COLORS.get(p["severity"]) for p in pr])
 
     def edit_measure(self):
         rid = self.win.current_rid
