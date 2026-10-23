@@ -379,6 +379,29 @@ def shows_file(title: str, path: str) -> bool:
     return False
 
 
+def open_models(drv) -> list[str]:
+    """The titles of the GRAFIS windows that show a model ("Grafis - [A: ..x.mdl]"; "Grafis - [-]" shows none)."""
+    out = []
+    for w in drv.windows():
+        t = w["title"] or ""
+        if w["cls"] == "#32770" or not t.lower().startswith("grafis") or "[" not in t or "]" not in t:
+            continue
+        inner = t[t.index("[") + 1:t.index("]")].strip()
+        if inner and inner != "-":
+            out.append(t)
+    return out
+
+
+def _closed(drv, path: str, sleep, clock, wait: float = 10) -> bool:
+    t0 = clock()
+    while True:
+        if not any(shows_file(t, path) for t in open_models(drv)):
+            return True
+        if clock() - t0 >= wait:
+            return False
+        sleep(1)
+
+
 def _find(drv, spec: dict, prefer: str = "") -> int | None:
     """The window a taught button belongs to: same class; same title, or the one showing the current file."""
     ws_ = [w for w in drv.windows() if w["cls"] == spec["cls"]]
@@ -635,6 +658,8 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
             sleep(3)
         behind = st["mode"] == "background" and st["behind"] and hasattr(drv, "send_back")
         prev = drv.active_window() if behind else None
+        if hasattr(drv, "close") and [t for t in open_models(drv) if not shows_file(t, job["path"])]:
+            notes.append(restart_grafis(drv, sleep, clock))   # owner: one model at a time — left open: closed first
         drv.open(job["path"])
         t0, main = clock(), None
         while clock() - t0 < st["open_timeout"]:
@@ -676,7 +701,12 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
         try:
             how.append(_act(drv, st, main, "close", job["path"], False))
         except RobotError:
-            pass                                      # closing is a courtesy: the model is saved
+            pass
+        # owner: the robot works on one model, closes it, then takes the next — still open (no close taught, or
+        # it did not close): GRAFIS is closed (the model is saved) and the next model starts a new one
+        if hasattr(drv, "close") and not _closed(drv, job["path"], sleep, clock):
+            notes.append(restart_grafis(drv, sleep, clock))
+            _DONE_SINCE_START["n"] = 0
         _DONE_SINCE_START["n"] += 1
         if st["restart_every"] and _DONE_SINCE_START["n"] >= st["restart_every"] and hasattr(drv, "close"):
             _DONE_SINCE_START["n"] = 0               # before GRAFIS runs out of scratch files

@@ -224,7 +224,8 @@ def test_robot_answers_grafis_start_windows_and_the_crash_box(ws, tmp_path):
     g = Starting()
     r = robot.run_one(ws, {"path": str(p), "sha256": hashlib.sha256(b"x").hexdigest()}, g, sleep=lambda s: None,
                       clock=_clock())
-    assert g.closed == [7] and set(g.pressed) == {80, 92}                   # crash box closed, OK, taught button
+    assert g.closed[0] == 7 and set(g.pressed) == {80, 92}                # crash box closed, OK, taught button
+    assert 1 in g.closed and "started anew" in r["message"]               # the model left open: GRAFIS closed
     assert r["status"] == "done", r["message"]
     assert "GRAFIS crashed" in r["message"] and 'answered "GRAFIS System Info-Box" (OK)' in r["message"]
 
@@ -405,3 +406,37 @@ def test_scratch_files_grave_error_named(ws, tmp_path):
     r = robot.run_one(ws, {"path": str(p), "sha256": hashlib.sha256(b"x").hexdigest()}, g, sleep=lambda s: None,
                       clock=_clock())
     assert r["status"] == "failed" and "Zu viele Scratch-Files" in r["message"] and g.pressed == [52]
+
+
+def test_one_model_at_a_time_closed_before_the_next(ws, tmp_path):
+    """Owner: the robot works on one model, closes it, then takes the next. A model GRAFIS still shows from before
+    is closed first; the model done is closed before the next one (here GRAFIS is closed: no close taught)."""
+    import hashlib
+
+    class Grafis(FakeGrafis):
+        def __init__(self):
+            super().__init__()
+            self.closed, self.left = [], "Grafis - [A: ..old-model__1.mdl]"
+
+        def windows(self):
+            if self.left:
+                return [{"hwnd": 3, "title": self.left, "cls": "GrafisMain"}]
+            return super().windows()
+
+        def close(self, h):
+            self.closed.append(h)
+            if h == 3:
+                self.left = None
+            if h == 1:
+                self.opened = None                       # GRAFIS closed: the model with it
+    ws.db.set_setting("robot.buttons", {"test_run": {"title": "GRAFIS", "cls": "Toolbar", "dx": 470, "dy": 60},
+                                        "save": {"title": "GRAFIS", "cls": "Toolbar", "dx": 20, "dy": 60}})
+    ws.db.set_setting("robot.mode", "mouse")
+    ws.db.set_setting("robot.run_wait_s", 0)
+    p = tmp_path / "Order-9-50-1_0.mdl"
+    p.write_bytes(b"x")
+    g = Grafis()
+    r = robot.run_one(ws, {"path": str(p), "sha256": hashlib.sha256(b"x").hexdigest()}, g, sleep=lambda s: None,
+                      clock=_clock())
+    assert r["status"] == "done", r["message"]
+    assert g.closed[0] == 3 and 1 in g.closed and g.opened is None        # the old one first, then this one
