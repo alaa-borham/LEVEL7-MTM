@@ -814,6 +814,8 @@ MSG_AR = [
     (r"measurement (\S+): the formula '(.+)' is not valid: (.+)", "القياس {0}: المعادلة '{1}' غير صحيحة: {2}"),
     (r"measurement (\S+): write the formula \(e\.g\. FL - 10\)", "القياس {0}: اكتب المعادلة (مثل FL - 10)"),
     (r"measurement (\S+): the lowest value is above the highest", "القياس {0}: أقل قيمة أكبر من أعلى قيمة"),
+    (r"pattern distorted in CAD, not nested: (.+?)(?: — the model is in (.+))?",
+     "تشوه في البترون بعد CAD، لم يُرسل للتعشيق ونُقل الموديل إلى MDL-ERR: {0}"),
     (r"pattern distorted, no cutting file: (.+?)(?: — the model is in (.+))?",
      "تشوه في البترون، لم يُكتب ملف قص: {0}"),
     (r"(.+): its outline crosses itself", "{0}: حدود القطعة تتقاطع مع نفسها"),

@@ -67,3 +67,57 @@ def test_many_points_checked_quickly():
     for _ in range(20):
         pc.defects("round", _curve(1500))
     assert time.time() - t < 10
+
+
+def test_model_checked_as_soon_as_cad_saved_it(ws, tmp_path, monkeypatch):
+    """The pattern as CAD saved it is checked before it waits for the nesting: the pieces from info --json when
+    LEVEL7 Nesting gives them, else from a quick marker made for the check only."""
+    from level7mtm.services import auto_cut
+    m = tmp_path / "Order-2.mdl"
+    m.write_bytes(b"model")
+    spike = [[0, 0], [300, 0], [300, 400], [170, 400], [150, 900], [130, 400], [0, 400]]
+    monkeypatch.setattr(auto_cut, "nesting_command", lambda ws_: (["cli"], {}))
+    monkeypatch.setattr(auto_cut, "_info", lambda c, e, p: {"pieces": [{"name": "front", "sizes": {"s": {"cut": spike}}}]})
+    assert pc.check_model(ws, str(m))[0].startswith("front:")
+    ran = []
+
+    def nest(cmd, env, log, timeout=0):
+        ran.append(cmd)
+        doc = {"project": {"pieces": [{"uid": "a", "name": "back", "sizes": {"s": {"cut": spike}}}],
+                           "markers": [{"placements": [{"piece_uid": "a", "size": "s"}]}]}}
+        with zipfile.ZipFile(cmd[cmd.index("-o") + 1], "w") as z:
+            z.writestr("project.json", json.dumps(doc))
+        return 0
+    monkeypatch.setattr(auto_cut, "_info", lambda c, e, p: {"pieces": [{"name": "back"}]})   # no outlines
+    monkeypatch.setattr(auto_cut, "_run", nest)
+    assert pc.check_model(ws, str(m), 1450)[0].startswith("back:")
+    assert ran and "--time" in ran[0] and "1450" in ran[0] and not os.path.exists(ran[0][ran[0].index("-o") + 1])
+    ws.db.set_setting("cutting.pattern_check", False)
+    assert pc.check_model(ws, str(m)) == []
+
+
+def test_robot_sends_a_distorted_model_to_needs_attention(ws, tmp_path, monkeypatch):
+    """CAD saved a distorted pattern: the robot records it as a CAD failure (Needs attention, out of the nesting
+    queue) and the model goes to MDL-ERR."""
+    import hashlib
+
+    from level7mtm.services import grafis_robot as robot
+    from level7mtm.services.mdl_intake import next_queued
+
+    from test_grafis_robot import FakeGrafis
+    ws.db.set_setting("grafis.input", str(tmp_path / "A" / "MDL"))
+    ws.db.set_setting("robot.run_wait_s", 0)
+    ws.db.set_setting("robot.buttons", {"test_run": {"title": "GRAFIS", "cls": "Toolbar", "dx": 470, "dy": 60}})
+    m = tmp_path / "A" / "MDL" / "Order-3.mdl"
+    m.parent.mkdir(parents=True)
+    m.write_bytes(b"x")
+    monkeypatch.setattr(pc, "check_model", lambda ws_, p, w=None: ["front: its outline crosses itself"])
+    r = robot.run_one(ws, {"path": str(m), "sha256": hashlib.sha256(b"x").hexdigest()}, FakeGrafis(),
+                      sleep=lambda s: None, clock=__import__("itertools").count().__next__)
+    assert r["status"] == "failed" and "pattern distorted in CAD" in r["message"], r
+    assert not m.exists() and (tmp_path / "A" / "MDL-ERR" / "Order-3.mdl").exists()
+    assert next_queued(ws) is None
+    from level7mtm.ui.i18n import set_language, tr_msg
+    set_language("ar")
+    assert "MDL-ERR" in tr_msg(r["message"])
+    set_language("en")

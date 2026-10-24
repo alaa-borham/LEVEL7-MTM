@@ -862,6 +862,20 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
                 notes.append(restart_grafis(drv, sleep, clock))
             except Exception as e:  # noqa: BLE001 - the model is saved: only said
                 notes.append(f"GRAFIS not restarted: {e}")
+        # owner: a pattern CAD distorted goes to Needs attention, never to the nesting queue — checked here, as
+        # soon as it is saved: recorded as a failure of CAD (so the nesting leaves it), the model into MDL-ERR
+        from .pattern_check import check_model, to_err
+        rev = ws.db.one("SELECT r.normalized FROM grafis_orders g JOIN revisions r ON r.id=g.revision_id "
+                        "WHERE g.path=? ORDER BY g.id DESC", (job["path"],))
+        try:
+            width = json.loads(rev["normalized"]).get("fabric_width_mm") if rev else None
+        except (TypeError, ValueError):
+            width = None
+        bad = check_model(ws, job["path"], width)
+        if bad:
+            moved = to_err(ws, job["path"], bad)
+            raise RobotError("pattern distorted in CAD, not nested: " + "; ".join(bad) +
+                             (f" — the model is in {os.path.dirname(moved)}" if moved else ""))
         res.update(status="done", message="opened, Test Run All Parts, saved — " +
                    ", ".join(h for h in how + notes if h))
     except ShortOfMemory as e:                       # not a failure of the model: it stays waiting

@@ -4831,7 +4831,7 @@ class MainWindow(QMainWindow):
         try:
             saved = bool(go) and file_sha(r["mdl"]) != json.loads(go["info"]).get("sha256")
         except OSError:
-            saved = False
+            saved = bool(go)                              # moved to MDL-ERR (distorted): written again too
         if saved:                                         # CAD saved it with the error: never nested as it is —
             self.model_again(r["rid"])                    # written again from the base pattern, CAD runs it anew
             self.status(tr("The model is written again from the base pattern; the robot takes it in a few seconds"))

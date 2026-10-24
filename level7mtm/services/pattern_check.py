@@ -152,6 +152,62 @@ def check_marker(path: str) -> list[str]:
     return out
 
 
+def _outlines_of_info(info: dict) -> list[tuple[str, list]]:
+    """The piece outlines in ``level7-cli info --json`` (when this LEVEL7 Nesting gives them)."""
+    out = []
+    for p in info.get("pieces") or []:
+        if not isinstance(p, dict):
+            continue
+        name = p.get("name") or "?"
+        shapes = [p.get("cut"), p.get("outline")] + [g.get("cut") for g in (p.get("sizes") or {}).values()
+                                                     if isinstance(g, dict)]
+        for pts in shapes:
+            if pts and len(pts) >= 3:
+                out.append((name, [(float(x), float(y)) for x, y in pts]))
+                break
+    return out
+
+
+def check_model(ws, path: str, width_mm: float | None = None) -> list[str]:
+    """The pattern as CAD saved it, checked before it waits for the nesting (owner: "the files distorted in CAD
+    still reach the nesting queue instead of Needs attention"). The pieces are read by LEVEL7 Nesting: from
+    ``info --json`` when it gives the outlines, else from a quick marker made for the check only (thrown away).
+    [] = sound, or it could not be checked (then the check after the nesting still holds)."""
+    import subprocess
+    import tempfile
+
+    from .auto_cut import NestingNotConfigured, _info, _run, nesting_command
+    if not ws.db.get_setting("cutting.pattern_check", True) or not os.path.isfile(path):
+        return []
+    try:
+        cmd, env = nesting_command(ws)
+    except NestingNotConfigured:
+        return []
+    pieces = _outlines_of_info(_info(cmd, env, path))
+    if not pieces:
+        d = tempfile.mkdtemp(prefix="l7check_")
+        try:
+            out = os.path.join(d, "check.l7n")
+            if _run(cmd + ["nest", path, "--width", f"{width_mm or 1500:g}", "--time", "1", "-o", out], env, [],
+                    240) != 0 or not os.path.isfile(out):
+                return []
+            pieces = pieces_of_marker(out)
+        except (OSError, subprocess.SubprocessError, KeyError, ValueError, TypeError, zipfile.BadZipFile):
+            return []
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+    found = []
+    seen = set()
+    for name, outline in pieces:
+        if name in seen:
+            continue                                  # each piece once (its sizes are the same pattern)
+        seen.add(name)
+        for dd in defects(name, outline):
+            if dd not in found:
+                found.append(dd)
+    return found
+
+
 def err_folder(ws) -> str:
     """MDL-ERR: next to the GRAFIS input folder (MDL), or the folder chosen."""
     chosen = ws.db.get_setting("grafis.mdl_err")
