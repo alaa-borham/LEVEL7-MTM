@@ -168,6 +168,10 @@ QLabel#bigTitle {{ font-size: 13pt; font-weight: 800; }}
 QLabel#pill {{ border: 1px solid; border-radius: 2px; padding: 1px 8px; font-weight: 700; font-size: 8.5pt; }}
 QFrame#hline {{ background: {_rgb(c['border'])}; max-height: 1px; min-height: 1px; }}
 QFrame#tools, QFrame#hud {{ background: {_rgb(c['panel'], 0.94)}; border: 1px solid {_rgb(c['border'])}; border-radius: 3px; }}
+QToolButton#inspectorIcon {{ background: {_rgb(c['panel'])}; border: 1px solid {_rgb(c['border'])}; border-radius: 3px; }}
+QToolButton#inspectorIcon:hover {{ border-color: {_rgb(acc)}; background: {_rgb(acc, 0.15)}; }}
+QToolButton#inspectorIcon:pressed {{ background: {_rgb(acc, 0.30)}; }}
+QToolButton#inspectorIcon:disabled {{ background: transparent; border-color: {_rgb(c['border'], 0.5)}; }}
 QToolButton#tool {{ background: transparent; border: 1px solid transparent; border-radius: 2px; padding: 4px; }}
 QToolButton#tool:hover {{ border-color: {_rgb(acc)}; }}
 QToolButton#tool:checked {{ background: {_rgb(acc, 0.22)}; border-color: {_rgb(acc)}; }}

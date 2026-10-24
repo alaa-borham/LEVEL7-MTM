@@ -19,6 +19,8 @@ from .i18n import tr, tr_msg
 # ---------------------------------------------------------------- icons (24 x 24, stroked)
 
 ICONS = {
+    "cut": "M6 9a3 3 0 100-6 3 3 0 000 6zM6 21a3 3 0 100-6 3 3 0 000 6zM20 4L8.1 15.9M14.5 14.5L20 20M8.1 8.1L12 12",
+    "info": "M12 22a10 10 0 100-20 10 10 0 000 20zM12 16v-5M12 8h.01",
     "import": "M12 3v11m0 0l-4-4m4 4l4-4M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4",
     "orders": "M4 5h16M4 10h16M4 15h10M4 20h7",
     "customers": "M9 11a4 4 0 100-8 4 4 0 000 8zM2 21v-1a6 6 0 0112 0v1M17 11a3 3 0 100-6M22 21v-1a5 5 0 00-4-4.9",
@@ -1717,15 +1719,31 @@ class Inspector(QScrollArea):
         self.waiting.hide()
         self.lay.addWidget(self.waiting)
         self.buttons = {}                                 # the actions right under it, never scrolled away
-        for key, text, primary in actions:
-            b = QPushButton(text)
-            if primary:
-                b.setObjectName("primary")
-            b.setToolTip(text)
-            b.setMinimumWidth(0)                          # a narrow panel: the text is cut, never the panel held wide
-            b.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        row = QHBoxLayout()                               # owner: the actions as one row of icons
+        row.setSpacing(6)
+        for key, text, primary, *ic in actions:
+            if ic:                                        # an icon (its name on hovering)
+                b = QToolButton()
+                b.setIcon(icon(ic[0], themes.colour("accent") if primary else None))
+                b.setIconSize(QSize(22, 22))
+                b.setFixedHeight(38)
+                b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                b.setMinimumWidth(30)
+                b.setToolTip(text)
+                b.setAccessibleName(text)
+                b.setObjectName("inspectorIcon")
+                row.addWidget(b)
+            else:
+                b = QPushButton(text)
+                if primary:
+                    b.setObjectName("primary")
+                b.setToolTip(text)
+                b.setMinimumWidth(0)                      # a narrow panel: the text is cut, never the panel held wide
+                b.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+                self.lay.addWidget(b)
             self.buttons[key] = b
-            self.lay.addWidget(b)
+        if row.count():
+            self.lay.addLayout(row)
         self.kv: dict[str, QLabel] = {}
         self._section(tr("The order"), [("customer", "Customer"), ("width", "Width"), ("quantity", "Quantity"),
                                          ("imported", "Imported")])                # owner: no Basic-Size, no fabric

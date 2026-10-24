@@ -4195,10 +4195,10 @@ class MainWindow(QMainWindow):
         head, _ = cad.panel_head(tr("Properties"))
         sl.addWidget(head)
         self.inspector = cad.Inspector([("robot", "↻  " + tr("Robot: try again"), True),
-                                        ("open_cut", tr("Open cutting file") + "  PLT / ISO", True),
-                                        ("nesting", tr("Show marker in LEVEL7 Nesting"), False),
-                                        ("renest", tr("Nest again"), False),
-                                        ("details", tr("Order info"), False)])
+                                        ("open_cut", tr("Open cutting file") + "  PLT / ISO", True, "cut"),
+                                        ("nesting", tr("Show marker in LEVEL7 Nesting"), False, "marker"),
+                                        ("renest", tr("Nest again"), False, "renest"),
+                                        ("details", tr("Order info"), False, "info")])
         b = self.inspector.buttons
         b["open_cut"].clicked.connect(self.open_cutting)
         b["robot"].clicked.connect(self.robot_retry_selected)
