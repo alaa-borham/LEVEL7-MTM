@@ -559,6 +559,40 @@ def shortage(drv, st, path: str) -> str:
     return "; ".join(out)
 
 
+TEMP_AGE_S = 600                                   # a scratch file this old belongs to no GRAFIS running
+
+
+def clean_temp(home: str | None = None, now_=time.time) -> tuple[int, float]:
+    """The scratch files GRAFIS leaves in <GRAFIS>\\temp (A:\\GRAFIS\\temp: "lm4modl_z: Zu viele Scratch-Files!",
+    and the memory they hold): removed once GRAFIS is closed — the models are saved in the MDL folder, never here.
+    Only files older than a few minutes; a file in use is left. Returns (files removed, MB)."""
+    home = home if home is not None else grafis_home()
+    d = os.path.join(home, "temp") if home else ""
+    if not d or not os.path.isdir(d):
+        return 0, 0.0
+    n, size = 0, 0
+    for root, _dirs, files in os.walk(d):
+        for f in files:
+            p = os.path.join(root, f)
+            try:
+                st = os.stat(p)
+                if now_() - st.st_mtime < TEMP_AGE_S:
+                    continue
+                os.remove(p)
+                n, size = n + 1, size + st.st_size
+            except OSError:                           # in use / read-only: stays
+                continue
+    return n, size / 2 ** 20
+
+
+def _after_close(msg: str) -> str:
+    try:
+        n, mb = clean_temp()
+    except Exception:  # noqa: BLE001 - only a clean-up
+        n, mb = 0, 0.0
+    return msg + (f"; GRAFIS temp cleaned: {n} files, {mb:,.0f} MB" if n else "")
+
+
 def restart_grafis(drv, sleep=time.sleep, clock=time.monotonic) -> str:
     """Close GRAFIS (its models are saved already): asked to save again — No; still open after a while — ended.
     The next model starts a new GRAFIS with no scratch files."""
@@ -580,11 +614,13 @@ def restart_grafis(drv, sleep=time.sleep, clock=time.monotonic) -> str:
                     if b:
                         drv.press(b["hwnd"])
         if not mains():
-            return "GRAFIS closed and started anew (scratch files)"
+            return _after_close("GRAFIS closed and started anew (scratch files)")
     if hasattr(drv, "terminate"):
         for h in mains():
             drv.terminate(h)
-    return "GRAFIS ended and started anew (scratch files)"
+        sleep(2)
+    return _after_close("GRAFIS ended and started anew (scratch files)") if not mains() else \
+        "GRAFIS ended and started anew (scratch files)"
 
 
 def _grafis_says(drv, h) -> str:
@@ -763,6 +799,13 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
         prev = drv.active_window() if behind else None
         if hasattr(drv, "close") and [t for t in open_models(drv) if not shows_file(t, job["path"])]:
             notes.append(restart_grafis(drv, sleep, clock))   # owner: one model at a time — left open: closed first
+        if not [w for w in drv.windows() if (w["title"] or "").lower().startswith("grafis")]:
+            try:                                      # no GRAFIS running: its old scratch files go first
+                n, mb = clean_temp()
+                if n:
+                    notes.append(f"GRAFIS temp cleaned: {n} files, {mb:,.0f} MB")
+            except Exception:  # noqa: BLE001 - only a clean-up
+                pass
         drv.open(job["path"])
         t0, main = clock(), None
         while clock() - t0 < st["open_timeout"]:

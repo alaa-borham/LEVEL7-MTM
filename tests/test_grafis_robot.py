@@ -519,3 +519,24 @@ def test_grafis_restore_backup_copy_is_closed_never_opened():
     robot._answer_dialogs(g, {}, notes)
     assert g.pressed == [73] and "backup copies not restored" in notes[0]
     assert robot.restart_grafis(g, sleep=lambda s: None, clock=_clock()) == ""   # not a GRAFIS to close
+
+
+def test_grafis_temp_cleaned_when_grafis_is_closed(tmp_path):
+    """A:\\GRAFIS\\temp (scratch files): old files removed once GRAFIS is closed; new ones (in use) stay."""
+    import os
+    import time
+    t = tmp_path / "temp"
+    (t / "sub").mkdir(parents=True)
+    old, new = t / "a.scr", t / "b.scr"
+    old.write_bytes(b"x" * 2048)
+    (t / "sub" / "c.scr").write_bytes(b"y")
+    new.write_bytes(b"z")
+    for f in (old, t / "sub" / "c.scr"):
+        os.utime(f, (time.time() - 3600, time.time() - 3600))
+    n, _ = robot.clean_temp(str(tmp_path))
+    assert n == 2 and not old.exists() and new.exists() and t.is_dir()
+    assert robot.clean_temp(str(tmp_path / "none")) == (0, 0.0)
+    from level7mtm.ui.i18n import set_language, tr_msg
+    set_language("ar")
+    assert "temp" in tr_msg("GRAFIS closed and started anew (scratch files); GRAFIS temp cleaned: 3 files, 12 MB")
+    set_language("en")

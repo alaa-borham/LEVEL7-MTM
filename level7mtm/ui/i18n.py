@@ -775,6 +775,7 @@ MSG_AR = [
     (r"GRAFIS short of memory \(answered OK, GRAFIS starts anew after this model\)",
      "ذاكرة GRAFIS ممتلئة (ضُغط موافق، ويُعاد تشغيل GRAFIS بعد هذا الموديل)"),
     (r"GRAFIS was not open", "لم يكن GRAFIS مفتوحاً"),
+    (r"GRAFIS temp cleaned: (\d+) files, ([\d,.]+) MB", "نُظّف مجلد temp لـ GRAFIS: {0} ملف، {1} ميجابايت"),
     (r"GRAFIS backup copies not restored \(Close\)", "لم تُسترجع نسخ GRAFIS الاحتياطية (إغلاق)"),
     (r"the models are saved", "الموديلات محفوظة"),
     (r"GRAFIS not restarted: (.+)", "لم يُعَد تشغيل GRAFIS: {0}"),
