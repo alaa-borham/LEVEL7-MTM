@@ -1484,9 +1484,17 @@ class GrafisPage(Page):
                                   "model goes to MDL-ERR with the reason"))
         self.pcheck.setChecked(bool(self.ws.db.get_setting("cutting.pattern_check", True)))
         self.pcheck.toggled.connect(lambda on: self.ws.db.set_setting("cutting.pattern_check", on))
+        self.par = QSpinBox()
+        self.par.setRange(1, 4)
+        self.par.setToolTip(tr("How many models LEVEL7 Nesting nests at the same time (each uses one processor core "
+                               "and its own memory)"))
+        self.par.setValue(int(self.ws.db.get_setting("nesting.parallel", 1) or 1))
+        self.par.valueChanged.connect(lambda v: self.ws.db.set_setting("nesting.parallel", int(v)))
         r1 = QHBoxLayout()
         for w in (self.auto_mdl, self.robot, self.auto, self.pcheck):
             r1.addWidget(w)
+        r1.addWidget(QLabel(tr("Nestings at once") + ":"))
+        r1.addWidget(self.par)
         r1.addStretch()
         al.addLayout(r1)
         frow = QHBoxLayout()
@@ -2163,11 +2171,19 @@ class GrafisPage(Page):
             return
         self.busy = True
 
+        claimed: list[str] = []
+
         def done(res):
             _GRAFIS_POLL.release()
             self.ws.db.set_setting("grafis.last_poll_error", "")
             if not alive(self):                           # the page was made anew meanwhile
+                from ..services import mdl_intake
+                with mdl_intake._NOW_LOCK:            # its claims taken back: the new page takes them
+                    for p in claimed:
+                        mdl_intake._NOW.pop(p, None)
                 return
+            for p in claimed:                         # several nestings at once: each in its own worker
+                self._nest_one(p, mw)
             self.busy = False
             if res and self.isVisible():              # the page itself only when it is shown (thousands of rows)
                 self.refresh()
@@ -2179,7 +2195,12 @@ class GrafisPage(Page):
             out = self.watcher.poll() if self.watcher else []
             if self.ws.db.get_setting("nesting.paused", False):
                 return out                            # the nesting is stopped: the saved models wait in the queue
-            from ..services.mdl_intake import next_queued, register_mdl
+            from ..services.mdl_intake import claim, nesting_now, next_queued, parallel, register_mdl
+            if parallel(self.ws) > 1:                 # owner: more than one nesting at the same time
+                claimed.extend(claim(self.ws))        # the next models for the free places (none taken twice)
+                if not claimed and not nesting_now() and mw:
+                    return out + mw.poll(limit=1)     # a model the queue does not know yet
+                return out
             p = next_queued(self.ws)                  # the queue in its order (the owner moves models up / down)
             if p:
                 got = [register_mdl(self.ws, p)]
@@ -2200,6 +2221,39 @@ class GrafisPage(Page):
             if alive(self):
                 self.busy = False
                 self.win.status(msg[:200])
+        w.signals.failed.connect(failed)
+        self.win.pool.start(w)
+
+
+    def _nest_one(self, p: str, mw):
+        """One model of the queue nested in its own worker (several at the same time); its place is freed when done."""
+        from ..services.mdl_intake import register_mdl
+
+        def work():
+            r = register_mdl(self.ws, p)
+            if mw:                                    # the folder look leaves it now (read already)
+                try:
+                    st = os.stat(p)
+                    mw.state.done[p] = (st.st_size, st.st_mtime)
+                except OSError:
+                    pass
+            return r
+
+        def done(_r):
+            if alive(self):
+                if self.isVisible():
+                    self.refresh()
+                self.win._refresh_cad_bg()
+
+        def failed(msg):
+            from ..services import mdl_intake
+            with mdl_intake._NOW_LOCK:                # (register_mdl frees it; a worker that never ran does not)
+                mdl_intake._NOW.pop(p, None)
+            self.ws.db.set_setting("grafis.last_poll_error", msg[:500])
+            if alive(self):
+                self.win.status(msg[:200])
+        w = Worker(work)
+        w.signals.done.connect(done)
         w.signals.failed.connect(failed)
         self.win.pool.start(w)
 

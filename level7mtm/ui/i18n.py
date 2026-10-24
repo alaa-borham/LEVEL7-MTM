@@ -655,6 +655,9 @@ AR = {
     "Folder watch is off: the robot and the saved GRAFIS files wait. Click «Folder watch» in the status bar to switch it on.": "مراقبة المجلدات متوقفة: الروبوت وملفات GRAFIS المحفوظة تنتظر. اضغط «مراقبة المجلدات» في شريط الحالة أسفل النافذة لتشغيلها.",
     "The model is written again from the base pattern; the robot takes it in a few seconds":
         "يُكتب الموديل من جديد من البترون الأساسي، ويأخذه AI TOOL خلال ثوانٍ",
+    "Nestings at once": "عدد التعشيقات في وقت واحد",
+    "How many models LEVEL7 Nesting nests at the same time (each uses one processor core and its own memory)":
+        "كم موديلاً يعشّق LEVEL7 Nesting في نفس الوقت (كل تعشيق يستخدم نواة معالج وذاكرة خاصة به)",
     "The robot takes the model again in a few seconds": "سيأخذ الروبوت الموديل من جديد خلال ثوانٍ",
     "ERP orders": "طلبات ERP",
     "min": "د",

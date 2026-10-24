@@ -229,14 +229,40 @@ def _size_key(cmd, env, path, guess, log, info=None) -> str:
     return key
 
 
-_NESTING = threading.Lock()        # one nesting at a time (the chain and "Nest again" queue behind each other)
+class _Places:
+    """As many nestings at the same time as the owner set (nesting.parallel, 1 … 4); the others wait for a place
+    (the chain and "Nest again" queue behind each other)."""
+
+    def __init__(self):
+        self.cond, self.busy, self.ws = threading.Condition(), 0, None
+
+    def __call__(self, ws):
+        self.ws = ws
+        return self
+
+    def __enter__(self):
+        from .mdl_intake import parallel
+        with self.cond:
+            while self.busy >= (parallel(self.ws) if self.ws is not None else 1):
+                self.cond.wait(5)                      # the setting may change meanwhile
+            self.busy += 1
+        return self
+
+    def __exit__(self, *exc):
+        with self.cond:
+            self.busy -= 1
+            self.cond.notify_all()
+        return False
+
+
+_NESTING = _Places()
 
 
 def auto_cut(ws, chk, scb_path: str, force: bool = False) -> dict:
     """Nest the checked SCB and write the cutting files. Returns {status, outputs, log, ...}.
     ``force``: nest again (e.g. with a longer nesting time) although cutting files exist."""
     from .activity import working
-    with _NESTING, working([ln["revision_id"] for ln in chk.lines], "nesting", settings(ws)["time"] + 15):
+    with _NESTING(ws), working([ln["revision_id"] for ln in chk.lines], "nesting", settings(ws)["time"] + 15):
         return _auto_cut(ws, chk, scb_path, force)
 
 

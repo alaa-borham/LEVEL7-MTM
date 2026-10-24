@@ -170,3 +170,51 @@ def test_distorted_models_leave_the_nesting_queue_ahead_of_their_turn(ws, tmp_pa
     rev = ws.db.one("SELECT status FROM revisions WHERE id=(SELECT revision_id FROM grafis_orders WHERE path=?)",
                     (p1,))
     assert rev["status"] != "sent_to_nesting"
+
+
+def test_several_nestings_at_once_never_take_the_same_model(ws, tmp_path, monkeypatch):
+    """nesting.parallel = 2: two models of the queue are claimed for two nestings at the same time, never the
+    same one twice; a place is free again when its model is done."""
+    from level7mtm.services import mdl_intake
+    from level7mtm.services.mdl_intake import claim, intake_now, nesting_now, next_queued, parallel
+    paths = [str(tmp_path / f"M{i}.mdl") for i in range(3)]
+    monkeypatch.setattr(mdl_intake, "queue", lambda ws_: list(paths))
+    assert parallel(ws) == 1 and claim(ws) == [paths[0]]
+    assert claim(ws) == [] and next_queued(ws) == paths[1]               # its one place is taken
+    mdl_intake._NOW.clear()
+    ws.db.set_setting("nesting.parallel", 2)
+    a = claim(ws)
+    assert a == paths[:2] and claim(ws) == [] and nesting_now() == set(paths[:2])
+    assert intake_now()[0] == "M0.mdl"
+    monkeypatch.setattr(mdl_intake, "_register_mdl", lambda ws_, p, cut=None: {"status": "cutting_done"})
+    mdl_intake.register_mdl(ws, paths[0])                               # done: its place is free
+    done = paths.pop(0)                                                 # (and it left the queue)
+    assert done not in nesting_now() and claim(ws) == [paths[1]] and nesting_now() == set(paths)
+    mdl_intake._NOW.clear()
+    ws.db.set_setting("nesting.parallel", 9)
+    assert parallel(ws) == 4
+
+
+def test_nesting_places_follow_the_setting(ws):
+    """LEVEL7 Nesting runs as many times at once as set: 2 → the second waits for nobody, the third does."""
+    import threading
+    import time
+
+    from level7mtm.services.auto_cut import _NESTING
+    ws.db.set_setting("nesting.parallel", 2)
+    inside, most, lock = [0], [0], threading.Lock()
+
+    def job():
+        with _NESTING(ws):
+            with lock:
+                inside[0] += 1
+                most[0] = max(most[0], inside[0])
+            time.sleep(0.3)
+            with lock:
+                inside[0] -= 1
+    ts = [threading.Thread(target=job) for _ in range(3)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join(10)
+    assert most[0] == 2

@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 
 from ..grafis.container import block_bytes, read_container
 from ..grafis.parts import production
@@ -114,25 +115,67 @@ def check_mdl(ws, path: str) -> tuple[ScbCheck, dict | None]:
     return chk, row
 
 
-_NOW: dict = {}                                       # the model the nesting worker is on, and since when
+_NOW: dict = {}                                       # the models being nested now: path -> since (monotonic)
+_NOW_LOCK = threading.Lock()
 
 
 def intake_now() -> tuple[str, int] | None:
-    """(model, minutes) the nesting worker has been on it — a long time says where the queue is held up."""
-    if not _NOW:
-        return None
+    """(model, minutes) the nesting has been on the longest — a long time says where the queue is held up."""
     import time as _t
-    return os.path.basename(_NOW["path"]), int((_t.monotonic() - _NOW["since"]) // 60)
+    with _NOW_LOCK:
+        if not _NOW:
+            return None
+        path, since = min(_NOW.items(), key=lambda kv: kv[1])
+    return os.path.basename(path), int((_t.monotonic() - since) // 60)
+
+
+def nesting_now() -> set[str]:
+    with _NOW_LOCK:
+        return set(_NOW)
+
+
+def parallel(ws) -> int:
+    """How many models are nested at the same time (owner: "double nesting at once"): 1 … 4."""
+    try:
+        return max(1, min(4, int(ws.db.get_setting("nesting.parallel", 1) or 1)))
+    except (TypeError, ValueError):
+        return 1
+
+
+def claim(ws, n: int | None = None) -> list[str]:
+    """The next models of the queue for the free nesting places, each marked as being nested (so a second worker
+    never takes the same one). Give each back with register_mdl (it frees its place)."""
+    import time as _t
+    free = (parallel(ws) if n is None else n)
+    with _NOW_LOCK:
+        free -= len(_NOW)
+        if free <= 0:
+            return []
+        busy = set(_NOW)
+    got = []
+    for p in queue(ws):
+        if len(got) >= free:
+            break
+        if p in busy:
+            continue
+        with _NOW_LOCK:
+            if p in _NOW:
+                continue
+            _NOW[p] = _t.monotonic()
+        got.append(p)
+    return got
 
 
 def register_mdl(ws, path: str, cut: bool | None = None) -> dict:
     """Watched-folder handler for the MDL folder. Returns {status, check, cutting, ...}."""
     import time as _t
-    _NOW.update(path=path, since=_t.monotonic())
+    with _NOW_LOCK:
+        _NOW.setdefault(path, _t.monotonic())
     try:
         return _register_mdl(ws, path, cut)
     finally:
-        _NOW.clear()
+        with _NOW_LOCK:
+            _NOW.pop(path, None)
 
 
 def _register_mdl(ws, path: str, cut: bool | None = None) -> dict:
@@ -272,8 +315,8 @@ def queue(ws) -> list[str]:
 
 def next_queued(ws) -> str | None:
     """The next model to nest (the first of the queue)."""
-    q = queue(ws)
-    return q[0] if q else None
+    busy = nesting_now()
+    return next((p for p in queue(ws) if p not in busy), None)
 
 
 def move_in_queue(ws, paths: list[str], how: str) -> list[str]:
@@ -322,12 +365,12 @@ def precheck_queue(ws, limit: int = 1) -> list[str]:
     from .pattern_check import check_model, known_result
     if not ws.db.get_setting("cutting.pattern_check", True):
         return []
-    busy = _NOW.get("path")
+    busy = nesting_now()
     held, done = [], 0
     for p in queue(ws):
         if done >= limit:
             break
-        if p == busy or known_result(ws, p) == []:
+        if p in busy or known_result(ws, p) == []:
             continue                                  # being nested now / sound
         done += 1
         r = ws.db.one("SELECT id, issues, lines FROM grafis_results WHERE path=? AND handed_over=1 AND archived=0 "
