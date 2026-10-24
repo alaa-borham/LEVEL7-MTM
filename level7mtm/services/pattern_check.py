@@ -369,7 +369,7 @@ def _check_model(ws, path: str, width_mm: float | None = None) -> list[str]:
             args = cmd + ["nest", path, "--width", f"{width_mm or 1500:g}", "--time", "1", "-o", out]
             if size:
                 args += ["--sizes", f"{size}=1"]
-            if _run(args, env, log, 240) != 0 or not os.path.isfile(out):
+            if _run(args, env, log, 120) != 0 or not os.path.isfile(out):
                 tail = " ".join(" ".join(log[1:]).split())[-160:]
                 LAST["text"] = f"pattern not checked: the check marker was not made ({tail})"
                 return []

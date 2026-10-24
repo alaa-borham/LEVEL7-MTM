@@ -562,7 +562,7 @@ def shortage(drv, st, path: str) -> str:
 TEMP_AGE_S = 600                                   # a scratch file this old belongs to no GRAFIS running
 
 
-def clean_temp(home: str | None = None, now_=time.time) -> tuple[int, float]:
+def clean_temp(home: str | None = None, now_=time.time, budget_s: float = 15.0) -> tuple[int, float]:
     """The scratch files GRAFIS leaves in <GRAFIS>\\temp (A:\\GRAFIS\\temp: "lm4modl_z: Zu viele Scratch-Files!",
     and the memory they hold): removed once GRAFIS is closed — the models are saved in the MDL folder, never here.
     Only files older than a few minutes; a file in use is left. Returns (files removed, MB)."""
@@ -571,8 +571,13 @@ def clean_temp(home: str | None = None, now_=time.time) -> tuple[int, float]:
     if not d or not os.path.isdir(d):
         return 0, 0.0
     n, size = 0, 0
+    t_end = time.monotonic() + budget_s                # thousands of files: the rest next time, never held up
     for root, _dirs, files in os.walk(d):
+        if time.monotonic() > t_end:
+            break
         for f in files:
+            if time.monotonic() > t_end:
+                break
             p = os.path.join(root, f)
             try:
                 st = os.stat(p)
@@ -734,6 +739,19 @@ _RUNNING = threading.Lock()                       # one robot at a time: GRAFIS 
 _CURRENT: dict = {"path": None}                   # the model GRAFIS has open now (the MDL folder leaves it alone)
 
 
+def _step(name: str) -> None:
+    """What the robot is doing now (said when it is busy: where it is held up)."""
+    _CURRENT.update(step=name, since=time.monotonic())
+
+
+def busy_text() -> str:
+    path, step, since = _CURRENT.get("path"), _CURRENT.get("step") or "", _CURRENT.get("since")
+    if not path:
+        return "the robot is working on another model"
+    secs = int(time.monotonic() - since) if since else 0
+    return f"the robot is on {os.path.basename(path)}: {step} for {secs} s"
+
+
 def current_model() -> str | None:
     return _CURRENT["path"]
 
@@ -743,15 +761,16 @@ def run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) -> 
     the robot is already working on a model (the timer and "Robot now" never drive GRAFIS together)."""
     from .activity import working
     if not _RUNNING.acquire(blocking=False):
-        return {"status": "busy", "message": "the robot is working on another model", "path": job["path"]}
+        return {"status": "busy", "message": busy_text(), "path": job["path"]}
     try:
         rids = [r["revision_id"] for r in ws.db.q("SELECT revision_id FROM grafis_orders WHERE path=?",
                                                   (job["path"],))]
         _CURRENT["path"] = job["path"]
+        _step("starting")
         with working(rids, "robot"):
             return _run_one(ws, job, drv, sleep, clock)
     finally:
-        _CURRENT["path"] = None
+        _CURRENT.update(path=None, step="", since=None)
         _RUNNING.release()
 
 
@@ -784,6 +803,7 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
         except RobotError as e:                       # left by the model before: GRAFIS was closed, start anew
             notes.append(f"before: {e}")
             sleep(3)
+        _step("checking free memory and disk")
         short = shortage(drv, st, job["path"])
         if (short or _LOW["memory"]) and hasattr(drv, "close"):
             # GRAFIS (or the scratch files of all its models) holds the memory: a new GRAFIS gives it back
@@ -800,12 +820,14 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
         if hasattr(drv, "close") and [t for t in open_models(drv) if not shows_file(t, job["path"])]:
             notes.append(restart_grafis(drv, sleep, clock))   # owner: one model at a time — left open: closed first
         if not [w for w in drv.windows() if (w["title"] or "").lower().startswith("grafis")]:
+            _step("cleaning the GRAFIS temp folder")
             try:                                      # no GRAFIS running: its old scratch files go first
                 n, mb = clean_temp()
                 if n:
                     notes.append(f"GRAFIS temp cleaned: {n} files, {mb:,.0f} MB")
             except Exception:  # noqa: BLE001 - only a clean-up
                 pass
+        _step("opening the model in GRAFIS")
         drv.open(job["path"])
         t0, main = clock(), None
         while clock() - t0 < st["open_timeout"]:
@@ -820,6 +842,7 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
         if behind:
             drv.send_back(main, prev)                 # the owner keeps working in front
         sleep(2)
+        _step("Test Run All Parts")
         how = [_act(drv, st, main, "test_run", job["path"], True)]
         sleep(st["run_wait"])
         t0 = clock()
@@ -834,6 +857,7 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
         _answer_dialogs(drv, st, notes)               # a box after the test run blocks the save
         if behind:
             drv.send_back(main, prev)
+        _step("saving")
         how.append(_act(drv, st, main, "save", job["path"], True))
         t0 = clock()
         while clock() - t0 < st["save_timeout"]:
@@ -871,6 +895,7 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
             width = json.loads(rev["normalized"]).get("fabric_width_mm") if rev else None
         except (TypeError, ValueError):
             width = None
+        _step("checking the pattern")
         bad = check_model(ws, job["path"], width)
         from .pattern_check import LAST
         if LAST["text"] and not bad:

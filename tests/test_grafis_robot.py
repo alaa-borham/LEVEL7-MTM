@@ -540,3 +540,27 @@ def test_grafis_temp_cleaned_when_grafis_is_closed(tmp_path):
     set_language("ar")
     assert "temp" in tr_msg("GRAFIS closed and started anew (scratch files); GRAFIS temp cleaned: 3 files, 12 MB")
     set_language("en")
+
+
+def test_busy_says_what_the_robot_is_doing_and_since_when(tmp_path):
+    """"Busy" with no model opened said nothing: it names the model, the step and for how long."""
+    import time
+    robot._CURRENT.update(path=str(tmp_path / "Order-7.mdl"))
+    robot._step("cleaning the GRAFIS temp folder")
+    robot._CURRENT["since"] = time.monotonic() - 42
+    try:
+        t = robot.busy_text()
+        assert t.startswith("the robot is on Order-7.mdl: cleaning the GRAFIS temp folder for 4")
+        from level7mtm.ui.i18n import set_language, tr_msg
+        set_language("ar")
+        assert "ينظّف مجلد temp" in tr_msg(t) and "Order-7.mdl" in tr_msg(t)
+        set_language("en")
+    finally:
+        robot._CURRENT.update(path=None, step="", since=None)
+    assert robot.busy_text() == "the robot is working on another model"
+    t = tmp_path / "g" / "temp"
+    t.mkdir(parents=True)
+    for i in range(5):
+        (t / f"{i}.scr").write_bytes(b"x")
+    assert robot.clean_temp(str(tmp_path / "g"), now_=lambda: time.time() + 3600, budget_s=0)[0] == 0   # no time
+    assert robot.clean_temp(str(tmp_path / "g"), now_=lambda: time.time() + 3600)[0] == 5
