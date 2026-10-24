@@ -327,7 +327,8 @@ def reference(ws, template: str | None) -> dict:
         return _REFS[sha]
     got = _read_pieces(ws, template, None)
     if not got:
-        return {}
+        _REFS[sha] = {}                               # not readable: not tried again for every model (it held the
+        return {}                                     # robot minutes per model); the other checks still run
     pieces = got[0]
     ref = {}
     for name, outline in pieces:

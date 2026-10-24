@@ -206,3 +206,12 @@ def test_a_fin_out_of_the_back_is_found_against_the_base_pattern(ws, tmp_path, m
     set_language("ar")
     assert "بعيد عن البترون الأساسي" in tr_msg(msgs[0])
     set_language("en")
+
+
+def test_a_base_pattern_that_cannot_be_read_is_not_tried_for_every_model(ws, tmp_path, monkeypatch):
+    tpl = tmp_path / "Base.mdl"
+    tpl.write_bytes(b"base")
+    tries = []
+    monkeypatch.setattr(pc, "_read_pieces", lambda ws_, p, w: tries.append(p) or None)
+    assert pc.reference(ws, str(tpl)) == {} and pc.reference(ws, str(tpl)) == {}
+    assert len(tries) == 1
