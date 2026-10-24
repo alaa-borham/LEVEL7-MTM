@@ -9,7 +9,7 @@ import zipfile
 from PySide6.QtCore import QByteArray, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (QBrush, QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF,
                            QTransform)
-from PySide6.QtWidgets import (QAbstractItemView, QFrame, QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsView, QGridLayout,
+from PySide6.QtWidgets import (QAbstractItemView, QBoxLayout, QFrame, QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsView, QGridLayout,
                                QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy, QToolButton,
                                QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
@@ -1761,8 +1761,22 @@ class Inspector(QScrollArea):
         for b in self._full:                              # "Robot: try again": under the reason it answers
             self.lay.addWidget(b)
         self.kv: dict[str, QLabel] = {}
+        # owner's design: the order and its stages side by side (one above the other when the panel is narrow)
+        self.pair = QBoxLayout(QBoxLayout.LeftToRight)
+        self.pair.setSpacing(14)
+        left = QVBoxLayout()
         self._section(tr("The order"), [("customer", "Customer"), ("width", "Width"), ("quantity", "Quantity"),
-                                         ("imported", "Imported")])                # owner: no Basic-Size, no fabric
+                                         ("imported", "Imported")], left)          # owner: no Basic-Size, no fabric
+        left.setAlignment(Qt.AlignTop)
+        right = QVBoxLayout()
+        right.setAlignment(Qt.AlignTop)
+        right.addWidget(self._sec_title(tr("Stages")))
+        self.stages = QGridLayout()
+        self.stages.setVerticalSpacing(2)
+        right.addLayout(self.stages)
+        self.pair.addLayout(left, 3)
+        self.pair.addLayout(right, 2)
+        self.lay.addLayout(self.pair)
         self.lay.addWidget(self._sec_title(tr("Nesting")))
         nr = QHBoxLayout()
         self.ring = Ring()
@@ -1778,10 +1792,6 @@ class Inspector(QScrollArea):
             self.kv[k] = b
         nr.addLayout(g, 1)
         self.lay.addLayout(nr)
-        self.lay.addWidget(self._sec_title(tr("Stages")))
-        self.stages = QGridLayout()
-        self.stages.setVerticalSpacing(2)
-        self.lay.addLayout(self.stages)
         self.lay.addWidget(self._sec_title(tr("X values in the model")))
         self.xgrid = QGridLayout()
         self.xgrid.setHorizontalSpacing(8)
@@ -1795,8 +1805,15 @@ class Inspector(QScrollArea):
         t.setObjectName("secTitle")
         return t
 
-    def _section(self, title, items):
-        self.lay.addWidget(self._sec_title(title))
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        want = QBoxLayout.TopToBottom if self.viewport().width() < 340 else QBoxLayout.LeftToRight
+        if self.pair.direction() != want:
+            self.pair.setDirection(want)
+
+    def _section(self, title, items, into=None):
+        into = into if into is not None else self.lay
+        into.addWidget(self._sec_title(title))
         g = QGridLayout()
         g.setVerticalSpacing(2)
         for i, (k, t) in enumerate(items):
@@ -1808,13 +1825,14 @@ class Inspector(QScrollArea):
             g.addWidget(a, i, 0)
             g.addWidget(b, i, 1)
             self.kv[k] = b
-        self.lay.addLayout(g)
+        into.addLayout(g)
 
     @staticmethod
     def _clear(grid):
         while grid.count():
             w = grid.takeAt(0).widget()
             if w:
+                w.hide()                              # gone at once (deleted a moment later)
                 w.deleteLater()
 
     def _show_defect(self, path: str | None):
