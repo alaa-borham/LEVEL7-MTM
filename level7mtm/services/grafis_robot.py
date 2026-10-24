@@ -615,10 +615,10 @@ def clean_temp(home: str | None = None, now_=time.time, budget_s: float = 15.0) 
     n, size = 0, 0
     t_end = time.monotonic() + budget_s                # thousands of files: the rest next time, never held up
     for root, _dirs, files in os.walk(d):
-        if time.monotonic() > t_end:
+        if time.monotonic() >= t_end:              # (>=: the Windows clock moves in 15 ms steps)
             break
         for f in files:
-            if time.monotonic() > t_end:
+            if time.monotonic() >= t_end:
                 break
             p = os.path.join(root, f)
             try:
