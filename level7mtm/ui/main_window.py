@@ -2172,12 +2172,18 @@ class GrafisPage(Page):
             out = self.watcher.poll() if self.watcher else []
             if self.ws.db.get_setting("nesting.paused", False):
                 return out                            # the nesting is stopped: the saved models wait in the queue
-            got = mw.poll(limit=1) if mw else []      # one model at a time: a stop takes effect after it
-            if not got:
-                from ..services.mdl_intake import next_queued, register_mdl
-                p = next_queued(self.ws)              # left over in the queue (saved while stopped …)
-                if p:
-                    got = [register_mdl(self.ws, p)]
+            from ..services.mdl_intake import next_queued, register_mdl
+            p = next_queued(self.ws)                  # the queue in its order (the owner moves models up / down)
+            if p:
+                got = [register_mdl(self.ws, p)]
+                if mw:                                # the folder look leaves it now (read already)
+                    try:
+                        st = os.stat(p)
+                        mw.state.done[p] = (st.st_size, st.st_mtime)
+                    except OSError:
+                        pass
+            else:
+                got = mw.poll(limit=1) if mw else []  # one model at a time: a stop takes effect after it
             return out + got
         w = Worker(work)
         w.signals.done.connect(done)
@@ -4103,6 +4109,7 @@ class MainWindow(QMainWindow):
         self.browser.remove.connect(self.remove_orders)
         self.browser.reread.connect(self.reread_orders)
         self.browser.nesting_toggle.connect(self.toggle_nesting)
+        self.browser.queue_move.connect(self.move_in_queue)
         self.browser.nesting_paused = bool(self.ws.db.get_setting("nesting.paused", False))
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
@@ -4664,6 +4671,13 @@ class MainWindow(QMainWindow):
         from ..services.auto_cut import tidy_markers
         if self.isVisible():
             self.pool.start(Worker(lambda: tidy_markers(self.ws)))
+
+    def move_in_queue(self, rids: list, how: str):
+        """Right click on the nesting queue: the orders chosen to the top / a step up / a step down / the bottom."""
+        from ..services.mdl_intake import move_in_queue
+        paths = [r["queue_path"] for r in self.browser.rows if r["rid"] in set(rids) and r.get("queue_path")]
+        if self.guard(lambda: move_in_queue(self.ws, paths, how)) is not None:
+            self.refresh_cad(force=True)
 
     def toggle_nesting(self):
         """The button on the nesting queue: stop the nesting (the model being nested is finished first; the models

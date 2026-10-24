@@ -177,14 +177,15 @@ def _register_mdl(ws, path: str, cut: bool | None = None) -> dict:
     return out
 
 
-def next_queued(ws) -> str | None:
-    """The next model waiting for its nesting that no folder look will bring any more (e.g. saved by GRAFIS while
-    the nesting was stopped, or handed over and never nested): the oldest first."""
+def queue(ws) -> list[str]:
+    """The models waiting for their nesting, in the order they are nested: the owner's order (moved to the top /
+    bottom / a step up or down), then the oldest first. Those that no folder look will bring any more count too
+    (saved by GRAFIS while the nesting was stopped, or handed over and never nested)."""
     from .auto_cut import settings
     from .grafis_robot import file_sha
     if not settings(ws)["enabled"]:
-        return None                                   # cutting files are not made by themselves
-    stale = []
+        return []                                     # cutting files are not made by themselves
+    stale, found = [], []
     try:
         for r in ws.db.q("SELECT id, path, sha256 FROM grafis_results WHERE archived=0 AND handed_over=1 AND path IS "
                          "NOT NULL AND sha256 NOT IN (SELECT sha256 FROM cutting_jobs) ORDER BY id"):
@@ -195,7 +196,8 @@ def next_queued(ws) -> str | None:
             except OSError:
                 continue                              # being written: looked at next time
             if same:
-                return r["path"]
+                found.append(r["path"])
+                continue
             # the file changed since it was handed over (saved again by CAD, or written again after the order was
             # read again): this old job is over — left in the queue it was taken again and again, and every model
             # after it waited (owner: "the nesting does not work most of the time"); the file itself is looked at
@@ -213,16 +215,51 @@ def next_queued(ws) -> str | None:
         if g["path"]:
             latest.pop(g["path"], None)
             latest[g["path"]] = json.loads(g["info"]).get("sha256")
+    from .grafis_robot import current_model
+    import time as _t
+    busy = current_model()
     for p, written in latest.items():                # oldest first
-        if not os.path.isfile(p):
-            continue
+        if p in found or not os.path.isfile(p) or p == busy:
+            continue                                  # (open in CAD now: when it is saved)
         try:
+            if _t.time() - os.path.getmtime(p) < 5:
+                continue                              # still being saved: looked at in a moment
             sha = file_sha(p)
             if sha != written and identity(p, sha) not in known:
-                return p                              # saved by GRAFIS, never looked at
+                found.append(p)                       # saved by GRAFIS, never looked at
         except OSError:
             continue
-    return None
+    ranks = ws.db.get_setting("nesting.order") or {}
+    first = {p: i for i, p in enumerate(found)}
+    return sorted(found, key=lambda p: (ranks[p], 0) if p in ranks else (1e9, first[p]))
+
+
+def next_queued(ws) -> str | None:
+    """The next model to nest (the first of the queue)."""
+    q = queue(ws)
+    return q[0] if q else None
+
+
+def move_in_queue(ws, paths: list[str], how: str) -> list[str]:
+    """The owner moves these models in the nesting queue: "top", "up" (one step), "down" (one step) or "bottom".
+    Returns the new order."""
+    q = queue(ws)
+    chosen = [p for p in q if p in set(paths)]
+    if not chosen:
+        return q
+    if how == "top":
+        q = chosen + [p for p in q if p not in chosen]
+    elif how == "bottom":
+        q = [p for p in q if p not in chosen] + chosen
+    elif how in ("up", "down"):
+        step = -1 if how == "up" else 1
+        idx = [q.index(p) for p in chosen]
+        for i in (sorted(idx) if step < 0 else sorted(idx, reverse=True)):
+            j = i + step
+            if 0 <= j < len(q) and q[j] not in chosen:
+                q[i], q[j] = q[j], q[i]
+    ws.db.set_setting("nesting.order", {p: i for i, p in enumerate(q)})   # the order kept for the whole queue
+    return q
 
 
 def handled_before(ws, path: str) -> bool:

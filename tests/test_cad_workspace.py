@@ -890,3 +890,26 @@ def test_cutting_files_go_in_the_customer_folder(ws):
     pid = customers.add_product(ws, cid, "ثوب سعودي", "91001")
     assert customer_folder(ws, {pid}) == "Richy" and customer_folder(ws, {cid}) == "Richy"   # product: its customer
     assert customer_folder(ws, {cid, "level7"}) == "mixed"
+
+
+def test_owner_reorders_the_nesting_queue(ws, tmp_path):
+    """Right click on the nesting queue: to the top, one step up / down, to the bottom — the nesting takes them so."""
+    from level7mtm.services.mdl_intake import identity, move_in_queue, next_queued, queue
+    from level7mtm.storage.db import now
+    paths = []
+    for n in "ABCD":
+        p = tmp_path / f"{n}.mdl"
+        p.write_text(n)
+        paths.append(str(p))
+        with ws.db.tx() as c:
+            c.execute("INSERT INTO grafis_results(sha256, path, checked_at, info, pieces, lines, issues, status, "
+                      "handed_over) VALUES (?, ?, ?, '{}', '[]', '[]', '[]', 'handed_over', 1)",
+                      (identity(str(p)), str(p), now()))
+    a, b, c_, d = paths
+    assert queue(ws) == [a, b, c_, d]                                     # the oldest first
+    assert move_in_queue(ws, [c_], "top") == [c_, a, b, d] and next_queued(ws) == c_
+    assert move_in_queue(ws, [a], "down") == [c_, b, a, d]
+    assert move_in_queue(ws, [d], "up") == [c_, b, d, a]
+    assert move_in_queue(ws, [c_], "bottom") == [b, d, a, c_]
+    assert move_in_queue(ws, [b, d], "down") == [a, b, d, c_]             # several together keep their order
+    assert queue(ws) == [a, b, d, c_]                                     # kept

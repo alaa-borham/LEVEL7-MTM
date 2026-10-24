@@ -369,6 +369,10 @@ AR = {
     "Read again with the current settings": "إعادة القراءة بالإعدادات الحالية",
     "Measurement limits…": "حدود القياس…",
     "Measurement checks": "فحص القياسات",
+    "To the top": "إلى الأعلى",
+    "One step up": "خطوة لأعلى",
+    "One step down": "خطوة لأسفل",
+    "To the bottom": "إلى الأسفل",
     "Pattern errors (MDL-ERR)": "أخطاء البترون (MDL-ERR)",
     "Check the pattern for distortion": "فحص تشوه البترون",
     "A piece with a spike, a slit or an outline crossing itself: no cutting file, the model goes to MDL-ERR with the "

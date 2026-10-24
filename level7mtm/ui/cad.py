@@ -214,6 +214,11 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
     names = customer_names(ws)
     nesting_now = {r for r, m in snapshot().items() if m.get("what") == "nesting"}
     paused = bool(db.get_setting("nesting.paused", False))
+    from ..services.mdl_intake import queue as nesting_queue
+    try:
+        qpos = {p: i for i, p in enumerate(nesting_queue(ws))}   # the order the nesting takes them (owner moves)
+    except Exception:  # noqa: BLE001 - the list is shown anyway
+        qpos = {}
     from ..services.shifts import current as current_shift
     shift_start = current_shift(ws)["started_at"]            # "ready to cut": this shift's only (owner)
     auto_on = bool(db.get_setting("cutting.auto", True))
@@ -304,6 +309,9 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
         if res:                                               # GRAFIS saved it: an old robot failure is over
             row["problems"] = [p for p in row["problems"] if not p.startswith(tr("GRAFIS robot") + ":")]
             row["robot_failed"] = False
+        if row.get("nest_queue"):
+            row["queue_path"] = row["result"] or row["mdl"]
+            row["queue_pos"] = qpos.get(row["queue_path"])
         if row.get("nest_queue"):                         # never silent: why the queue does not move
             why = tr("the nesting is stopped: press «Start» on the nesting queue") if paused else \
                 tr("«Nest and write cutting files» is off in Setup: press «Start» on the nesting queue") \
@@ -1341,6 +1349,7 @@ class OrderBrowser(QWidget):
     remove = Signal(list)                              # right click → remove: the order lines (revision ids)
     reread = Signal(list)                              # right click → read their XML again with today's settings
     nesting_toggle = Signal()                          # the button on the nesting queue: start / stop the nesting
+    queue_move = Signal(list, str)                     # right click on the queue: (revision ids, top/up/down/bottom)
     nesting_paused = False
 
     def __init__(self):
@@ -1484,6 +1493,8 @@ class OrderBrowser(QWidget):
         for key, title, stages, colour in self.GROUPS:
             mine = [r for r in rows if ("queue" if r.get("nest_queue") and r["stage"] in ("grafis", "nest")
                                         else r["stage"]) in stages]
+            if key == "queue":                            # in the order the nesting takes them
+                mine.sort(key=lambda r: (r.get("queue_pos") is None, r.get("queue_pos") or 0))
             grp = QTreeWidgetItem([f"{tr(title)}", str(len(mine))])
             counts[key], items[key] = len(mine), grp
             grp.setData(0, Qt.UserRole + 1, key)
@@ -1504,7 +1515,9 @@ class OrderBrowser(QWidget):
                 continue
             for r in mine:
                 col = c[STAGE_COLOUR[r["stage"]]]
-                it = QTreeWidgetItem([ltr(r["line"]), tr("Waiting for nesting") if r["stage"] == "nest" and
+                it = QTreeWidgetItem([(f"{r['queue_pos'] + 1}.  " if key == "queue" and r.get("queue_pos") is not None
+                                       else "") + ltr(r["line"]),
+                                      tr("Waiting for nesting") if r["stage"] == "nest" and
                                       r.get("waiting") else tr(STAGE_TEXT[r["stage"]])])
                 it.setData(0, Qt.UserRole, r["rid"])
                 pm = QPixmap(10, 10)
@@ -1605,6 +1618,12 @@ class OrderBrowser(QWidget):
         if not rids:
             return
         m = QMenu(self)
+        queued = {r["rid"] for r in self.rows if r.get("nest_queue")}
+        if rids and all(r in queued for r in rids):      # the nesting queue: its order
+            for text, how in (("To the top", "top"), ("One step up", "up"), ("One step down", "down"),
+                              ("To the bottom", "bottom")):
+                m.addAction(tr(text), lambda h=how: self.queue_move.emit(rids, h))
+            m.addSeparator()
         m.addAction(tr("Read again with the current settings"), lambda: self.reread.emit(rids))
         m.addSeparator()
         m.addAction(tr("Delete order…") if len(rids) == 1 else f"{tr('Delete orders…')} ({len(rids)})",
