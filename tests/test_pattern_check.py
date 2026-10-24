@@ -170,3 +170,15 @@ def test_distorted_pieces_pictured_with_each_defect_circled(ws, tmp_path):
     from PySide6.QtSvg import QSvgRenderer
     assert QSvgRenderer(svg).isValid()
     assert pc.crossing([(0, 0), (400, 300), (400, 0), (0, 500)]) is not None
+
+
+def test_robot_message_with_a_dash_inside_is_translated_whole():
+    """"AI TOOL: pattern distorted … back: 2 needle tip(s) — a spike …" was shown half in English."""
+    from level7mtm.ui.i18n import set_language, tr, tr_msg
+    set_language("ar")
+    try:
+        t = tr_msg(tr("GRAFIS robot") + ": pattern distorted in CAD, not nested: back: 2 needle tip(s) — a spike or "
+                   "a slit in the outline — the model is in A:\\MDL-ERR")
+        assert t.startswith("AI TOOL: ") and "needle" not in t and "سن حاد" in t
+    finally:
+        set_language("en")

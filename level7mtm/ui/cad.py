@@ -1707,6 +1707,33 @@ class Inspector(QScrollArea):
         hr.addStretch()
         hr.addWidget(self.pill)
         self.lay.addLayout(hr)
+        self.buttons = {}                                 # the actions right under the title (owner: above the notes)
+        self._full: list = []
+        row = QHBoxLayout()                               # owner: the actions as one row of icons
+        row.setSpacing(6)
+        for key, text, primary, *ic in actions:
+            if ic:                                        # an icon (its name on hovering)
+                b = QToolButton()
+                b.setIcon(icon(ic[0], themes.colour("accent") if primary else None))
+                b.setIconSize(QSize(22, 22))
+                b.setFixedHeight(38)
+                b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                b.setMinimumWidth(30)
+                b.setToolTip(text)
+                b.setAccessibleName(text)
+                b.setObjectName("inspectorIcon")
+                row.addWidget(b)
+            else:
+                b = QPushButton(text)
+                if primary:
+                    b.setObjectName("primary")
+                b.setToolTip(text)
+                b.setMinimumWidth(0)                      # a narrow panel: the text is cut, never the panel held wide
+                b.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+                self._full.append(b)
+            self.buttons[key] = b
+        if row.count():
+            self.lay.addLayout(row)
         self.problems = QLabel()                          # first thing under the title: why it needs attention
         self.problems.setWordWrap(True)
         self.problems.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -1731,32 +1758,8 @@ class Inspector(QScrollArea):
         self.waiting.setStyleSheet(f"color: {warn.name()}; border: 1px solid {warn.name()}; padding: 6px;")
         self.waiting.hide()
         self.lay.addWidget(self.waiting)
-        self.buttons = {}                                 # the actions right under it, never scrolled away
-        row = QHBoxLayout()                               # owner: the actions as one row of icons
-        row.setSpacing(6)
-        for key, text, primary, *ic in actions:
-            if ic:                                        # an icon (its name on hovering)
-                b = QToolButton()
-                b.setIcon(icon(ic[0], themes.colour("accent") if primary else None))
-                b.setIconSize(QSize(22, 22))
-                b.setFixedHeight(38)
-                b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-                b.setMinimumWidth(30)
-                b.setToolTip(text)
-                b.setAccessibleName(text)
-                b.setObjectName("inspectorIcon")
-                row.addWidget(b)
-            else:
-                b = QPushButton(text)
-                if primary:
-                    b.setObjectName("primary")
-                b.setToolTip(text)
-                b.setMinimumWidth(0)                      # a narrow panel: the text is cut, never the panel held wide
-                b.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
-                self.lay.addWidget(b)
-            self.buttons[key] = b
-        if row.count():
-            self.lay.addLayout(row)
+        for b in self._full:                              # "Robot: try again": under the reason it answers
+            self.lay.addWidget(b)
         self.kv: dict[str, QLabel] = {}
         self._section(tr("The order"), [("customer", "Customer"), ("width", "Width"), ("quantity", "Quantity"),
                                          ("imported", "Imported")])                # owner: no Basic-Size, no fabric

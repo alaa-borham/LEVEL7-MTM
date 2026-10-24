@@ -516,7 +516,7 @@ AR = {
     "Robot: run now": "الروبوت: تشغيل الآن",
     "No order model is waiting for GRAFIS in": "لا يوجد موديل طلب ينتظر GRAFIS في",
     "Write the models again with 'Write GRAFIS model for order…'.": "أعد كتابة الموديلات بزر «كتابة موديل GRAFIS لطلب…».",
-    "GRAFIS robot": "روبوت GRAFIS",
+    "GRAFIS robot": "AI TOOL",
     "GRAFIS robot on this PC: open the model, Test Run All Parts, save": "روبوت GRAFIS على هذا الجهاز: فتح الموديل، Test Run All Parts، حفظ",
     "Teach: Test Run All Parts button": "تعليم: زر Test Run All Parts",
     "Teach: Save button": "تعليم: زر الحفظ",
@@ -891,6 +891,11 @@ def _tr_msg(text: str) -> str:
                 m = re.fullmatch(pat, text.strip())
                 if m:
                     return ar.format(*(_tr_msg(g) for g in m.groups()))
+        m = re.fullmatch(r"([A-Za-z]*\d+[\w-]*|[\w ]{1,24}):\s+(.+)", text)   # "AI TOOL: <a message with — >"
+        if m and " — " in m.group(2):
+            rest = _tr_msg(m.group(2))
+            if rest != m.group(2):
+                return f"{tr(m.group(1))}: {rest}"
         return " — ".join(_tr_msg(p) for p in text.split(" — "))
     for pat, ar in MSG_AR:
         m = re.fullmatch(pat, text.strip())
