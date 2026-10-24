@@ -121,3 +121,20 @@ def test_robot_sends_a_distorted_model_to_needs_attention(ws, tmp_path, monkeypa
     set_language("ar")
     assert "MDL-ERR" in tr_msg(r["message"])
     set_language("en")
+
+
+def test_info_with_sizes_as_a_list_is_read(ws, tmp_path, monkeypatch):
+    """LEVEL7 Nesting's info --json gives "sizes" as a list ('list' object has no attribute 'values' stopped every
+    model in CAD): read as it comes; a check that fails itself never stops a model."""
+    from level7mtm.services import auto_cut
+    spike = [[0, 0], [300, 0], [300, 400], [170, 400], [150, 900], [130, 400], [0, 400]]
+    assert pc._outlines_of_info({"pieces": [{"name": "a", "sizes": ["base:50"]}]}) == []
+    assert pc._outlines_of_info({"pieces": [{"name": "b", "sizes": [{"name": "50", "cut": spike}]}]})[0][0] == "b"
+    assert pc._outlines_of_info({"pieces": [{"name": "c", "cut": [{"x": 0, "y": 0}, {"x": 9, "y": 0},
+                                                                  {"x": 9, "y": 9}]}]})[0][0] == "c"
+    assert pc._outlines_of_info({"pieces": "x"}) == [] and pc._outlines_of_info([]) == []
+    m = tmp_path / "M.mdl"
+    m.write_bytes(b"m")
+    monkeypatch.setattr(auto_cut, "nesting_command", lambda ws_: (["cli"], {}))
+    monkeypatch.setattr(auto_cut, "_info", lambda c, e, p: 1 / 0)
+    assert pc.check_model(ws, str(m)) == []

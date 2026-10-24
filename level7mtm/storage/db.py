@@ -216,6 +216,11 @@ MIGRATIONS: list[str] = [
         counts TEXT NOT NULL
     )
     """,
+    # 11 — the pattern check after CAD stopped every model on "'list' object has no attribute 'values'" (a fault of
+    # this program, not of the model): those tries are forgotten, the saved models go on to the nesting
+    """
+    DELETE FROM robot_jobs WHERE status='failed' AND message LIKE '%object has no attribute%'
+    """,
 ]
 
 

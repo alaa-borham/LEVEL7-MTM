@@ -152,23 +152,46 @@ def check_marker(path: str) -> list[str]:
     return out
 
 
+def _pts(raw) -> list[tuple[float, float]] | None:
+    """[[x, y], …] or [{"x":…, "y":…}, …] as points; None when it is not an outline."""
+    if not isinstance(raw, (list, tuple)) or len(raw) < 3:
+        return None
+    try:
+        return [(float(q["x"]), float(q["y"])) if isinstance(q, dict) else (float(q[0]), float(q[1])) for q in raw]
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
+
+
 def _outlines_of_info(info: dict) -> list[tuple[str, list]]:
-    """The piece outlines in ``level7-cli info --json`` (when this LEVEL7 Nesting gives them)."""
+    """The piece outlines in ``level7-cli info --json`` (when this LEVEL7 Nesting gives them; its "sizes" may be a
+    list of names, a list of sizes or a dict of them)."""
     out = []
-    for p in info.get("pieces") or []:
+    pieces = info.get("pieces") if isinstance(info, dict) else None
+    for p in pieces if isinstance(pieces, list) else []:
         if not isinstance(p, dict):
             continue
-        name = p.get("name") or "?"
-        shapes = [p.get("cut"), p.get("outline")] + [g.get("cut") for g in (p.get("sizes") or {}).values()
+        sizes = p.get("sizes")
+        sizes = list(sizes.values()) if isinstance(sizes, dict) else sizes if isinstance(sizes, list) else []
+        shapes = [p.get("cut"), p.get("outline")] + [g.get("cut") or g.get("outline") for g in sizes
                                                      if isinstance(g, dict)]
-        for pts in shapes:
-            if pts and len(pts) >= 3:
-                out.append((name, [(float(x), float(y)) for x, y in pts]))
+        for raw in shapes:
+            pts = _pts(raw)
+            if pts:
+                out.append((str(p.get("name") or "?"), pts))
                 break
     return out
 
 
 def check_model(ws, path: str, width_mm: float | None = None) -> list[str]:
+    """See _check_model; a failure of the check itself never stops the model (the check after the nesting
+    still holds)."""
+    try:
+        return _check_model(ws, path, width_mm)
+    except Exception:  # noqa: BLE001 - only a check
+        return []
+
+
+def _check_model(ws, path: str, width_mm: float | None = None) -> list[str]:
     """The pattern as CAD saved it, checked before it waits for the nesting (owner: "the files distorted in CAD
     still reach the nesting queue instead of Needs attention"). The pieces are read by LEVEL7 Nesting: from
     ``info --json`` when it gives the outlines, else from a quick marker made for the check only (thrown away).
