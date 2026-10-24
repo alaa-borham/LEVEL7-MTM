@@ -96,3 +96,28 @@ def test_a_model_that_cannot_be_read_never_holds_up_the_queue(ws, tmp_path, monk
         raise WorkflowError("revision 9 not found")
     monkeypatch.setattr(mdl_intake, "check_mdl", gone)
     assert register_mdl(ws, str(p))["status"] == "waiting_for_grafis"
+
+
+def test_a_model_cad_stopped_on_is_never_nested(ws, tmp_path):
+    """CAD (the robot) stopped on an error with a model: what GRAFIS saved is not nested — the order needs
+    attention (nested, the error went on and it came back to CAD again and again); once the robot is told to
+    try again, the saved copy is taken."""
+    import json
+
+    from level7mtm.services.mdl_intake import next_queued
+    p = tmp_path / "B.mdl"
+    p.write_text("saved after an error")
+    rid = ws.import_file(XML_53).lines[0]["revision_id"]
+    with ws.db.tx() as c:
+        c.execute("INSERT INTO grafis_orders(revision_id, created_at, status, path, template_sha256, info) VALUES "
+                  "(?, ?, 'written', ?, 't', ?)", (rid, "2026-10-24T09:00:00", str(p), json.dumps({"sha256": "x"})))
+        c.execute("INSERT INTO robot_jobs(sha256, path, at, status, message) VALUES ('x', ?, '2026-10-24T09:01:00', "
+                  "'failed', 'GRAFIS internal error mu5Tset-3 — GRAFIS was closed (Cancel)')", (str(p),))
+    os.utime(p, (os.path.getatime(p), os.path.getmtime(p) - 60))
+    assert next_queued(ws) is None                                        # not in the nesting queue
+    out = register_mdl(ws, str(p))
+    assert out["status"] == "cad_error" and out["cutting"] is None
+    assert not ws.db.one("SELECT id FROM grafis_results WHERE path=?", (str(p),))
+    assert ws.revision(rid)["status"] != "sent_to_nesting"
+    ws.db.q("DELETE FROM robot_jobs")                                    # Robot: try again
+    assert next_queued(ws) == str(p)

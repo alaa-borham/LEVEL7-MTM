@@ -52,6 +52,15 @@ def check_mdl(ws, path: str) -> tuple[ScbCheck, dict | None]:
     if info.get("sha256") == content:
         chk.info = {"waiting": True}
         return chk, row                                  # still as written: GRAFIS has not saved it yet
+    failed = ws.db.one("SELECT status, message FROM robot_jobs WHERE path=? AND at>=? ORDER BY id DESC LIMIT 1",
+                       (row["path"], row["created_at"]))
+    if failed and failed["status"] == "failed":
+        # CAD stopped on an error with this model (owner: "it must go to Needs attention, never to the nesting —
+        # nested, the error goes on and it comes back to CAD again and again"): what GRAFIS saved is not nested.
+        # The order waits under Needs attention until the owner fixes it: Robot: try again (the copy saved in CAD
+        # is then nested), Read again, or its XML moved back to process
+        chk.info = {"waiting": True, "cad_error": failed["message"]}
+        return chk, row
     rev = ws.revision(row["revision_id"])
     chk.lines = [{"revision_id": rev["id"], "line_number": rev["line_number"], "status": rev["status"],
                   "quantity": rev["quantity"]}]
@@ -140,7 +149,8 @@ def _register_mdl(ws, path: str, cut: bool | None = None) -> dict:
         chk, row = ScbCheck(path, identity(path)), None
         chk.issues.append(("blocking", f"the saved model could not be read: {type(e).__name__}: {e}"))
     if chk.info.get("waiting"):
-        return {"status": "waiting_for_grafis", "check": chk, "cutting": None}
+        return {"status": "cad_error" if chk.info.get("cad_error") else "waiting_for_grafis", "check": chk,
+                "cutting": None}
     status = "checked" if chk.ok else ("unmatched" if row is None else "needs_review")
     dup = ws.db.one("SELECT id, handed_over, archived FROM grafis_results WHERE sha256=?", (chk.sha256,))
     if dup and dup["handed_over"] and not dup["archived"]:
@@ -219,10 +229,14 @@ def queue(ws) -> list[str]:
                               [(i,) for i in stale])
     known = {r["sha256"] for r in ws.db.q("SELECT sha256 FROM grafis_results")}   # by content, not by name: a
     latest: dict[str, str] = {}                       # model saved again is new; per file its newest writing
-    for g in ws.db.q("SELECT path, info FROM grafis_orders WHERE status='written' AND archived=0 AND id IN "
-                     "(SELECT MAX(id) FROM grafis_orders GROUP BY revision_id) ORDER BY id"):
+    last_try = {j["path"]: j for j in ws.db.q("SELECT path, status, at FROM robot_jobs ORDER BY id")}
+    for g in ws.db.q("SELECT path, info, created_at FROM grafis_orders WHERE status='written' AND archived=0 AND id "
+                     "IN (SELECT MAX(id) FROM grafis_orders GROUP BY revision_id) ORDER BY id"):
         if g["path"]:
             latest.pop(g["path"], None)
+            j = last_try.get(g["path"])
+            if j and j["status"] == "failed" and j["at"] >= g["created_at"]:
+                continue                              # CAD stopped on an error: Needs attention, never nested
             latest[g["path"]] = json.loads(g["info"]).get("sha256")
     from .grafis_robot import current_model
     import time as _t

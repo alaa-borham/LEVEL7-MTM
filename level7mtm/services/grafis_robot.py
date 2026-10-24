@@ -19,8 +19,10 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import string
 import sys
+import tempfile
 import threading
 import time
 
@@ -45,7 +47,11 @@ def settings(ws) -> dict:
             "menu": ws.db.get_setting("robot.menu", {}) or {},
             # GRAFIS keeps scratch files of every model it opened: after so many models it is closed and the next
             # model starts a new GRAFIS (owner: "lm4modl_z: Zu viele Scratch-Files!" after a few hundred)
-            "restart_every": int(ws.db.get_setting("robot.restart_every", 20) or 0)}
+            "restart_every": int(ws.db.get_setting("robot.restart_every", 20) or 0),
+            # GRAFIS - Memory Status ("nur noch 12 MB freier Speicher für die Auslagerungsdatei"): below this much
+            # free memory (RAM + paging file) or free disk the robot starts GRAFIS anew, and waits while still short
+            "min_memory_mb": float(ws.db.get_setting("robot.min_memory_mb", 1024) or 0),
+            "min_disk_mb": float(ws.db.get_setting("robot.min_disk_mb", 1024) or 0)}
 
 
 class RobotError(RuntimeError):
@@ -74,6 +80,20 @@ class Win32:
             getattr(self.u, name).argtypes = args
         self.u.SendMessageTimeoutW.restype = L
         self.u.GetForegroundWindow.restype = H
+
+    def memory_free_mb(self) -> float | None:
+        """Memory Windows can still give (RAM + paging file, "commit"), in MB; None when it cannot be read."""
+        ct = self.ct
+
+        class MS(ct.Structure):
+            _fields_ = [("dwLength", ct.c_ulong), ("dwMemoryLoad", ct.c_ulong)] + \
+                [(n, ct.c_ulonglong) for n in ("total", "avail", "total_page", "avail_page", "total_virtual",
+                                               "avail_virtual", "avail_ext")]
+        m = MS()
+        m.dwLength = ct.sizeof(MS)
+        if not ct.windll.kernel32.GlobalMemoryStatusEx(ct.byref(m)):
+            return None
+        return m.avail_page / 2 ** 20
 
     def process_of(self, h) -> str:
         """The program a window belongs to (e.g. werfault.exe), "" when it cannot be read."""
@@ -485,6 +505,58 @@ OK_TEXTS = ("ok", "o.k.", "weiter", "continue", "fortsetzen", "schließen", "sch
 CANCEL_TEXTS = ("cancel", "abbrechen", "إلغاء الأمر", "إلغاء")
 NO_TEXTS = ("no", "nein", "لا")
 _DONE_SINCE_START = {"n": 0}                       # models GRAFIS did since it was (re)started by the robot
+_LOW = {"memory": ""}                              # GRAFIS said it is short of memory: started anew after the save
+LOW_TEXTS = ("memory status", "freier speicher", "auslagerungsdatei", "paging file", "low on memory",
+             "out of memory", "nicht genügend speicher", "zu wenig speicher")
+
+
+BACKUP_TEXTS = ("restore backup", "backup copy", "sicherungskopie", "sicherheitskopie")
+
+
+def _is_backup_box(title: str) -> bool:
+    """"GRAFIS - Restore backup copy": shown when GRAFIS starts after it was ended; the models listed are saved
+    already ("no changes") — Close, never Open (that would open an old copy instead of the model)."""
+    low = (title or "").lower()
+    return "grafis" in low and any(t in low for t in BACKUP_TEXTS)
+
+
+class ShortOfMemory(RobotError):
+    """Not enough free memory / disk for GRAFIS: the model waits (it is not failed) and is taken when there is."""
+
+
+def disk_free_mb(path: str) -> float | None:
+    """Free space of the disk a file or folder is on (the nearest folder that exists), in MB."""
+    d = os.path.abspath(path)
+    while d and not os.path.isdir(d) and os.path.dirname(d) != d:
+        d = os.path.dirname(d)
+    try:
+        return shutil.disk_usage(d).free / 2 ** 20
+    except OSError:
+        return None
+
+
+def shortage(drv, st, path: str) -> str:
+    """What GRAFIS is short of now ("" = enough): free memory (RAM + paging file) and the free disk of the model
+    and of the temporary folder (GRAFIS's scratch files and the paging file grow there)."""
+    out = []
+    if st.get("min_memory_mb") and hasattr(drv, "memory_free_mb"):
+        try:
+            mem = drv.memory_free_mb()
+        except Exception:  # noqa: BLE001
+            mem = None
+        if mem is not None and mem < st["min_memory_mb"]:
+            out.append(f"free memory {mem:,.0f} MB (below {st['min_memory_mb']:,.0f} MB)")
+    if st.get("min_disk_mb"):
+        seen = set()
+        for d in (os.path.dirname(path), tempfile.gettempdir(), (os.environ.get("SystemDrive") or "") + os.sep):
+            drive = os.path.splitdrive(os.path.abspath(d))[0] or os.path.abspath(d)
+            free = disk_free_mb(d)
+            if free is None or drive in seen:
+                continue
+            seen.add(drive)
+            if free < st["min_disk_mb"]:
+                out.append(f"free disk on {drive} {free:,.0f} MB (below {st['min_disk_mb']:,.0f} MB)")
+    return "; ".join(out)
 
 
 def restart_grafis(drv, sleep=time.sleep, clock=time.monotonic) -> str:
@@ -492,7 +564,7 @@ def restart_grafis(drv, sleep=time.sleep, clock=time.monotonic) -> str:
     The next model starts a new GRAFIS with no scratch files."""
     def mains():
         return [w["hwnd"] for w in drv.windows() if w["cls"] != "#32770" and
-                (w["title"] or "").lower().startswith("grafis")]
+                (w["title"] or "").lower().startswith("grafis") and not _is_backup_box(w["title"])]
     found = mains()
     if not found:
         return ""
@@ -534,6 +606,15 @@ def _answer_dialogs(drv, st, notes: list) -> None:
         return
     for w in wins:
         title, low = w["title"] or "", (w["title"] or "").lower()
+        if _is_backup_box(title):                      # any window class: GRAFIS draws this one itself
+            btns = drv.buttons_of(w["hwnd"])
+            b = next((b for b in btns if b["text"].lower().replace("&", "") in ("close", "schließen", "schliessen",
+                                                                             "إغلاق")), None)
+            drv.press(b["hwnd"]) if b else drv.close(w["hwnd"])
+            note = "GRAFIS backup copies not restored (Close) — the models are saved"
+            if note not in notes:
+                notes.append(note)
+            continue
         if w["cls"] != "#32770":
             continue
         proc = ""
@@ -561,6 +642,17 @@ def _answer_dialogs(drv, st, notes: list) -> None:
             _DONE_SINCE_START["n"] = 0                   # a new GRAFIS starts with the next model
             raise RobotError(f"GRAFIS internal error {code.group(0).strip() if code else '?'} — GRAFIS was closed "
                              f"(Cancel)")
+        if any(t in low or t in said_low for t in LOW_TEXTS):
+            # "GRAFIS - Memory Status: only 12 MB free for the paging file": OK (the model goes on and is saved),
+            # then GRAFIS is started anew before the next model — it gives its memory back
+            b = next((b for b in btns if b["text"].lower() in OK_TEXTS), None) or (btns[0] if btns else None)
+            if b:
+                drv.press(b["hwnd"])
+            _LOW["memory"] = " ".join(said.split())[:160] or title
+            note = "GRAFIS short of memory (answered OK, GRAFIS starts anew after this model)"
+            if note not in notes:
+                notes.append(note)
+            continue
         if "measur" in said_low and "chart" in said_low:
             b = next((b for b in btns if b["text"].lower() in OK_TEXTS), None) or (btns[0] if btns else None)
             if b:
@@ -656,6 +748,17 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
         except RobotError as e:                       # left by the model before: GRAFIS was closed, start anew
             notes.append(f"before: {e}")
             sleep(3)
+        short = shortage(drv, st, job["path"])
+        if (short or _LOW["memory"]) and hasattr(drv, "close"):
+            # GRAFIS (or the scratch files of all its models) holds the memory: a new GRAFIS gives it back
+            notes.append(restart_grafis(drv, sleep, clock) or "GRAFIS was not open")
+            _LOW["memory"] = ""
+            _DONE_SINCE_START["n"] = 0
+            sleep(5)
+            short = shortage(drv, st, job["path"])
+        if short:
+            raise ShortOfMemory(f"waiting: {short} — close programs you do not need or free space on the disk "
+                                f"(the model is taken as soon as there is enough)")
         behind = st["mode"] == "background" and st["behind"] and hasattr(drv, "send_back")
         prev = drv.active_window() if behind else None
         if hasattr(drv, "close") and [t for t in open_models(drv) if not shows_file(t, job["path"])]:
@@ -708,7 +811,9 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
             notes.append(restart_grafis(drv, sleep, clock))
             _DONE_SINCE_START["n"] = 0
         _DONE_SINCE_START["n"] += 1
-        if st["restart_every"] and _DONE_SINCE_START["n"] >= st["restart_every"] and hasattr(drv, "close"):
+        if (_LOW["memory"] or (st["restart_every"] and _DONE_SINCE_START["n"] >= st["restart_every"])) and \
+                hasattr(drv, "close"):
+            _LOW["memory"] = ""
             _DONE_SINCE_START["n"] = 0               # before GRAFIS runs out of scratch files
             try:
                 notes.append(restart_grafis(drv, sleep, clock))
@@ -716,6 +821,8 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
                 notes.append(f"GRAFIS not restarted: {e}")
         res.update(status="done", message="opened, Test Run All Parts, saved — " +
                    ", ".join(h for h in how + notes if h))
+    except ShortOfMemory as e:                       # not a failure of the model: it stays waiting
+        return {"status": "waiting", "message": str(e), "path": job["path"]}
     except Exception as e:  # noqa: BLE001 - every failure is reported, never retried silently
         res["message"] = str(e) or type(e).__name__
         try:                                          # the report must never make the job run again

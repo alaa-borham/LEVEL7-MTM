@@ -2139,6 +2139,8 @@ class GrafisPage(Page):
             _ROBOT_POLL.release()
             if r and alive(self):
                 self.refresh()
+                if r.get("status") == "waiting":     # short of memory / disk: said, the model stays waiting
+                    self.win.status(tr_msg(r["message"])[:200])
 
         def failed(msg):
             _ROBOT_POLL.release()
@@ -4823,6 +4825,16 @@ class MainWindow(QMainWindow):
         name = os.path.basename(r["mdl"])
         if " " in name or not name.isascii():            # written before names were made plain: write it anew
             self.write_model(True)
+            return
+        from ..services.grafis_robot import file_sha
+        go = self.ws.db.one("SELECT info FROM grafis_orders WHERE path=? ORDER BY id DESC", (r["mdl"],))
+        try:
+            saved = bool(go) and file_sha(r["mdl"]) != json.loads(go["info"]).get("sha256")
+        except OSError:
+            saved = False
+        if saved:                                         # CAD saved it with the error: never nested as it is —
+            self.model_again(r["rid"])                    # written again from the base pattern, CAD runs it anew
+            self.status(tr("The model is written again from the base pattern; the robot takes it in a few seconds"))
             return
         with self.ws.db.tx() as c:
             c.execute("DELETE FROM robot_jobs WHERE path=? AND status<>'done'", (r["mdl"],))

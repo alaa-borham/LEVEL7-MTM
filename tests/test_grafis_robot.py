@@ -440,3 +440,82 @@ def test_one_model_at_a_time_closed_before_the_next(ws, tmp_path):
                       clock=_clock())
     assert r["status"] == "done", r["message"]
     assert g.closed[0] == 3 and 1 in g.closed and g.opened is None        # the old one first, then this one
+
+
+def test_grafis_short_of_memory_is_started_anew_and_the_model_waits(ws, tmp_path):
+    """"GRAFIS - Memory Status: nur noch 12,676 MB freier Speicher für die Auslagerungsdatei": OK, the model goes on,
+    GRAFIS starts anew before the next one; still short after a new GRAFIS: the model waits (not failed)."""
+    import hashlib
+
+    class Low(FakeGrafis):
+        def __init__(self, free):
+            super().__init__()
+            self.free, self.pressed, self.closed, self.box = free, [], [], False
+
+        def memory_free_mb(self):
+            return self.free
+
+        def windows(self):
+            out = [] if self.closed else [{"hwnd": 2, "title": "GRAFIS", "cls": "Toolbar"}]
+            if self.box:
+                out.append({"hwnd": 5, "title": "GRAFIS - Memory Status", "cls": "#32770"})
+            return out
+
+        def buttons_of(self, h):
+            return [{"hwnd": 51, "text": "موافق"}]
+
+        def texts_of(self, h):
+            return ["Es stehen nur noch 12,676 MB freier Speicher f�r die Auslagerungsdatei zur Verf�gung."]
+
+        def press(self, b):
+            self.pressed.append(b)
+            self.box = False
+
+        def close(self, h):
+            self.closed.append(h)
+
+    robot._LOW["memory"] = ""
+    ws.db.set_setting("robot.mode", "background")
+    p = tmp_path / "Order-1.mdl"
+    p.write_bytes(b"x")
+    job = {"path": str(p), "sha256": hashlib.sha256(b"x").hexdigest()}
+    g = Low(free=200)                                   # short even after GRAFIS was started anew
+    r = robot.run_one(ws, job, g, sleep=lambda s: None, clock=_clock())
+    assert r["status"] == "waiting" and "free memory 200 MB" in r["message"] and g.closed == [2]
+    assert not ws.db.one("SELECT id FROM robot_jobs WHERE path=?", (str(p),))   # not tried: taken again later
+    from level7mtm.ui.i18n import set_language, tr_msg
+    set_language("ar")
+    assert "الذاكرة" in tr_msg(r["message"])
+    set_language("en")
+    g = Low(free=5000)
+    g.box = True                                        # the box is on the screen: OK, and noted for after the save
+    notes = []
+    robot._answer_dialogs(g, robot.settings(ws), notes)
+    assert g.pressed == [51] and robot._LOW["memory"] and "short of memory" in notes[0]
+    r = robot.run_one(ws, job, g, sleep=lambda s: None, clock=_clock())
+    assert g.closed == [2] and not robot._LOW["memory"]  # started anew first, then the model went on
+    assert robot.shortage(g, {"min_memory_mb": 1024, "min_disk_mb": 10 ** 12}, str(p)).startswith("free disk")
+    assert robot.shortage(g, {"min_memory_mb": 1024, "min_disk_mb": 1}, str(p)) == ""
+
+
+def test_grafis_restore_backup_copy_is_closed_never_opened():
+    """"GRAFIS - Restore backup copy" (after GRAFIS was ended): Close — Open would bring back an old copy."""
+    class Box:
+        def __init__(self):
+            self.pressed, self.closed = [], []
+
+        def windows(self):
+            return [{"hwnd": 7, "title": "GRAFIS - Restore backup copy", "cls": "GrafisDlg"}]
+
+        def buttons_of(self, h):
+            return [{"hwnd": 71, "text": "Open"}, {"hwnd": 72, "text": "Delete"}, {"hwnd": 73, "text": "Close"}]
+
+        def press(self, b):
+            self.pressed.append(b)
+
+        def close(self, h):
+            self.closed.append(h)
+    g, notes = Box(), []
+    robot._answer_dialogs(g, {}, notes)
+    assert g.pressed == [73] and "backup copies not restored" in notes[0]
+    assert robot.restart_grafis(g, sleep=lambda s: None, clock=_clock()) == ""   # not a GRAFIS to close
