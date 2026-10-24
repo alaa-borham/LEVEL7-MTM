@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import zipfile
 
-from PySide6.QtCore import QByteArray, QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QByteArray, QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (QBrush, QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF,
                            QTransform)
-from PySide6.QtWidgets import (QAbstractItemView, QBoxLayout, QFrame, QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsView, QGridLayout,
-                               QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy, QToolButton,
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QBoxLayout, QFrame, QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsView, QGridLayout,
+                               QHBoxLayout, QLabel, QLayout, QPushButton, QScrollArea, QSizePolicy, QToolButton,
                                QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from . import themes
@@ -73,6 +74,25 @@ def ltr(text) -> str:
 STAGES = ("new", "grafis", "nest", "cut")
 STAGE_TEXT = {"new": "New", "grafis": "In GRAFIS", "nest": "Nesting", "cut": "Ready to cut", "err": "Needs attention"}
 STAGE_COLOUR = {"new": "muted", "grafis": "warn", "nest": "accent", "cut": "ok", "err": "bad"}
+
+# why an order needs the owner (owner: "the 171 held orders by reason, handled together"), from its messages
+REASONS = (("pattern", "Distorted pattern", "curve",
+            r"pattern distorted|needle tip|crosses itself|far from the base pattern|no area"),
+           ("measure", "Measurement", "ruler",
+            r"unusual for this customer|outside |measurement|formula|is not a number|X table|placeholder"),
+           ("variation", "Variation", "options",
+            r"design code|design option|program value|no customer has the XML name|no product of|not mapped"),
+           ("cad", "CAD", "robot", r"GRAFIS|CAD|AI TOOL|robot|saved model|model"),
+           ("nesting", "Nesting", "nest", r"nesting|LEVEL7 Nesting|cutting file|marker"),
+           ("other", "Other", "info", r""))
+
+
+def reason_of(problems) -> str:
+    text = " ".join(str(p) for p in problems or [])
+    for key, _, _, rx in REASONS:
+        if rx and re.search(rx, text, re.I):
+            return key
+    return "other"
 
 
 def load_marker(path: str) -> dict | None:
@@ -336,6 +356,7 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
                 row["waiting"] = (row["waiting"] or tr("Waiting for nesting")) + " — " + why
         if row["problems"] and row["stage"] != "cut":
             row["stage_reached"], row["stage"] = row["stage"], "err"
+            row["reason"] = reason_of(row["problems"])
             if row.get("mdl") and any("pattern distorted" in p for p in row["problems"]):
                 from ..services.pattern_check import picture_of
                 row["defect_svg"] = picture_of(ws, row["mdl"])   # the distorted pieces, each defect circled
@@ -1361,6 +1382,65 @@ class Ribbon(QFrame):
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded if too_wide else Qt.ScrollBarAlwaysOff)
 
 
+class FlowLayout(QLayout):
+    """Items in rows that wrap to the next row when the width ends (the reason chips), right to left as the
+    window."""
+
+    def __init__(self, parent=None, spacing: int = 4):
+        super().__init__(parent)
+        self._items, self._sp = [], spacing
+        self.setContentsMargins(0, 0, 0, 0)
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, i):
+        return self._items[i] if 0 <= i < len(self._items) else None
+
+    def takeAt(self, i):
+        return self._items.pop(i) if 0 <= i < len(self._items) else None
+
+    def expandingDirections(self):
+        return Qt.Orientations(0)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, w):
+        return self._place(QRect(0, 0, w, 0), True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._place(rect, False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for it in self._items:
+            size = size.expandedTo(it.minimumSize())
+        return size
+
+    def _place(self, rect, test: bool) -> int:
+        rtl = (self.parentWidget() or QApplication.instance()).layoutDirection() == Qt.RightToLeft \
+            if self.parentWidget() is not None else False
+        x, y, line = 0, rect.y(), 0
+        for it in self._items:
+            w, h = it.sizeHint().width(), it.sizeHint().height()
+            if x and x + w > rect.width():
+                x, y, line = 0, y + line + self._sp, 0
+            if not test:
+                left = rect.right() - x - w + 1 if rtl else rect.x() + x
+                it.setGeometry(QRect(QPoint(left, y), it.sizeHint()))
+            x += w + self._sp
+            line = max(line, h)
+        return y + line - rect.y()
+
+
 class OrderBrowser(QWidget):
     """Order lines as a tree: line → the pieces of its marker; coloured by where the line is in the chain."""
     selected = Signal(object)
@@ -1404,6 +1484,10 @@ class OrderBrowser(QWidget):
         cap.addWidget(self.caption, 1)
         self.cap_lay = cap
         hv.addLayout(cap)
+        self.reasons_box = QWidget()                   # Needs attention: its orders by reason (chips)
+        self.reasons = FlowLayout(self.reasons_box)
+        self.reasons_box.hide()
+        hv.addWidget(self.reasons_box)
         lay.addWidget(self.heads_box)
         self.tree = QTreeWidget()
         self.tree.setObjectName("orders")
@@ -1491,6 +1575,7 @@ class OrderBrowser(QWidget):
         colour = next((cl for k, _, _, cl in self.GROUPS if k == one), "muted")
         self.caption.setText(f"{title} ({counts.get(one, 0)})" if one else tr("Choose a list"))
         self.caption.setStyleSheet(f"color: {c[colour].name()}; font-weight: 800;")
+        self._reasons_bar(c, one)
         old = getattr(self, "queue_button", None)
         if old is not None:
             self.cap_lay.removeWidget(old)
@@ -1499,6 +1584,46 @@ class OrderBrowser(QWidget):
         if self.width() < 250:
             qb.setText(qb.text().split(" ")[0])
         self.cap_lay.addWidget(qb)
+
+    def _reasons_bar(self, c, one):
+        """Needs attention open: its orders by reason, each a chip with its count; a click shows that reason only
+        (again: all) — the orders of one kind chosen and handled together."""
+        from PySide6.QtWidgets import QToolButton
+        while self.reasons.count():
+            w = self.reasons.takeAt(0).widget()
+            if w is not None:
+                w.deleteLater()
+        if one != "err":
+            self.reasons_box.hide()
+            return
+        counts = {}
+        for r in self.rows:
+            if r["stage"] == "err":
+                counts[r.get("reason") or "other"] = counts.get(r.get("reason") or "other", 0) + 1
+        col = c["bad"]
+        rgb = f"{col.red()},{col.green()},{col.blue()}"
+        for key, title, ic, _ in REASONS:
+            if not counts.get(key):
+                continue
+            on = getattr(self, "reason_filter", None) == key
+            b = QToolButton()
+            b.setObjectName("reasonChip")
+            b.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            b.setIcon(icon(ic, col, 14))
+            b.setText(f"{tr(title)} {counts[key]}")
+            b.setToolTip(tr("Show only these orders (click again: all)"))
+            b.setCursor(Qt.PointingHandCursor)
+            b.setStyleSheet(f"QToolButton#reasonChip {{ color: {col.name()}; background: rgba({rgb},{90 if on else 25});"
+                            f" border: 1px solid rgba({rgb},{230 if on else 90}); border-radius: 9px; padding: 1px 6px;"
+                            f" font-weight: 700; }}")
+            b.clicked.connect(lambda _=False, k=key: self.filter_reason(k))
+            self.reasons.addWidget(b)
+        self.reasons_box.setVisible(bool(counts))
+
+    def filter_reason(self, key):
+        self.reason_filter = None if getattr(self, "reason_filter", None) == key else key
+        cur = self.tree.currentItem()
+        self.set_rows(self.rows, keep=cur.data(0, Qt.UserRole) if cur else None)
 
     def open_list(self, key: str):
         """A title clicked: its list opens below (the one open before closes); clicked again it closes."""
@@ -1536,12 +1661,15 @@ class OrderBrowser(QWidget):
         for key, title, stages, colour in self.GROUPS:
             mine = [r for r in rows if ("queue" if r.get("nest_queue") and r["stage"] in ("grafis", "nest")
                                         else r["stage"]) in stages]
+            total = len(mine)
+            if key == "err" and getattr(self, "reason_filter", None):   # one reason chosen above the list
+                mine = [r for r in mine if r.get("reason") == self.reason_filter]
             if key == "queue":                            # in the order the nesting takes them
                 mine.sort(key=lambda r: (r.get("queue_pos") is None, r.get("queue_pos") or 0))
             elif key == "grafis":                         # in the order AI TOOL takes them
                 mine.sort(key=lambda r: (r.get("cad_pos") is None, r.get("cad_pos") or 0))
             grp = QTreeWidgetItem([f"{tr(title)}", str(len(mine))])
-            counts[key], items[key] = len(mine), grp
+            counts[key], items[key] = total, grp
             grp.setData(0, Qt.UserRole + 1, key)
             grp.setFlags(Qt.ItemIsEnabled)
             f = grp.font(0)
@@ -1561,13 +1689,18 @@ class OrderBrowser(QWidget):
             for r in mine:
                 col = c[STAGE_COLOUR[r["stage"]]]
                 pos = r.get("queue_pos") if key == "queue" else r.get("cad_pos") if key == "grafis" else None
+                why = next((x for x in REASONS if x[0] == r.get("reason")), None) if r["stage"] == "err" else None
                 it = QTreeWidgetItem([(f"{pos + 1}.  " if pos is not None else "") + ltr(r["line"]),
+                                      tr(why[1]) if why else
                                       tr("Waiting for nesting") if r["stage"] == "nest" and
                                       r.get("waiting") else tr(STAGE_TEXT[r["stage"]])])
                 it.setData(0, Qt.UserRole, r["rid"])
-                pm = QPixmap(10, 10)
-                pm.fill(col)
-                it.setIcon(0, QIcon(pm))
+                if why:                                   # the kind of problem at a glance (owner)
+                    it.setIcon(0, icon(why[2], col, 14))
+                else:
+                    pm = QPixmap(10, 10)
+                    pm.fill(col)
+                    it.setIcon(0, QIcon(pm))
                 it.setForeground(1, col)
                 f2 = it.font(1)
                 f2.setBold(True)

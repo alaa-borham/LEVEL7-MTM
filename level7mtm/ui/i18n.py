@@ -664,6 +664,10 @@ AR = {
     "Choose a list": "اختر قائمة",
     "Copied": "نُسخ",
     "Click to copy the order number": "اضغط لنسخ رقم الطلب",
+    "Distorted pattern": "تشوه",
+    "Variation": "Variation",
+    "Other": "أخرى",
+    "Show only these orders (click again: all)": "عرض هذه الطلبات فقط (اضغط مرة أخرى: الكل)",
     "Nestings at once": "عدد التعشيقات في وقت واحد",
     "How many models LEVEL7 Nesting nests at the same time (each uses one processor core and its own memory)":
         "كم موديلاً يعشّق LEVEL7 Nesting في نفس الوقت (كل تعشيق يستخدم نواة معالج وذاكرة خاصة به)",

@@ -955,3 +955,34 @@ def test_order_number_copied_with_one_click():
     assert ins.copy_line() == "10041-45504-1_0"
     assert QGuiApplication.clipboard().text() == "10041-45504-1_0"               # plain, no direction marks
     app.processEvents()
+
+
+def test_needs_attention_by_reason():
+    """Owner: the held orders by reason — each order says its kind of problem; a reason chosen shows its orders only,
+    the count of the list stays the total."""
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.ui import cad
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    assert cad.reason_of(["DSB = -165.5 cm is unusual for this customer (usually 14–20 cm, from 230 orders)"]) == "measure"
+    assert cad.reason_of(["AI TOOL: pattern distorted in CAD, not nested: back: 2 needle tip(s)"]) == "pattern"
+    assert cad.reason_of(["design code 'X' is not mapped to a model option"]) == "variation"
+    assert cad.reason_of(["GRAFIS did not save Order-1 within 120 s"]) == "cad"
+    assert cad.reason_of(["nesting did not produce a valid marker: …"]) == "nesting"
+    assert cad.reason_of(["?"]) == "other"
+    b = cad.OrderBrowser()
+    rows = [{"rid": i, "line": f"L{i}", "stage": "err", "waiting": "", "problems": [],
+             "reason": "measure" if i % 2 else "pattern"} for i in range(6)]
+    b.set_rows(rows)
+    b.open_list("err")
+    assert b.reasons.count() == 2 and not b.reasons_box.isHidden()
+    b.filter_reason("measure")
+    grp = next(b.tree.topLevelItem(i) for i in range(b.tree.topLevelItemCount())
+               if b.tree.topLevelItem(i).data(0, cad.Qt.UserRole + 1) == "err")
+    assert grp.childCount() == 3 and b._counts["err"] == 6
+    b.filter_reason("measure")                                           # again: all
+    grp = next(b.tree.topLevelItem(i) for i in range(b.tree.topLevelItemCount())
+               if b.tree.topLevelItem(i).data(0, cad.Qt.UserRole + 1) == "err")
+    assert grp.childCount() == 6
+    app.processEvents()

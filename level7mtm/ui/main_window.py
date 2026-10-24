@@ -4673,7 +4673,7 @@ class MainWindow(QMainWindow):
         # the list is built again only when what it shows changed (an order in / out, its stage, its place in the
         # queue): a waiting text changing every few seconds rebuilt hundreds of rows — the list flickered (owner)
         shown = json.dumps([(r["rid"], r["line"], r["stage"], bool(r.get("nest_queue")), r.get("queue_pos"),
-                             r.get("cad_pos"),
+                             r.get("cad_pos"), r.get("reason"),
                              bool(r.get("waiting")) and r["stage"] == "nest") for r in rows], default=str)
         if force or shown != getattr(self, "_shown_sig", None):
             self._shown_sig = shown
