@@ -8,7 +8,7 @@ import re
 import zipfile
 
 from PySide6.QtCore import QByteArray, QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import (QBrush, QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF,
+from PySide6.QtGui import (QBrush, QColor, QFont, QIcon, QImage, QPainter, QPainterPath, QPen, QPixmap, QPolygonF,
                            QTransform)
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QBoxLayout, QFrame, QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsView, QGridLayout,
                                QHBoxLayout, QLabel, QLayout, QPushButton, QScrollArea, QSizePolicy, QToolButton,
@@ -93,6 +93,71 @@ def reason_of(problems) -> str:
         if rx and re.search(rx, text, re.I):
             return key
     return "other"
+
+
+def _pace(times: list[str]) -> float | None:
+    """Seconds per job from the times jobs finished (the gaps between them; a stop of the chain is not counted)."""
+    import datetime as _dt
+    ts = sorted(_dt.datetime.fromisoformat(t) for t in times if t)
+    gaps = sorted((b - a).total_seconds() for a, b in zip(ts, ts[1:]))
+    gaps = [g for g in gaps if 3 <= g <= 900]
+    return gaps[len(gaps) // 2] if len(gaps) >= 3 else None
+
+
+def throughput(ws) -> dict:
+    """How fast CAD (AI TOOL) and the nesting go now: seconds per model from their last finished jobs."""
+    cad_t = [r["at"] for r in ws.db.q("SELECT at FROM robot_jobs WHERE status='done' ORDER BY id DESC LIMIT 30")]
+    nest_t = [r["created_at"] for r in ws.db.q("SELECT created_at FROM cutting_jobs WHERE status='done' ORDER BY id "
+                                               "DESC LIMIT 30")]
+    return {"cad": _pace(cad_t), "nest": _pace(nest_t)}
+
+
+def eta_text(count: int, secs: float | None) -> str:
+    """"≈ 1.1 min per model · done about 07:40" — nothing when the pace is not known yet."""
+    import datetime as _dt
+    if not secs or not count:
+        return ""
+    end = _dt.datetime.now() + _dt.timedelta(seconds=secs * count)
+    per = f"{secs / 60:.1f} {tr('min per model')}" if secs >= 60 else f"{secs:.0f} {tr('s per model')}"
+    return f"≈ {per} · {tr('done about')} {end:%H:%M}"
+
+
+_THUMBS: dict = {}
+
+
+def marker_thumb(path: str | None, width: int = 280) -> str | None:
+    """A small picture of a marker (PNG in the temporary folder) for the list's hover: pieces on the fabric."""
+    import os
+    import tempfile
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        key = (path, os.path.getmtime(path), width)
+    except OSError:
+        return None
+    if key in _THUMBS and os.path.isfile(_THUMBS[key]):
+        return _THUMBS[key]
+    m = load_marker(path)
+    if not m or not m["pieces"]:
+        return None
+    L, W = max(m["length"], 1.0), max(m["width"], 1.0)
+    sc = width / L
+    h = max(20, int(W * sc))
+    img = QImage(width + 2, h + 2, QImage.Format_ARGB32)
+    img.fill(QColor("#0d141c"))
+    p = QPainter(img)
+    p.setRenderHint(QPainter.Antialiasing)
+    p.setPen(QPen(QColor("#2a4a63"), 1))
+    p.drawRect(0, 0, width + 1, h + 1)
+    p.setPen(QPen(QColor("#5fd3f3"), 0.8))
+    p.setBrush(QBrush(QColor(20, 110, 140, 150)))
+    for pc in m["pieces"]:
+        p.drawPolygon(QPolygonF([QPointF(1 + x * sc, 1 + y * sc) for x, y in pc["cut"]]))
+    p.end()
+    out = os.path.join(tempfile.gettempdir(), f"l7thumb_{abs(hash(key))}.png")
+    img.save(out)
+    _THUMBS[key] = out
+    return out
 
 
 def load_marker(path: str) -> dict | None:
@@ -1382,6 +1447,94 @@ class Ribbon(QFrame):
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded if too_wide else Qt.ScrollBarAlwaysOff)
 
 
+class ProductionScreen(QWidget):
+    """The factory board (owner): the five lists in large numbers, what CAD and the nesting are on, finish times."""
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("LEVEL7 MTM — " + tr("Production screen"))
+        self.setObjectName("production")
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(40, 30, 40, 30)
+        lay.setSpacing(24)
+        self.clock = QLabel()
+        self.clock.setAlignment(Qt.AlignCenter)
+        self.clock.setStyleSheet("font-size: 28pt; font-weight: 800;")
+        lay.addWidget(self.clock)
+        grid = QHBoxLayout()
+        grid.setSpacing(18)
+        self.tiles = {}
+        for key, title, _, colour in OrderBrowser.GROUPS:
+            f = QFrame()
+            f.setObjectName("prodTile")
+            v = QVBoxLayout(f)
+            ic = QLabel()
+            ic.setAlignment(Qt.AlignCenter)
+            n = QLabel("0")
+            n.setAlignment(Qt.AlignCenter)
+            t = QLabel(tr(title))
+            t.setAlignment(Qt.AlignCenter)
+            t.setWordWrap(True)
+            for w in (ic, n, t):
+                v.addWidget(w)
+            self.tiles[key] = (f, ic, n, t, colour)
+            grid.addWidget(f, 1)
+        lay.addLayout(grid, 1)
+        self.now = QLabel()
+        self.now.setAlignment(Qt.AlignCenter)
+        self.now.setWordWrap(True)
+        self.now.setStyleSheet("font-size: 18pt;")
+        lay.addWidget(self.now)
+        hint = QLabel(tr("Esc: back to the program"))
+        hint.setAlignment(Qt.AlignCenter)
+        hint.setStyleSheet("font-size: 10pt; color: gray;")
+        lay.addWidget(hint)
+        t = QTimer(self)
+        t.timeout.connect(self._tick)
+        t.start(1000)
+        self._tick()
+
+    def keyPressEvent(self, e):
+        if e.key() in (Qt.Key_Escape, Qt.Key_F11):
+            self.close()
+        else:
+            super().keyPressEvent(e)
+
+    def _tick(self):
+        import datetime as _dt
+        self.clock.setText(f"{_dt.datetime.now():%H:%M:%S}")
+
+    def show_rows(self, rows: list[dict], eta: dict | None = None):
+        c = themes.colours()
+        counts = {}
+        for r in rows:
+            k = "queue" if r.get("nest_queue") and r["stage"] in ("grafis", "nest") else r["stage"]
+            k = "grafis" if k == "new" else k
+            counts[k] = counts.get(k, 0) + 1
+        for key, (f, ic, n, t, colour) in self.tiles.items():
+            col = c[colour]
+            rgb = f"{col.red()},{col.green()},{col.blue()}"
+            f.setStyleSheet(f"QFrame#prodTile {{ background: rgba({rgb},35); border: 2px solid rgba({rgb},200); "
+                            f"border-radius: 10px; }} QLabel {{ color: {col.name()}; background: transparent; "
+                            f"border: none; }}")
+            ic.setPixmap(icon(OrderBrowser.ICON_OF.get(key, "orders"), col, 56).pixmap(56, 56))
+            n.setText(str(counts.get(key, 0)))
+            n.setStyleSheet("font-size: 64pt; font-weight: 900;")
+            t.setStyleSheet("font-size: 16pt; font-weight: 700;")
+        eta = eta or {}
+        lines = []
+        cad_e = eta_text(counts.get("grafis", 0), eta.get("cad"))
+        if cad_e:
+            lines.append(f"CAD: {cad_e}")
+        nest_e = eta_text(counts.get("queue", 0), (eta.get("nest") or 0) / max(eta.get("parallel") or 1, 1))
+        if nest_e:
+            lines.append(f"{tr('Nesting')}: {nest_e}")
+        from ..services.grafis_robot import busy_text, current_model
+        if current_model():
+            lines.append(tr_msg(busy_text()))
+        self.now.setText("\n".join(lines))
+
+
 class FlowLayout(QLayout):
     """Items in rows that wrap to the next row when the width ends (the reason chips), right to left as the
     window."""
@@ -1467,6 +1620,13 @@ class OrderBrowser(QWidget):
         bl = QVBoxLayout(box)
         bl.setContentsMargins(8, 8, 8, 6)
         bl.addWidget(self.find)
+        from PySide6.QtWidgets import QComboBox
+        self.cust = QComboBox()                        # owner: one customer's orders only (shown with 2 or more)
+        self.cust.setToolTip(tr("Show the orders of one customer"))
+        self.cust.currentIndexChanged.connect(lambda _i: self._cust_changed())
+        self.cust.hide()
+        bl.addWidget(self.cust)
+        self.eta: dict = {}                            # seconds per model in CAD / the nesting (main window)
         lay.addWidget(box)
         self.heads_box = QWidget()                     # the lists stay on top as one row of icons; only the list
         hv = QVBoxLayout(self.heads_box)              # scrolls (owner: icons, as the order's actions)
@@ -1484,6 +1644,11 @@ class OrderBrowser(QWidget):
         cap.addWidget(self.caption, 1)
         self.cap_lay = cap
         hv.addLayout(cap)
+        self.eta_label = QLabel()                      # how fast and when the open list is done
+        self.eta_label.setObjectName("kvKey")
+        self.eta_label.setWordWrap(True)
+        self.eta_label.hide()
+        hv.addWidget(self.eta_label)
         self.reasons_box = QWidget()                   # Needs attention: its orders by reason (chips)
         self.reasons = FlowLayout(self.reasons_box)
         self.reasons_box.hide()
@@ -1499,6 +1664,8 @@ class OrderBrowser(QWidget):
         self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
         self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.tree.currentItemChanged.connect(self._changed)
+        self.tree.setMouseTracking(True)
+        self.tree.itemEntered.connect(self._hover)           # ready to cut: the marker's picture
         self.tree.itemExpanded.connect(self._expanded)          # a closed list is filled when opened
         self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection)   # Ctrl / Shift: several orders
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -1573,7 +1740,12 @@ class OrderBrowser(QWidget):
         one = next(iter(opened)) if len(opened) == 1 else None
         title = next((tr(t) for k, t, _, _ in self.GROUPS if k == one), "")
         colour = next((cl for k, _, _, cl in self.GROUPS if k == one), "muted")
+        eta = eta_text(counts.get(one, 0), self.eta.get("cad") if one == "grafis" else
+                       (self.eta.get("nest") or 0) / max(self.eta.get("parallel") or 1, 1) if one == "queue" else None)
         self.caption.setText(f"{title} ({counts.get(one, 0)})" if one else tr("Choose a list"))
+        self.caption.setToolTip(self.caption.text())
+        self.eta_label.setText(eta)
+        self.eta_label.setVisible(bool(eta))
         self.caption.setStyleSheet(f"color: {c[colour].name()}; font-weight: 800;")
         self._reasons_bar(c, one)
         old = getattr(self, "queue_button", None)
@@ -1644,8 +1816,46 @@ class OrderBrowser(QWidget):
             for i in range(grp.childCount()):
                 yield grp.child(i)
 
+    def _hover(self, it, _col):
+        r = it.data(0, Qt.UserRole + 2)
+        if not r or it.data(0, Qt.UserRole + 3):
+            return
+        thumb = marker_thumb(r.get("l7n"))
+        if not thumb:
+            return
+        from PySide6.QtCore import QUrl
+        eff = f"{r['efficiency_pct']:.0f}%" if r.get("efficiency_pct") is not None else "—"
+        ln = f"{r['length_mm'] / 1000:.2f} m" if r.get("length_mm") else "—"
+        it.setToolTip(0, f"<b>{r['line']}</b><br>{tr('Length')}: {ln} · {eff} · {tr('Pieces')}: {r.get('placed') or '—'}"
+                         f"<br><img src='{QUrl.fromLocalFile(thumb).toString()}'>")
+        it.setData(0, Qt.UserRole + 3, True)
+
+    def _cust_changed(self):
+        if getattr(self, "_filling_cust", False):
+            return
+        cur = self.tree.currentItem()
+        self.set_rows(self.rows, keep=cur.data(0, Qt.UserRole) if cur else None)
+
+    def _fill_customers(self, rows):
+        names = sorted({r.get("customer") or "" for r in rows} - {""})
+        have = [self.cust.itemData(i) for i in range(1, self.cust.count())]
+        if names != have:
+            chosen = self.cust.currentData()
+            self._filling_cust = True
+            self.cust.clear()
+            self.cust.addItem(tr("All customers"), None)
+            for n in names:
+                self.cust.addItem(n, n)
+            i = self.cust.findData(chosen) if chosen else 0
+            self.cust.setCurrentIndex(max(i, 0))
+            self._filling_cust = False
+        self.cust.setVisible(len(names) > 1)
+
     def set_rows(self, rows: list[dict], keep: int | None = None):
         self.rows = rows
+        self._fill_customers(rows)
+        if self.cust.currentData():                   # one customer chosen: his orders only
+            rows = [r for r in rows if r.get("customer") == self.cust.currentData()]
         if not hasattr(self, "opened"):
             self.opened: set[str] = set()                     # every list closed until the owner opens it
         for g in range(self.tree.topLevelItemCount()):       # remember which lists the owner opened
@@ -1706,6 +1916,8 @@ class OrderBrowser(QWidget):
                 f2.setBold(True)
                 it.setFont(1, f2)
                 it.setToolTip(0, "\n".join([r["line"]] + [tr_msg(m) for m in r["problems"][:5]]))
+                if r["stage"] == "cut" and r.get("l7n"):  # the marker's picture on hovering (made then)
+                    it.setData(0, Qt.UserRole + 2, r)
                 grp.addChild(it)
                 if key in self.opened:
                     first = first or it

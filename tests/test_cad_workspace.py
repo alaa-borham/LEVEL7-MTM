@@ -986,3 +986,31 @@ def test_needs_attention_by_reason():
                if b.tree.topLevelItem(i).data(0, cad.Qt.UserRole + 1) == "err")
     assert grp.childCount() == 6
     app.processEvents()
+
+
+def test_pace_finish_time_customer_filter_and_production_screen(ws):
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.ui import cad
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    assert cad._pace(["2026-10-24T10:00:00", "2026-10-24T10:01:00", "2026-10-24T10:02:10",
+                      "2026-10-24T10:03:10", "2026-10-24T14:00:00"]) == 60.0          # a stop is not counted
+    assert cad._pace(["2026-10-24T10:00:00"]) is None
+    assert "≈" in cad.eta_text(100, 66.0) and cad.eta_text(0, 66.0) == "" and cad.eta_text(5, None) == ""
+    assert cad.throughput(ws) == {"cad": None, "nest": None}
+    b = cad.OrderBrowser()
+    b.eta = {"cad": 66.0}
+    rows = [{"rid": i, "line": f"L{i}", "stage": "grafis", "waiting": "", "problems": [],
+             "customer": "A" if i % 2 else "B"} for i in range(6)]
+    b.set_rows(rows)
+    b.open_list("grafis")
+    assert not b.cust.isHidden() and b.cust.count() == 3 and "≈" in b.eta_label.text()
+    b.cust.setCurrentIndex(b.cust.findData("A"))
+    grp = next(b.tree.topLevelItem(i) for i in range(b.tree.topLevelItemCount())
+               if b.tree.topLevelItem(i).data(0, cad.Qt.UserRole + 1) == "grafis")
+    assert grp.childCount() == 3
+    p = cad.ProductionScreen()
+    p.show_rows(rows, {"cad": 66.0})
+    assert p.tiles["grafis"][2].text() == "6" and "CAD" in p.now.text()
+    app.processEvents()

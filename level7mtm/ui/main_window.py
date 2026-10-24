@@ -4534,6 +4534,10 @@ class MainWindow(QMainWindow):
         a = QAction(tr("Arrange the icons…"), self)
         a.triggered.connect(self.customize_ribbon)
         v.addAction(a)
+        a = QAction(tr("Production screen"), self)
+        a.setShortcut("F11")
+        a.triggered.connect(self.production_screen)
+        v.addAction(a)
         a = QAction(tr("Light") if themes.name() == "dark" else tr("Dark"), self)
         a.triggered.connect(self.toggle_theme)
         v.addAction(a)
@@ -4638,16 +4642,23 @@ class MainWindow(QMainWindow):
 
         def done(res):
             self._cad_busy = False
-            rows, sig = res
+            rows, sig, eta = res
+            if eta != self.browser.eta:               # the pace changed: the caption says the new finish time
+                self.browser.eta = eta
+                self._cad_sig = None
             if sig != self._cad_sig:                  # nothing changed: nothing to draw
                 self._apply_rows(rows, False, sig)
+            if getattr(self, "prod", None) is not None and self.prod.isVisible():
+                self.prod.show_rows(rows, eta)
 
         def failed(msg):
             self._cad_busy = False
 
         def work():
             rows = cad.order_rows(self.ws)
-            return rows, json.dumps(rows, sort_keys=True, default=str)
+            from ..services.mdl_intake import parallel
+            eta = dict(cad.throughput(self.ws), parallel=parallel(self.ws))
+            return rows, json.dumps(rows, sort_keys=True, default=str), eta
         w = Worker(work)
         w.signals.done.connect(done)
         w.signals.failed.connect(failed)
@@ -4803,6 +4814,15 @@ class MainWindow(QMainWindow):
         paths = [r["queue_path"] for r in self.browser.rows if r["rid"] in set(rids) and r.get("queue_path")]
         if self.guard(lambda: move_in_queue(self.ws, paths, how)) is not None:
             self.refresh_cad(force=True)
+
+    def production_screen(self):
+        """A large board for the factory (owner): the five lists' counts, what CAD and the nesting are on, the
+        shift's cutting files — full screen (F11 / Esc to leave), kept up to date with the order list."""
+        from . import cad
+        if getattr(self, "prod", None) is None:
+            self.prod = cad.ProductionScreen()
+        self.prod.show_rows(getattr(self, "_rows", []) or [], self.browser.eta)
+        self.prod.showFullScreen()
 
     def move_in_cad(self, rids: list, how: str):
         """Right click on the CAD list: the orders chosen to the top / a step up / a step down / the bottom of

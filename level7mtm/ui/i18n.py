@@ -668,6 +668,13 @@ AR = {
     "Variation": "Variation",
     "Other": "أخرى",
     "Show only these orders (click again: all)": "عرض هذه الطلبات فقط (اضغط مرة أخرى: الكل)",
+    "min per model": "دقيقة لكل موديل",
+    "s per model": "ثانية لكل موديل",
+    "done about": "ينتهي تقريباً",
+    "Show the orders of one customer": "عرض طلبات عميل واحد",
+    "All customers": "كل العملاء",
+    "Production screen": "شاشة الإنتاج",
+    "Esc: back to the program": "Esc: الرجوع إلى البرنامج",
     "Nestings at once": "عدد التعشيقات في وقت واحد",
     "How many models LEVEL7 Nesting nests at the same time (each uses one processor core and its own memory)":
         "كم موديلاً يعشّق LEVEL7 Nesting في نفس الوقت (كل تعشيق يستخدم نواة معالج وذاكرة خاصة به)",
