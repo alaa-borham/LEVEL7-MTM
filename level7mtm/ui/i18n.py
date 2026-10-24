@@ -704,11 +704,23 @@ def language() -> str:
 _BRAND = None
 
 
+_ROBOT = None
+
+
 def brand(text: str) -> str:
-    """The CAD program is called "CAD" on the screen (owner: every "GRAFIS" name becomes "CAD"); the program
-    itself, its files and windows are untouched."""
-    global _BRAND
-    if not text or "rafis" not in text and "RAFIS" not in text:
+    """The CAD program is called "CAD" on the screen (owner: every "GRAFIS" name becomes "CAD"), the robot
+    "AI TOOL" (owner); the programs themselves, their files and windows are untouched."""
+    global _BRAND, _ROBOT
+    if not text:
+        return text
+    if "obot" in text or "روبوت" in text:
+        if _ROBOT is None:
+            import re
+            _ROBOT = [(re.compile(r"للروبوت"), "لـ AI TOOL"), (re.compile(r"بالروبوت"), "بـ AI TOOL"),
+                      (re.compile(r"ال?روبوت"), "AI TOOL"), (re.compile(r"\b[Rr]obots?\b"), "AI TOOL")]
+        for rx, to in _ROBOT:
+            text = rx.sub(to, text)
+    if "rafis" not in text and "RAFIS" not in text:
         return text
     if _BRAND is None:
         import re
