@@ -8,6 +8,7 @@ A shift ends by the owner's button, or by itself at the start time of the next s
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime, timedelta
 
 from ..storage.db import now
@@ -48,9 +49,17 @@ def _due(ws, at: datetime) -> tuple[str, datetime] | None:
     return best
 
 
+_LOCK = threading.RLock()                                 # the order list and the dashboard look together
+
+
 def current(ws, at: datetime | None = None) -> dict:
     """The shift running now: {name, started_at}. A shift of the schedule that began since: the one before is
     ended (counted) at its start, and it begins."""
+    with _LOCK:
+        return _current(ws, at)
+
+
+def _current(ws, at: datetime | None = None) -> dict:
     at = at or datetime.now()
     name = ws.db.get_setting("shifts.current") or ""
     started = ws.db.get_setting("shifts.started_at")
@@ -70,7 +79,12 @@ def current(ws, at: datetime | None = None) -> dict:
 def end_shift(ws, next_name: str = "") -> dict:
     """The owner ends the shift now: counted into the history; the next one begins (the "ready to cut" list from
     zero — nothing deleted). Returns the shift ended."""
-    cur = current(ws)
+    with _LOCK:
+        return _end_shift(ws, next_name)
+
+
+def _end_shift(ws, next_name: str = "") -> dict:
+    cur = _current(ws)
     end = now()
     rec = _close(ws, cur["name"], cur["started_at"], end)
     ws.db.set_setting("shifts.started_at", end)

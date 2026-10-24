@@ -65,3 +65,34 @@ def test_unknown_model_is_unmatched(ws, tmp_path):
     r = register_mdl(ws, str(p), cut=False)
     assert r["status"] == "unmatched"
     assert os.path.exists(p)                         # a model is never moved away from GRAFIS
+
+
+def test_a_model_that_cannot_be_read_never_holds_up_the_queue(ws, tmp_path, monkeypatch):
+    """A saved model whose check or nesting fails in an unforeseen way is recorded once and leaves the queue (taken
+    again and again it held up every model after it); one whose order line was read again meanwhile waits."""
+    import json
+
+    from level7mtm.services import mdl_intake
+    from level7mtm.services.mdl_intake import next_queued, register_mdl
+    from level7mtm.services.workflow import WorkflowError
+    p = tmp_path / "A.mdl"
+    p.write_text("saved")
+    rid = ws.import_file(__import__("conftest").XML_53).lines[0]["revision_id"]
+    with ws.db.tx() as c:
+        c.execute("INSERT INTO grafis_orders(revision_id, created_at, status, path, template_sha256, info) VALUES "
+                  "(?, ?, 'written', ?, 't', ?)", (rid, "2026-10-24T09:00:00", str(p), json.dumps({"sha256": "x"})))
+    import os
+    os.utime(p, (os.path.getatime(p), os.path.getmtime(p) - 60))
+    assert next_queued(ws) == str(p)                                      # saved by CAD, never looked at
+
+    def boom(ws_, path):
+        raise ValueError("strange file")
+    monkeypatch.setattr(mdl_intake, "check_mdl", boom)
+    out = register_mdl(ws, str(p))
+    assert out["status"] == "unmatched" and "strange file" in out["check"].issues[0][1]
+    assert next_queued(ws) is None                                        # recorded: out of the queue
+
+    def gone(ws_, path):
+        raise WorkflowError("revision 9 not found")
+    monkeypatch.setattr(mdl_intake, "check_mdl", gone)
+    assert register_mdl(ws, str(p))["status"] == "waiting_for_grafis"

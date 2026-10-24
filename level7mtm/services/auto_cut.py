@@ -247,6 +247,10 @@ def _auto_cut(ws, chk, scb_path: str, force: bool = False) -> dict:
         result = {"status": "failed", "outputs": [], "log": [],
                   "message": f"LEVEL7 Nesting could not run: {e or type(e).__name__}"}
         return _save(ws, chk, scb_path, result)
+    except Exception as e:  # noqa: BLE001 - recorded: a model failing unrecorded was taken again and again
+        result = {"status": "failed", "outputs": [], "log": [],
+                  "message": f"the nesting stopped on an error: {type(e).__name__}: {e}"}
+        return _save(ws, chk, scb_path, result)
 
 
 def _auto_cut_inner(ws, chk, scb_path: str, force: bool = False) -> dict:

@@ -129,7 +129,16 @@ def register_mdl(ws, path: str, cut: bool | None = None) -> dict:
 def _register_mdl(ws, path: str, cut: bool | None = None) -> dict:
     from . import errors_folder
     from .auto_cut import auto_cut, settings
-    chk, row = check_mdl(ws, path)
+    from .workflow import WorkflowError
+    try:
+        chk, row = check_mdl(ws, path)
+    except WorkflowError:                                 # its order line was read again meanwhile: the new
+        chk = ScbCheck(path, identity(path))              # model comes on its own; this file waits
+        chk.info = {"waiting": True}
+        return {"status": "waiting_for_grafis", "check": chk, "cutting": None}
+    except Exception as e:  # noqa: BLE001 - recorded once: taken again and again it held up the whole queue
+        chk, row = ScbCheck(path, identity(path)), None
+        chk.issues.append(("blocking", f"the saved model could not be read: {type(e).__name__}: {e}"))
     if chk.info.get("waiting"):
         return {"status": "waiting_for_grafis", "check": chk, "cutting": None}
     status = "checked" if chk.ok else ("unmatched" if row is None else "needs_review")

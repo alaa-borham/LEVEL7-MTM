@@ -4015,6 +4015,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.ws = ws
         self.pool = QThreadPool.globalInstance()
+        # the AI TOOL, the nesting and a re-read take minutes each: enough workers that the order list and the
+        # owner's own actions never wait behind them (4 cores: everything queued, the screen looked frozen)
+        self.pool.setMaxThreadCount(max(8, self.pool.maxThreadCount()))
         QTimer.singleShot(4000, self, self._tidy_markers)  # old markers out of the cutting folder, in the background
         QTimer.singleShot(6000, self, self._reread_held_at_start)
         self._pattern_timer = QTimer(self)                # a base pattern corrected while the program runs
@@ -4682,16 +4685,12 @@ class MainWindow(QMainWindow):
         from ..services.grafis_orders import outdated, redo_outdated
         if not self.isVisible() or _REREADING or not self.ws.db.get_setting("reread.at_start", True):
             return
-        try:
-            old, stale = outdated(self.ws), stale_held(self.ws)
-        except Exception as e:  # noqa: BLE001 - said, looked at next time
-            self.status(str(e)[:200])
-            return
-        if not old and not stale:
-            return
         _REREADING.add("*pattern*")
 
         def work():
+            old, stale = outdated(self.ws), stale_held(self.ws)
+            if not old and not stale:
+                return None
             outs = redo_outdated(self.ws) if old else []
             if stale:
                 got, skipped = reread_lines(self.ws, stale)
@@ -4703,10 +4702,10 @@ class MainWindow(QMainWindow):
 
         def done(outs):
             _REREADING.discard("*pattern*")
+            if outs is None:
+                return                                     # nothing to do this time
             self.refresh_cad(force=True)
-            n = sum(len(o.lines) for o in outs)
-            self.status(f"{tr('Base pattern changed: models written again') if old else tr('Reading the held orders again')}"
-                        f": {n}")
+            self.status(f"{tr('Reading the held orders again')}: {sum(len(o.lines) for o in outs)}")
         w = Worker(work)
         w.signals.done.connect(done)
         w.signals.failed.connect(lambda m: (_REREADING.discard("*pattern*"), self.status(m[:200])))

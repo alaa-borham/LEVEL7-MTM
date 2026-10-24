@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import copy
 import re
+import threading
 
 from ..erp.xmlsafe import XmlError, load_bytes
 from .workflow import DEFAULT_CUSTOMER, FileOutcome, WorkflowError
@@ -537,7 +538,8 @@ def stale_held(ws) -> list[int]:
     from ..erp.importer import vkey
     known: dict[str, set] = {}
     out = []
-    for r in ws.db.q("SELECT id, normalized FROM revisions WHERE status='needs_review'"):
+    current: dict[str, int] = {}
+    for r in ws.db.q("SELECT id, normalized, mapping_doc FROM revisions WHERE status='needs_review'"):
         norm = json.loads(r["normalized"])
         names = [p.get("field") for p in norm.get("problems", []) if p.get("code") == "option.unknown" and p.get("field")]
         if not names:
@@ -545,9 +547,11 @@ def stale_held(ws) -> list[int]:
         cid = norm.get("customer") or DEFAULT_CUSTOMER
         if cid not in known:
             with ws.for_customer(cid):
-                _, prof = ws.active("mapping")
+                current[cid], prof = ws.active("mapping")
             known[cid] = {vkey(k) for k in prof["options"].get("map", {})} | \
                 {vkey(p["variation"]) for p in patterns(ws, cid)}
+        if r["mapping_doc"] == current[cid]:
+            continue                                   # read with today's settings already: again would loop
         if any(vkey(n) in known[cid] for n in names):
             out.append(r["id"])
     return out
@@ -567,11 +571,34 @@ def reread_lines(ws, rids: list[int]) -> tuple[list, list[str]]:
         if r["status"] not in AGAIN or _nesting_now(rid):
             skipped.append(f"{r['line_number']}: being nested now, not read again")
             continue
+        if _in_cad_now(ws, rid):
+            skipped.append(f"{r['line_number']}: open in CAD now, read again after it is saved")
+            continue
         by_file.setdefault(r["import_file"], []).append(rid)
     return [_reread(ws, fid, mine) for fid, mine in by_file.items()], skipped
 
 
+_REREAD_LOCK = threading.RLock()   # one re-read at a time: the start, the 3-minute look, a save, a file moved back
+#                                    and a right click may come together — two on one file took its lines twice
+
+
+def _in_cad_now(ws, rid: int) -> bool:
+    """The order's model is open in CAD now (the AI TOOL works on it): read again after it is saved."""
+    from .grafis_robot import current_model
+    cur = current_model()
+    if not cur:
+        return False
+    import os
+    return any(r["path"] and os.path.normcase(os.path.abspath(r["path"])) == os.path.normcase(os.path.abspath(cur))
+               for r in ws.db.q("SELECT path FROM grafis_orders WHERE revision_id=?", (rid,)))
+
+
 def _reread(ws, fid: int, rids: list[int] | None = None):
+    with _REREAD_LOCK:
+        return _reread_locked(ws, fid, rids)
+
+
+def _reread_locked(ws, fid: int, rids: list[int] | None = None):
     from .grafis_orders import order_mdl, settings
     f = ws.db.one("SELECT file_name, source_path, raw FROM import_files WHERE id=?", (fid,))
     lines = _take_back(ws, fid, f["file_name"], rids)
