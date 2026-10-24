@@ -272,7 +272,12 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
             row["mdl"] = go["path"]
             row["times"]["grafis"] = go["created_at"]
             if go["status"] in ("blocked", "not_configured"):
-                row["problems"] += info.get("problems", []) or [tr(go["status"])]
+                probs = info.get("problems", []) or [tr(go["status"])]
+                if rev["status"] == "needs_review":       # the reasons of the XML first (as in the order details),
+                    held = [p["message"] for p in norm.get("problems", [])   # not only "needs review"
+                            if p.get("severity") in ("review", "error")]
+                    probs = held + [p for p in probs if not p.startswith("order line needs review")]
+                row["problems"] += probs
             elif go["status"] in ("written", "duplicate"):
                 row["stage"] = "grafis"
                 rj = rj_of.get(go["path"])
@@ -282,6 +287,8 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
                 else:
                     row["waiting"] = _grafis_wait(db, go, rj, tried.get(go["id"], 0), robot_on)   # never silent
                     row["nest_queue"] = row["waiting"] == tr("Saved by GRAFIS: waiting for nesting")
+        if rev["status"] == "needs_review" and not row["problems"]:   # held when read, no model tried yet
+            row["problems"] = [p["message"] for p in norm.get("problems", []) if p.get("severity") in ("review", "error")]
         res = results.get(rid)
         if res and go and go["status"] == "written" and res["checked_at"] < go["created_at"]:
             res = None                                        # a model written again since: CAD, then nested again

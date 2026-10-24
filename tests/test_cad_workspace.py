@@ -913,3 +913,20 @@ def test_owner_reorders_the_nesting_queue(ws, tmp_path):
     assert move_in_queue(ws, [c_], "bottom") == [b, d, a, c_]
     assert move_in_queue(ws, [b, d], "down") == [a, b, d, c_]             # several together keep their order
     assert queue(ws) == [a, b, d, c_]                                     # kept
+
+
+def test_properties_show_the_reasons_of_the_xml(ws):
+    """The order's panel says why it waits as the order details do ("Variation … has no meaning"), not only "the
+    order line needs review"."""
+    from conftest import read
+    from level7mtm.ui.cad import order_rows
+    out = ws.import_data(read(XML_53).replace(b"Collar Square", b"Collar Weird"), "w.xml")
+    rid = out.lines[0]["revision_id"]
+    with ws.db.tx() as c:
+        c.execute("INSERT INTO grafis_orders(revision_id, created_at, status, path, template_sha256, info) VALUES "
+                  "(?, '2026-10-24T10:00:00', 'blocked', NULL, 't', ?)",
+                  (rid, '{"problems": ["order line needs review (import problems) \\u2014 resolve them first", '
+                        '"X011_15_SW: measurement SW not in the order"]}'))
+    row = next(r for r in order_rows(ws) if r["rid"] == rid)
+    assert any("Collar Weird" in p for p in row["problems"]) and row["stage"] == "err"
+    assert not any(p.startswith("order line needs review") for p in row["problems"])
