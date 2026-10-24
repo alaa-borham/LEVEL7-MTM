@@ -399,3 +399,29 @@ def test_models_written_again_when_the_parts_change(ws, tmp_path):
     outs = redo_outdated(ws)
     assert [ln["line_number"] for o_ in outs for ln in o_.lines] == ["9-53-1_2"]
     assert outdated(ws) == []
+
+
+def test_models_written_again_a_few_at_a_time_and_each_once(ws, monkeypatch):
+    """735 orders at once made the program heavy and the list flicker: 40 per round, the rest in the next rounds;
+    an order that could not be written again (its XML gone) is not tried every 3 minutes for the same change."""
+    from level7mtm.services import customers, grafis_orders as go
+    go._TRIED.clear()
+    go._WHY.clear()
+    rids = list(range(1, 101))
+
+    def fake_outdated(ws_):
+        for r in rids:
+            go._WHY.setdefault(r, "patternA:catalog7")
+        return list(rids)
+    monkeypatch.setattr(go, "outdated", fake_outdated)
+    seen = []
+    monkeypatch.setattr(customers, "reread_lines", lambda ws_, rs: (seen.append(list(rs)) or [], []))
+    for _ in range(4):
+        go.redo_outdated(ws)
+    assert [len(x) for x in seen] == [40, 40, 20]                 # then nothing: each once
+    assert sorted(r for x in seen for r in x) == rids
+    go._WHY[5] = "patternA:catalog8"                              # a newer change: that one again
+    go.redo_outdated(ws)
+    assert seen[-1] == [5]
+    go._TRIED.clear()
+    go._WHY.clear()

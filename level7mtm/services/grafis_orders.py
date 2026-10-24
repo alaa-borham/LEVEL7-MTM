@@ -273,6 +273,7 @@ def outdated(ws) -> list[int]:
         now_sha = shas[template]
         if now_sha and not g["template_sha256"].startswith(now_sha):
             out.append(g["revision_id"])
+            _WHY[g["revision_id"]] = now_sha
             continue
         # owner: "I changed some parts (copies, mirrored, the parts of an option) but the orders already sent to CAD
         # and the nesting did not change": the customer's parts / rules (catalog) changed since it was written
@@ -285,16 +286,26 @@ def outdated(ws) -> list[int]:
                 cats[cid] = None
         if cats[cid] and ":catalog" in g["template_sha256"] and not g["template_sha256"].endswith(cats[cid]):
             out.append(g["revision_id"])
+            _WHY[g["revision_id"]] = f"{now_sha}{cats[cid]}"
     return out
+
+
+_WHY: dict = {}                                    # outdated order line -> the pattern / parts version it lacks
+_TRIED: dict = {}                                  # order line -> the version it was written again for already
+REDO_AT_ONCE = 40                                  # order lines written again per round (owner: 735 at once made
+#                                                    the program heavy and the order list flicker)
 
 
 def redo_outdated(ws) -> list:
     """The models written from a base pattern changed since: written again from it (a new number), through CAD
     and the nesting again — not one with cutting files, nor one being nested now."""
     from .customers import reread_lines
-    rids = outdated(ws)
-    if not rids:
-        return []
+    rids = [r for r in outdated(ws) if _TRIED.get(r) != _WHY.get(r)]   # each once per new version: one that
+    if not rids:                                                       # could not be written again (its XML gone)
+        return []                                                      # never comes back every 3 minutes
+    rids = rids[:REDO_AT_ONCE]                                         # the rest in the next rounds
+    for r in rids:
+        _TRIED[r] = _WHY.get(r)
     outs, _ = reread_lines(ws, rids)
     return outs
 

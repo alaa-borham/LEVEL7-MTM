@@ -4669,7 +4669,20 @@ class MainWindow(QMainWindow):
         self._cad_sig = sig
         self._rows = rows
         keep = self.sel_row["rid"] if self.sel_row else None
-        self.browser.set_rows(rows, keep=keep)
+        # the list is built again only when what it shows changed (an order in / out, its stage, its place in the
+        # queue): a waiting text changing every few seconds rebuilt hundreds of rows — the list flickered (owner)
+        shown = json.dumps([(r["rid"], r["line"], r["stage"], bool(r.get("nest_queue")), r.get("queue_pos"),
+                             bool(r.get("waiting")) and r["stage"] == "nest") for r in rows], default=str)
+        if force or shown != getattr(self, "_shown_sig", None):
+            self._shown_sig = shown
+            self.browser.set_rows(rows, keep=keep)
+        else:
+            self.browser.rows = rows
+            if keep is not None:                          # the order open in the properties: its news only
+                now_row = next((r for r in rows if r["rid"] == keep), None)
+                if now_row is not None and now_row != self.sel_row:
+                    self.sel_row = now_row
+                    self.inspector.show_row(now_row)
         if keep is not None and not any(r["rid"] == keep for r in rows):
             self.select_row(None)
 
