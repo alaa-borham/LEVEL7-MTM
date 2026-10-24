@@ -786,6 +786,8 @@ MSG_AR = [
     (r"GRAFIS was not open", "لم يكن GRAFIS مفتوحاً"),
     (r"the robot is on (\S+): (.+) for (\d+) s", "AI TOOL يعمل على {0}: {1} منذ {2} ث"),
     (r"starting", "يبدأ"),
+    (r"ending GRAFIS left running without a window", "ينهي نسخ GRAFIS المتبقية بدون نافذة"),
+    (r"(\d+) GRAFIS left running without a window ended", "أُنهيت {0} نسخة GRAFIS كانت تعمل بدون نافذة"),
     (r"checking free memory and disk", "يفحص الذاكرة والقرص"),
     (r"cleaning the GRAFIS temp folder", "ينظّف مجلد temp لـ GRAFIS"),
     (r"opening the model in GRAFIS", "يفتح الموديل في GRAFIS"),

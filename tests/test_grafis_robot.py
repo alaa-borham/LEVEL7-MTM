@@ -564,3 +564,29 @@ def test_busy_says_what_the_robot_is_doing_and_since_when(tmp_path):
         (t / f"{i}.scr").write_bytes(b"x")
     assert robot.clean_temp(str(tmp_path / "g"), now_=lambda: time.time() + 3600, budget_s=0)[0] == 0   # no time
     assert robot.clean_temp(str(tmp_path / "g"), now_=lambda: time.time() + 3600)[0] == 5
+
+
+def test_grafis_left_running_without_a_window_is_ended():
+    """Task Manager full of GrafisV12 with no window: ended when the robot closes GRAFIS or before it opens a model;
+    a GRAFIS with a window on the screen (the owner's) is never touched."""
+    class W:
+        def __init__(self):
+            self.killed = []
+
+        def windows(self):
+            return [{"hwnd": 10, "title": "Grafis - [A: ..mine.mdl]", "cls": "GrafisMain"},
+                    {"hwnd": 11, "title": "Notepad", "cls": "Notepad"}]
+
+        def pid_of(self, h):
+            return {10: 100, 11: 200}[h]
+
+        def processes(self, exe):
+            assert exe == "grafis.exe"
+            return [100, 101, 102]
+
+        def kill(self, pid):
+            self.killed.append(pid)
+            return True
+    w = W()
+    assert robot.end_ghosts(w) == 2 and w.killed == [101, 102]          # 100 shows a window: left alone
+    assert robot.end_ghosts(object()) == 0                              # a driver without processes: nothing

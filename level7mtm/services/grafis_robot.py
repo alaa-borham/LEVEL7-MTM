@@ -95,6 +95,48 @@ class Win32:
             return None
         return m.avail_page / 2 ** 20
 
+    def pid_of(self, h) -> int:
+        pid = self.wt.DWORD()
+        self.u.GetWindowThreadProcessId(h, self.ct.byref(pid))
+        return int(pid.value)
+
+    def processes(self, exe: str) -> list[int]:
+        """The ids of the running programs with this file name (e.g. grafis.exe)."""
+        ct, k = self.ct, self.ct.windll.kernel32
+
+        class PE(ct.Structure):
+            _fields_ = [("dwSize", ct.c_ulong), ("cntUsage", ct.c_ulong), ("th32ProcessID", ct.c_ulong),
+                        ("th32DefaultHeapID", ct.c_void_p), ("th32ModuleID", ct.c_ulong), ("cntThreads", ct.c_ulong),
+                        ("th32ParentProcessID", ct.c_ulong), ("pcPriClassBase", ct.c_long), ("dwFlags", ct.c_ulong),
+                        ("szExeFile", ct.c_wchar * 260)]
+        k.CreateToolhelp32Snapshot.restype = ct.c_void_p
+        k.Process32FirstW.argtypes = k.Process32NextW.argtypes = [ct.c_void_p, ct.POINTER(PE)]
+        k.CloseHandle.argtypes = [ct.c_void_p]
+        snap = k.CreateToolhelp32Snapshot(0x2, 0)                      # TH32CS_SNAPPROCESS
+        if not snap or snap == ct.c_void_p(-1).value:
+            return []
+        out, e = [], PE()
+        e.dwSize = ct.sizeof(PE)
+        try:
+            ok = k.Process32FirstW(snap, ct.byref(e))
+            while ok:
+                if e.szExeFile.lower() == exe.lower():
+                    out.append(int(e.th32ProcessID))
+                ok = k.Process32NextW(snap, ct.byref(e))
+        finally:
+            k.CloseHandle(snap)
+        return out
+
+    def kill(self, pid: int) -> bool:
+        k = self.ct.windll.kernel32
+        hp = k.OpenProcess(0x0001, False, pid)                          # PROCESS_TERMINATE
+        if not hp:
+            return False
+        try:
+            return bool(k.TerminateProcess(hp, 0))
+        finally:
+            k.CloseHandle(hp)
+
     def process_of(self, h) -> str:
         """The program a window belongs to (e.g. werfault.exe), "" when it cannot be read."""
         k = self.ct.windll.kernel32
@@ -590,7 +632,30 @@ def clean_temp(home: str | None = None, now_=time.time, budget_s: float = 15.0) 
     return n, size / 2 ** 20
 
 
-def _after_close(msg: str) -> str:
+GRAFIS_EXE = "grafis.exe"
+
+
+def end_ghosts(drv) -> int:
+    """GRAFIS programs left running without a window (owner: Task Manager full of "GrafisV12 - System für
+    Bekleidung" after the robot closed GRAFIS — each holds memory): ended. A GRAFIS with a window on the screen
+    (the owner's, or the one the robot works with) is never touched. Returns how many were ended."""
+    if not all(hasattr(drv, f) for f in ("processes", "pid_of", "kill")):
+        return 0
+    try:
+        shown = {drv.pid_of(w["hwnd"]) for w in drv.windows() if (w["title"] or "").lower().startswith("grafis")}
+        n = 0
+        for pid in drv.processes(GRAFIS_EXE):
+            if pid not in shown and drv.kill(pid):
+                n += 1
+        return n
+    except Exception:  # noqa: BLE001 - only a clean-up
+        return 0
+
+
+def _after_close(msg: str, drv=None) -> str:
+    ghosts = end_ghosts(drv) if drv is not None else 0
+    if ghosts:
+        msg += f"; {ghosts} GRAFIS left running without a window ended"
     try:
         n, mb = clean_temp()
     except Exception:  # noqa: BLE001 - only a clean-up
@@ -619,12 +684,13 @@ def restart_grafis(drv, sleep=time.sleep, clock=time.monotonic) -> str:
                     if b:
                         drv.press(b["hwnd"])
         if not mains():
-            return _after_close("GRAFIS closed and started anew (scratch files)")
+            sleep(2)                                   # its program ends a moment after its window
+            return _after_close("GRAFIS closed and started anew (scratch files)", drv)
     if hasattr(drv, "terminate"):
         for h in mains():
             drv.terminate(h)
         sleep(2)
-    return _after_close("GRAFIS ended and started anew (scratch files)") if not mains() else \
+    return _after_close("GRAFIS ended and started anew (scratch files)", drv) if not mains() else \
         "GRAFIS ended and started anew (scratch files)"
 
 
@@ -820,6 +886,11 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
         if hasattr(drv, "close") and [t for t in open_models(drv) if not shows_file(t, job["path"])]:
             notes.append(restart_grafis(drv, sleep, clock))   # owner: one model at a time — left open: closed first
         if not [w for w in drv.windows() if (w["title"] or "").lower().startswith("grafis")]:
+            _step("ending GRAFIS left running without a window")
+            ghosts = end_ghosts(drv)                  # a hidden GRAFIS takes the model and never shows it
+            if ghosts:
+                notes.append(f"{ghosts} GRAFIS left running without a window ended")
+                sleep(2)
             _step("cleaning the GRAFIS temp folder")
             try:                                      # no GRAFIS running: its old scratch files go first
                 n, mb = clean_temp()
