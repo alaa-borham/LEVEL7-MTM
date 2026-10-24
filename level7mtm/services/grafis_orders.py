@@ -253,15 +253,50 @@ def _order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = 
     return _save(ws, res, tsha)
 
 
+def in_error(ws) -> set[int]:
+    """Order lines that need the owner (owner: "the orders with errors went to CAD again and on to the nesting —
+    wrong"): CAD stopped on their model (a CAD error, a distorted pattern), the model is not there any more (moved
+    to MDL-ERR), the saved model was not accepted, or its nesting failed. They stay under Needs attention until the
+    owner acts (Robot: try again, Nest again, Read again, the XML moved back to process)."""
+    out = set()
+    rj = {}
+    for j in ws.db.q("SELECT path, status, at FROM robot_jobs ORDER BY id"):
+        rj[j["path"]] = j
+    newest = {}
+    for g in ws.db.q("SELECT id, revision_id, path, created_at FROM grafis_orders WHERE status='written' AND "
+                     "archived=0 AND id IN (SELECT MAX(id) FROM grafis_orders GROUP BY revision_id)"):
+        newest[g["revision_id"]] = g
+        j = rj.get(g["path"])
+        if j and j["status"] == "failed" and j["at"] >= g["created_at"]:
+            out.add(g["revision_id"])
+        elif g["path"] and not os.path.isfile(g["path"]):
+            out.add(g["revision_id"])
+    cj = {r["sha256"]: r["status"] for r in ws.db.q("SELECT sha256, status FROM cutting_jobs ORDER BY id")}
+    for r in ws.db.q("SELECT sha256, status, handed_over, lines, checked_at FROM grafis_results WHERE archived=0"):
+        try:
+            rids = [ln.get("revision_id") for ln in json.loads(r["lines"] or "[]")]
+        except (TypeError, ValueError):
+            continue
+        bad = r["status"] in ("needs_review", "unmatched") or cj.get(r["sha256"]) in ("failed", "not_configured")
+        for rid in rids:
+            g = newest.get(rid)
+            if bad and g is not None and r["checked_at"] >= g["created_at"]:
+                out.add(rid)                          # (a model written again since: its old result is over)
+    return out
+
+
 def outdated(ws) -> list[int]:
     """Order lines not finished whose model was written from a base pattern, or with parts / rules of the customer,
     that have changed since (owner: "the base pattern is corrected", "I changed some parts") — the model written
     before must not be nested: their revision ids."""
     from .grafis_robot import file_sha
     out, shas, cats = [], {}, {}
+    held = in_error(ws)                               # needs the owner: never sent on by itself
     for g in ws.db.q("SELECT g.revision_id, g.template_sha256, g.info FROM grafis_orders g JOIN revisions r ON "
                      "r.id=g.revision_id WHERE g.status='written' AND g.archived=0 AND r.status IN ('ready', "
                      "'sent_to_nesting') AND g.id IN (SELECT MAX(id) FROM grafis_orders GROUP BY revision_id)"):
+        if g["revision_id"] in held:
+            continue
         template = json.loads(g["info"] or "{}").get("template")
         if not template or not g["template_sha256"]:
             continue

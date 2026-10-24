@@ -425,3 +425,28 @@ def test_models_written_again_a_few_at_a_time_and_each_once(ws, monkeypatch):
     assert seen[-1] == [5]
     go._TRIED.clear()
     go._WHY.clear()
+
+
+@needs_mdl
+def test_orders_that_need_attention_stay_there_after_a_parts_change(ws, tmp_path):
+    """Owner: "the orders with errors went to CAD again and on to the nesting — wrong": a parts change rewrites the
+    models of the orders on their way, never of one CAD stopped on (an error, a distorted pattern) or whose model
+    went to MDL-ERR; those wait for the owner."""
+    import copy
+    import os
+
+    from level7mtm.services.grafis_orders import in_error, outdated
+    ws.db.set_setting("grafis.mdl", MDL)
+    ws.db.set_setting("grafis.input", str(tmp_path / "in"))
+    o = import_and_prepare(ws, XML_53)
+    (r1, p1), (r2, p2) = ((g["revision_id"], g["path"]) for g in o.grafis)
+    with ws.db.tx() as c:                                                    # CAD stopped on the first one
+        c.execute("INSERT INTO robot_jobs(sha256, path, at, status, message) VALUES ('x', ?, '2999-01-01', "
+                  "'failed', 'pattern distorted in CAD, not nested: back: 2 needle tip(s)')", (p1,))
+    os.remove(p2)                                                            # the second one moved to MDL-ERR
+    assert in_error(ws) == {r1, r2}
+    pk, body = ws.active("catalog")
+    body = copy.deepcopy(body)
+    body["version"] = body.get("version", "1.0.0") + ".2"
+    ws.set_active("catalog", ws.save_document("catalog", body, "parts changed"))
+    assert outdated(ws) == []                                                # both wait for the owner
