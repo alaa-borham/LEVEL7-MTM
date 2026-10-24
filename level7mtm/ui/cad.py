@@ -1803,7 +1803,9 @@ class Inspector(QScrollArea):
             g.addWidget(a, i, 0)
             g.addWidget(b, i, 1)
             self.kv[k] = b
-        nr.addLayout(g, 1)
+        g.setHorizontalSpacing(12)                        # owner: the word and its number close together
+        nr.addLayout(g)
+        nr.addStretch(1)
         left.addLayout(nr)
         right.addSpacing(10)
         right.addWidget(self._sec_title(tr("X values in the model")))
