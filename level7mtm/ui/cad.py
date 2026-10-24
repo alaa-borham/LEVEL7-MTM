@@ -1388,10 +1388,22 @@ class OrderBrowser(QWidget):
         bl.setContentsMargins(8, 8, 8, 6)
         bl.addWidget(self.find)
         lay.addWidget(box)
-        self.heads_box = QWidget()                     # the lists' titles stay on top; only the list scrolls
-        self.heads = QVBoxLayout(self.heads_box)
-        self.heads.setContentsMargins(0, 0, 0, 4)
-        self.heads.setSpacing(1)
+        self.heads_box = QWidget()                     # the lists stay on top as one row of icons; only the list
+        hv = QVBoxLayout(self.heads_box)              # scrolls (owner: icons, as the order's actions)
+        hv.setContentsMargins(8, 0, 8, 4)
+        hv.setSpacing(4)
+        self.heads = QHBoxLayout()
+        self.heads.setSpacing(4)
+        hv.addLayout(self.heads)
+        cap = QHBoxLayout()                            # under the icons: the open list's name, and the nesting's
+        cap.setContentsMargins(0, 0, 0, 0)            # start / stop always in sight
+        self.caption = QLabel()
+        self.caption.setObjectName("listCaption")
+        self.caption.setMinimumWidth(0)
+        self.caption.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        cap.addWidget(self.caption, 1)
+        self.cap_lay = cap
+        hv.addLayout(cap)
         lay.addWidget(self.heads_box)
         self.tree = QTreeWidget()
         self.tree.setObjectName("orders")
@@ -1441,40 +1453,52 @@ class OrderBrowser(QWidget):
             self._heads(self._counts, themes.colours())   # the queue button: full text / the sign only
         self._narrow = narrow
 
+    ICON_OF = {"grafis": "model", "queue": "nest", "nest": "renest", "err": "error", "cut": "cut"}
+
     def _heads(self, counts: dict, c):
-        """The lists' titles above the list (always in sight): a click opens that list below, again closes it."""
+        """The lists as one row of icons with their counts (always in sight): a click opens that list below, again
+        closes it; under them the open list's name and the nesting's start / stop."""
+        from PySide6.QtWidgets import QToolButton
         self._counts = counts
         while self.heads.count():
             w = self.heads.takeAt(0).widget()
             if w is not None:
                 w.deleteLater()
+        opened = getattr(self, "opened", set())
         for key, title, _, colour in self.GROUPS:
             col = c[colour]
-            on = self.opened == {key}
-            f = QFrame()
-            f.setObjectName("listHead")
-            f.setCursor(Qt.PointingHandCursor)
+            on = opened == {key}
             rgb = f"{col.red()},{col.green()},{col.blue()}"
-            f.setStyleSheet(f"QFrame#listHead {{ background: rgba({rgb},{95 if on else 40}); border-radius: 3px; "
-                            f"border: 1px solid rgba({rgb},{230 if on else 110}); }} QLabel {{ background: "
-                            f"transparent; border: none; color: {col.name()}; font-weight: 800; "
-                            f"{'font-size: 8pt; ' if self.width() < 250 else ''}}}")
-            h = QHBoxLayout(f)
-            h.setContentsMargins(6, 5, 6, 5)
-            h.setSpacing(4)
-            t_ = QLabel(("▾ " if on else "▸ ") + tr(title))
-            t_.setToolTip(tr(title))
-            t_.setMinimumWidth(0)
-            t_.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)   # cut, never pushing the count away
-            h.addWidget(t_, 1)
-            if key == "queue":                            # start / stop the nesting right on its list
-                qb = self._queue_button(c)
-                if self.width() < 250:                    # a narrow list: the sign only, the title stays readable
-                    qb.setText(qb.text().split(" ")[0])
-                h.addWidget(qb)
-            h.addWidget(QLabel(str(counts.get(key, 0))))
-            f.mousePressEvent = lambda e, k=key: self.open_list(k)
-            self.heads.addWidget(f)
+            b = QToolButton()
+            b.setObjectName("listHead")
+            b.setCursor(Qt.PointingHandCursor)
+            b.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+            b.setIcon(icon(self.ICON_OF.get(key, "orders"), col))
+            b.setIconSize(QSize(20, 20))
+            b.setText(str(counts.get(key, 0)))
+            b.setToolTip(f"{tr(title)}: {counts.get(key, 0)}")
+            b.setAccessibleName(tr(title))
+            b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            b.setMinimumWidth(28)
+            b.setStyleSheet(f"QToolButton#listHead {{ background: rgba({rgb},{95 if on else 32}); border-radius: 4px; "
+                            f"border: {'2' if on else '1'}px solid rgba({rgb},{240 if on else 110}); color: "
+                            f"{col.name()}; font-weight: 800; padding: 3px 1px; }} QToolButton#listHead:hover {{ "
+                            f"background: rgba({rgb},70); }}")
+            b.clicked.connect(lambda _=False, k=key: self.open_list(k))
+            self.heads.addWidget(b)
+        one = next(iter(opened)) if len(opened) == 1 else None
+        title = next((tr(t) for k, t, _, _ in self.GROUPS if k == one), "")
+        colour = next((cl for k, _, _, cl in self.GROUPS if k == one), "muted")
+        self.caption.setText(f"{title} ({counts.get(one, 0)})" if one else tr("Choose a list"))
+        self.caption.setStyleSheet(f"color: {c[colour].name()}; font-weight: 800;")
+        old = getattr(self, "queue_button", None)
+        if old is not None:
+            self.cap_lay.removeWidget(old)
+            old.deleteLater()
+        qb = self._queue_button(c)                    # start / stop the nesting, always in sight
+        if self.width() < 250:
+            qb.setText(qb.text().split(" ")[0])
+        self.cap_lay.addWidget(qb)
 
     def open_list(self, key: str):
         """A title clicked: its list opens below (the one open before closes); clicked again it closes."""
