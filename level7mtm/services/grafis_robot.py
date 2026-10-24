@@ -872,6 +872,9 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
         except (TypeError, ValueError):
             width = None
         bad = check_model(ws, job["path"], width)
+        from .pattern_check import LAST
+        if LAST["text"] and not bad:
+            notes.append(LAST["text"])                # said: checked (how many pieces) or why not
         if bad:
             moved = to_err(ws, job["path"], bad)
             raise RobotError("pattern distorted in CAD, not nested: " + "; ".join(bad) +

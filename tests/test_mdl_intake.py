@@ -121,3 +121,21 @@ def test_a_model_cad_stopped_on_is_never_nested(ws, tmp_path):
     assert ws.revision(rid)["status"] != "sent_to_nesting"
     ws.db.q("DELETE FROM robot_jobs")                                    # Robot: try again
     assert next_queued(ws) == str(p)
+
+
+@needs_mdl
+def test_a_distorted_model_is_held_before_the_nesting(ws, tmp_path, monkeypatch):
+    """Also a model CAD saved without the robot (or before the robot checked): its pattern is checked when it is
+    read for the nesting — distorted: Needs attention, into MDL-ERR, never handed over."""
+    from level7mtm.services import pattern_check
+    ws.db.set_setting("grafis.mdl", MDL)
+    ws.db.set_setting("grafis.input", str(tmp_path / "A" / "MDL"))
+    ws.db.set_setting("errors.folder", str(tmp_path / "ER"))
+    p1 = import_and_prepare(ws, XML_53).grafis[0]["path"]
+    _saved_by_grafis(p1, recalculated=True)
+    monkeypatch.setattr(pattern_check, "check_model", lambda ws_, p, w=None: ["front: its outline crosses itself"])
+    r = register_mdl(ws, p1, cut=True)
+    assert r["status"] == "needs_review" and r["cutting"] is None
+    assert any("pattern distorted in CAD" in m for _, m in r["check"].issues)
+    assert not os.path.exists(p1) and (tmp_path / "A" / "MDL-ERR" / os.path.basename(p1)).exists()
+    assert ws.revision(r["check"].lines[0]["revision_id"])["status"] != "sent_to_nesting"

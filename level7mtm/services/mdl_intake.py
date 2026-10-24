@@ -151,6 +151,16 @@ def _register_mdl(ws, path: str, cut: bool | None = None) -> dict:
     if chk.info.get("waiting"):
         return {"status": "cad_error" if chk.info.get("cad_error") else "waiting_for_grafis", "check": chk,
                 "cutting": None}
+    moved = None
+    if chk.ok and row is not None:
+        # owner: a pattern CAD distorted never waits for the nesting — also one CAD saved without the robot, or
+        # saved before this check existed: checked here, before it is handed over
+        from .pattern_check import check_model, to_err
+        bad = check_model(ws, path, chk.info.get("width_mm"))
+        if bad:
+            chk.issues.append(("blocking", "pattern distorted in CAD, not nested: " + "; ".join(bad)))
+            chk.info["pattern_errors"] = bad
+            moved = bad
     status = "checked" if chk.ok else ("unmatched" if row is None else "needs_review")
     dup = ws.db.one("SELECT id, handed_over, archived FROM grafis_results WHERE sha256=?", (chk.sha256,))
     if dup and dup["handed_over"] and not dup["archived"]:
@@ -179,6 +189,9 @@ def _register_mdl(ws, path: str, cut: bool | None = None) -> dict:
     if row is not None:                                  # the model as GRAFIS saved it: the reference copy
         from .grafis_orders import archive_mdl
         archive_mdl(ws, path)
+    if moved:                                            # the distorted model into MDL-ERR, with the reason
+        from .pattern_check import to_err
+        to_err(ws, path, moved)
     if cut is None:
         cut = settings(ws)["enabled"]
     if ok and cut:

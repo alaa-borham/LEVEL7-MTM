@@ -182,13 +182,30 @@ def _outlines_of_info(info: dict) -> list[tuple[str, list]]:
     return out
 
 
+SOUND: set = set()                                # contents found sound (the robot's check, then the nesting's)
+LAST = {"text": ""}                                # what the last check_model did (said with the robot's result)
+
+
 def check_model(ws, path: str, width_mm: float | None = None) -> list[str]:
     """See _check_model; a failure of the check itself never stops the model (the check after the nesting
     still holds)."""
+    LAST["text"] = ""
     try:
-        return _check_model(ws, path, width_mm)
-    except Exception:  # noqa: BLE001 - only a check
+        from .grafis_robot import file_sha
+        sha = file_sha(path)
+    except OSError:
+        sha = None
+    if sha and sha in SOUND:
+        LAST["text"] = "pattern checked before: sound"
         return []
+    try:
+        found = _check_model(ws, path, width_mm)
+    except Exception as e:  # noqa: BLE001 - only a check
+        LAST["text"] = f"pattern not checked: {type(e).__name__}: {e}"
+        return []
+    if sha and not found and LAST["text"].startswith("pattern checked"):
+        SOUND.add(sha)                                # the nesting does not check it again
+    return found
 
 
 def _check_model(ws, path: str, width_mm: float | None = None) -> list[str]:
@@ -200,22 +217,33 @@ def _check_model(ws, path: str, width_mm: float | None = None) -> list[str]:
     import tempfile
 
     from .auto_cut import NestingNotConfigured, _info, _run, nesting_command
-    if not ws.db.get_setting("cutting.pattern_check", True) or not os.path.isfile(path):
+    if not ws.db.get_setting("cutting.pattern_check", True):
+        LAST["text"] = "pattern not checked: the check is off"
+        return []
+    if not os.path.isfile(path):
+        LAST["text"] = "pattern not checked: the model is not there"
         return []
     try:
         cmd, env = nesting_command(ws)
     except NestingNotConfigured:
+        LAST["text"] = "pattern not checked: LEVEL7 Nesting not found"
         return []
     pieces = _outlines_of_info(_info(cmd, env, path))
+    how = "info"
     if not pieces:
+        how = "marker"
         d = tempfile.mkdtemp(prefix="l7check_")
         try:
             out = os.path.join(d, "check.l7n")
-            if _run(cmd + ["nest", path, "--width", f"{width_mm or 1500:g}", "--time", "1", "-o", out], env, [],
+            log: list[str] = []
+            if _run(cmd + ["nest", path, "--width", f"{width_mm or 1500:g}", "--time", "1", "-o", out], env, log,
                     240) != 0 or not os.path.isfile(out):
+                tail = " ".join(" ".join(log[1:]).split())[-160:]
+                LAST["text"] = f"pattern not checked: the check marker was not made ({tail})"
                 return []
             pieces = pieces_of_marker(out)
-        except (OSError, subprocess.SubprocessError, KeyError, ValueError, TypeError, zipfile.BadZipFile):
+        except (OSError, subprocess.SubprocessError, KeyError, ValueError, TypeError, zipfile.BadZipFile) as e:
+            LAST["text"] = f"pattern not checked: {type(e).__name__}: {e}"
             return []
         finally:
             shutil.rmtree(d, ignore_errors=True)
@@ -228,6 +256,7 @@ def _check_model(ws, path: str, width_mm: float | None = None) -> list[str]:
         for dd in defects(name, outline):
             if dd not in found:
                 found.append(dd)
+    LAST["text"] = f"pattern checked: {len(seen)} pieces ({how})" + (" sound" if not found else "")
     return found
 
 
