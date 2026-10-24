@@ -16,10 +16,10 @@ def _curve(n=200, w=600, h=900):
 def test_sound_pieces_pass():
     assert pc.defects("rect", [(0, 0), (500, 0), (500, 800), (0, 800)]) == []
     assert pc.defects("round", _curve()) == []
-    collar = [(0, 0), (400, 0), (400, 60), (60, 120)]                    # a collar point (about 10° … 30°)
-    assert pc.defects("collar", [(0, 0), (420, 0), (420, 80), (40, 110)]) == []
+    collar = [(0, 0), (420, 0), (420, 80), (40, 260)]                    # a collar point of about 55°
+    assert pc.defects("collar", collar) == []
     notch = [(0, 0), (200, 0), (200, 400), (105, 400), (100, 392), (95, 400), (0, 400)]   # a nick: short
-    assert pc.defects("notch", notch) == [] and collar
+    assert pc.defects("notch", notch) == []
 
 
 def test_spike_slit_and_folded_outline_are_found():
@@ -30,6 +30,9 @@ def test_spike_slit_and_folded_outline_are_found():
     slit = [(0, 0), (300, 0), (300, 600), (150.5, 600), (150.5, 290), (150, 289), (149.5, 290), (149.5, 600),
             (0, 600)]                                                    # the jabzour slit of a front: a cut line
     assert pc.defects("front", slit) == []
+    # the deformed back of 10041-44499-1_0: the side line folds back into a hook of about 26°
+    hook = [(0, 0), (800, 0), (800, 1500), (540, 1500), (600, 1000), (380, 1300), (240, 1500), (0, 1500)]
+    assert any("needle" in d for d in pc.defects("back", hook))
     bow = [(0, 0), (400, 300), (400, 0), (0, 500)]                        # folded over itself
     assert any("crosses itself" in d for d in pc.defects("back", bow))
     assert any("no area" in d for d in pc.defects("tiny", [(0, 0), (5, 0), (5, 5)]))

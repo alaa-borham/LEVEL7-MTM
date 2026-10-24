@@ -17,9 +17,11 @@ import os
 import shutil
 import zipfile
 
-NEEDLE_DEG = 15.0          # a tip sharper than this …
-NEEDLE_MM = 25.0           # … along this length on both sides (a notch is shorter, a corner wider) …
-WEDGE_MM = 90.0            # … whose sides are much further apart here: a wedge (a slit keeps its width)
+# measured on real thobe patterns: the sharpest sound tip is a collar point (about 52°); the deformed back of
+# 10041-44499-1_0 folds back in a hook of 26° (its sides 3.7 times further apart twice as far from the tip)
+NEEDLE_DEG = 40.0          # a tip sharper than this …
+NEEDLE_MM = 50.0           # … along this length on both sides (a notch is shorter, a corner wider) …
+WEDGE_MM = 100.0           # … whose sides are further apart here: a wedge (a slit keeps its width)
 SLIT_MM = 3.0              # sides this close together at NEEDLE_MM: a cut line of the pattern
 MIN_AREA_MM2 = 100.0       # 1 cm²
 
@@ -115,7 +117,7 @@ def needles(pts) -> int:
             continue
         near = max(math.dist(a, b), 0.5)
         fa, fb = _along(pts, i, -1, WEDGE_MM), _along(pts, i, 1, WEDGE_MM)
-        if fa is None or fb is None or math.dist(fa, fb) < max(near * 2.5, SLIT_MM):
+        if fa is None or fb is None or math.dist(fa, fb) < max(near * 1.2, SLIT_MM):
             continue                                   # sides that keep their width: a cut line of the pattern
             #                                            (e.g. the jabzour slit), not a wedge
         found += 1
