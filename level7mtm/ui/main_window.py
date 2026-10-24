@@ -4017,6 +4017,9 @@ class MainWindow(QMainWindow):
         self.pool = QThreadPool.globalInstance()
         QTimer.singleShot(4000, self, self._tidy_markers)  # old markers out of the cutting folder, in the background
         QTimer.singleShot(6000, self, self._reread_held_at_start)
+        self._pattern_timer = QTimer(self)                # a base pattern corrected while the program runs
+        self._pattern_timer.timeout.connect(self._redo_outdated)
+        self._pattern_timer.start(3 * 60 * 1000)
         self.current_rid = None
         self.sel_row = None
         self._cad_sig = None
@@ -4648,7 +4651,12 @@ class MainWindow(QMainWindow):
         tops = [c["id"] for c in list_customers(self.ws) if not c.get("parent")]
 
         def work():
-            outs = []
+            from ..services.customers import reread_lines, stale_held
+            from ..services.grafis_orders import redo_outdated
+            outs = redo_outdated(self.ws)              # the base pattern corrected since: from it again
+            stale = stale_held(self.ws)                # a Variation given a meaning since: read again
+            if stale:
+                outs += reread_lines(self.ws, stale)[0]
             for cid in tops:
                 fids = held_files(self.ws, cid)
                 if fids:
@@ -4665,6 +4673,43 @@ class MainWindow(QMainWindow):
         w = Worker(work)
         w.signals.done.connect(done)
         w.signals.failed.connect(lambda m: (_REREADING.discard("*start*"), self.status(m[:200])))
+        self.pool.start(w)
+
+    def _redo_outdated(self):
+        """Every few minutes: models written from a base pattern changed since are written again from it, and
+        orders held for a Variation that has a meaning now are read again (whatever missed them before)."""
+        from ..services.customers import reread_lines, stale_held
+        from ..services.grafis_orders import outdated, redo_outdated
+        if not self.isVisible() or _REREADING or not self.ws.db.get_setting("reread.at_start", True):
+            return
+        try:
+            old, stale = outdated(self.ws), stale_held(self.ws)
+        except Exception as e:  # noqa: BLE001 - said, looked at next time
+            self.status(str(e)[:200])
+            return
+        if not old and not stale:
+            return
+        _REREADING.add("*pattern*")
+
+        def work():
+            outs = redo_outdated(self.ws) if old else []
+            if stale:
+                got, skipped = reread_lines(self.ws, stale)
+                outs += got
+                if skipped:
+                    with self.ws.db.tx() as c:          # never silent: why a line was not read again
+                        self.ws.db.audit(c, self.ws.actor, "reread.skipped", "revision", "", {"why": skipped})
+            return outs
+
+        def done(outs):
+            _REREADING.discard("*pattern*")
+            self.refresh_cad(force=True)
+            n = sum(len(o.lines) for o in outs)
+            self.status(f"{tr('Base pattern changed: models written again') if old else tr('Reading the held orders again')}"
+                        f": {n}")
+        w = Worker(work)
+        w.signals.done.connect(done)
+        w.signals.failed.connect(lambda m: (_REREADING.discard("*pattern*"), self.status(m[:200])))
         self.pool.start(w)
 
     def _tidy_markers(self):

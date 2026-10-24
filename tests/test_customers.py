@@ -753,3 +753,20 @@ def test_order_numbers_with_a_dash_in_the_reseller(ws, xml53):
     out = ws.import_data(data, "r.xml")
     probs = [p["code"] for ln in out.lines for p in ws.revision(ln["revision_id"])["normalized"]["problems"]]
     assert "line.number" not in probs
+
+
+def test_held_order_whose_variation_has_a_meaning_now_is_found(ws, xml53):
+    """Whatever missed it before: a held order whose Variation "without meaning" has one now is found (and read
+    again by the program every few minutes)."""
+    from level7mtm.services.customers import reread_lines, stale_held
+    from level7mtm.services.options import option_table, save_options
+    rid = ws.import_data(open(xml53, "rb").read().replace(b"Collar Square", b"Collar Weird"), "w.xml") \
+        .lines[0]["revision_id"]
+    assert stale_held(ws) == []                                           # no meaning yet: nothing to do
+    g = option_table(ws)
+    next(v for v in next(x for x in g if x["group"] == "collar")["values"]
+         if v["value"] == "square")["erp_names"].append("collar weird")   # other case: the same name
+    save_options(ws, g)
+    assert stale_held(ws) == [rid]
+    outs, skipped = reread_lines(ws, stale_held(ws))
+    assert not skipped and outs[0].lines[0]["status"] == "ready" and stale_held(ws) == []

@@ -530,6 +530,29 @@ def reread_held(ws, cid: str | None = None, fids: list[int] | None = None) -> li
     return outs
 
 
+def stale_held(ws) -> list[int]:
+    """Order lines held for a Variation "without meaning" that has a meaning now in their customer's settings
+    (owner: "it has a meaning and the order still says not"): read again, whatever missed them before."""
+    import json
+    from ..erp.importer import vkey
+    known: dict[str, set] = {}
+    out = []
+    for r in ws.db.q("SELECT id, normalized FROM revisions WHERE status='needs_review'"):
+        norm = json.loads(r["normalized"])
+        names = [p.get("field") for p in norm.get("problems", []) if p.get("code") == "option.unknown" and p.get("field")]
+        if not names:
+            continue
+        cid = norm.get("customer") or DEFAULT_CUSTOMER
+        if cid not in known:
+            with ws.for_customer(cid):
+                _, prof = ws.active("mapping")
+            known[cid] = {vkey(k) for k in prof["options"].get("map", {})} | \
+                {vkey(p["variation"]) for p in patterns(ws, cid)}
+        if any(vkey(n) in known[cid] for n in names):
+            out.append(r["id"])
+    return out
+
+
 def reread_lines(ws, rids: list[int]) -> tuple[list, list[str]]:
     """Read these order lines again from their XML with today's settings (right click → Read again): their model
     is written again from today's pattern, also for a line saved by GRAFIS whose nesting failed. A line with

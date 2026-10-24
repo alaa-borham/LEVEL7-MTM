@@ -253,6 +253,39 @@ def _order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = 
     return _save(ws, res, tsha)
 
 
+def outdated(ws) -> list[int]:
+    """Order lines not finished whose model was written from a base pattern that has changed since (owner: "the
+    base pattern is corrected" — the model written before it must not be nested): their revision ids."""
+    from .grafis_robot import file_sha
+    out, shas = [], {}
+    for g in ws.db.q("SELECT g.revision_id, g.template_sha256, g.info FROM grafis_orders g JOIN revisions r ON "
+                     "r.id=g.revision_id WHERE g.status='written' AND g.archived=0 AND r.status IN ('ready', "
+                     "'sent_to_nesting') AND g.id IN (SELECT MAX(id) FROM grafis_orders GROUP BY revision_id)"):
+        template = json.loads(g["info"] or "{}").get("template")
+        if not template or not g["template_sha256"]:
+            continue
+        if template not in shas:
+            try:
+                shas[template] = file_sha(template)
+            except OSError:
+                shas[template] = None                 # the pattern is not there now: nothing to compare
+        now_sha = shas[template]
+        if now_sha and not g["template_sha256"].startswith(now_sha):
+            out.append(g["revision_id"])
+    return out
+
+
+def redo_outdated(ws) -> list:
+    """The models written from a base pattern changed since: written again from it (a new number), through CAD
+    and the nesting again — not one with cutting files, nor one being nested now."""
+    from .customers import reread_lines
+    rids = outdated(ws)
+    if not rids:
+        return []
+    outs, _ = reread_lines(ws, rids)
+    return outs
+
+
 def model_again(ws, rid: int) -> dict | None:
     """After the owner corrected an order (a measurement, an option, problems confirmed): its model is written
     again from the base pattern with a new number, goes through CAD and is nested again — also when it was nested

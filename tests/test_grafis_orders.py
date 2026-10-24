@@ -347,3 +347,29 @@ def test_a_finished_order_corrected_goes_through_cad_again(ws, tmp_path):
     assert g["status"] == "written" and g["path"].endswith("_v2.mdl")
     row = next(r for r in order_rows(ws) if r["rid"] == rid)
     assert row["stage"] == "grafis" and row["mdl"] == g["path"]          # in CAD again, not the old result
+
+
+@needs_mdl
+def test_models_written_again_when_the_base_pattern_is_corrected(ws, tmp_path):
+    """Owner: the base pattern was corrected (a grain line added) — an order whose model was written before it
+    (nesting failed / waiting) gets its model again from the corrected pattern; one cut already is left."""
+    import shutil
+
+    from level7mtm.services.grafis_orders import outdated, redo_outdated
+    base = tmp_path / "base.mdl"
+    shutil.copy(MDL, base)
+    ws.db.set_setting("grafis.mdl", str(base))
+    ws.db.set_setting("grafis.input", str(tmp_path / "in"))
+    o = import_and_prepare(ws, XML_53)
+    r1, r2 = (g["revision_id"] for g in o.grafis)
+    with ws.db.tx() as c:
+        c.execute("UPDATE revisions SET status='sent_to_nesting' WHERE id=?", (r1,))   # its nesting failed
+        c.execute("UPDATE revisions SET status='completed' WHERE id=?", (r2,))         # cut: stays as it is
+    assert outdated(ws) == []
+    from level7mtm.grafis.xwriter import write_order_mdl
+    write_order_mdl(MDL, {(2, 8): 361.0}, str(base))                       # the owner corrects the pattern
+    assert outdated(ws) == [r1]
+    outs = redo_outdated(ws)
+    assert [ln["line_number"] for o_ in outs for ln in o_.lines] == ["9-53-1_2"]
+    assert outs[0].grafis[0]["path"].endswith("_v2.mdl")
+    assert outdated(ws) == []

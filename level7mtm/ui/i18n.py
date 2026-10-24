@@ -369,6 +369,7 @@ AR = {
     "Read again with the current settings": "إعادة القراءة بالإعدادات الحالية",
     "Measurement limits…": "حدود القياس…",
     "Measurement checks": "فحص القياسات",
+    "Base pattern changed: models written again": "تغيّر البترون الأساسي: كُتبت الموديلات من جديد",
     "To the top": "إلى الأعلى",
     "One step up": "خطوة لأعلى",
     "One step down": "خطوة لأسفل",
