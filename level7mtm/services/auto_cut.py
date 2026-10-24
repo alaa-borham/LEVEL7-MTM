@@ -313,6 +313,14 @@ def _auto_cut_inner(ws, chk, scb_path: str, force: bool = False) -> dict:
     if rc != 0 or "UNPLACED:" in out_text or not os.path.exists(stem + ".l7n"):
         result["message"] = "nesting did not produce a valid marker: " + _why(out_text, rc)
         return _save(ws, chk, scb_path, result)
+    from .pattern_check import check_marker, to_err
+    bad = check_marker(stem + ".l7n") if ws.db.get_setting("cutting.pattern_check", True) else []
+    if bad:                                                # owner: a distorted pattern is never cut
+        moved = to_err(ws, scb_path, bad) if scb_path.lower().endswith(".mdl") else None
+        result["message"] = "pattern distorted, no cutting file: " + "; ".join(bad) + \
+            (f" — the model is in {os.path.dirname(moved)}" if moved else "")
+        result["pattern_errors"] = bad
+        return _save(ws, chk, scb_path, result)
     for fmt in st["formats"]:
         target = f"{cut_stem}.{fmt}"
         args = cmd + ["export", stem + ".l7n", "--format", fmt, "-o", target]

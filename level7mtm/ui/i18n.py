@@ -369,6 +369,10 @@ AR = {
     "Read again with the current settings": "إعادة القراءة بالإعدادات الحالية",
     "Measurement limits…": "حدود القياس…",
     "Measurement checks": "فحص القياسات",
+    "Pattern errors (MDL-ERR)": "أخطاء البترون (MDL-ERR)",
+    "Check the pattern for distortion": "فحص تشوه البترون",
+    "A piece with a spike, a slit or an outline crossing itself: no cutting file, the model goes to MDL-ERR with the "
+    "reason": "قطعة فيها نتوء أو شق أو حدود تتقاطع مع نفسها: لا يُكتب ملف قص، ويُنقل الموديل إلى MDL-ERR مع السبب",
     "moved back into process: its order lines read again and their models written again":
         "أُعيد إلى process: قُرئت أسطر طلباته من جديد وكُتبت موديلاتها من جديد",
     "order line needs review": "سطر الطلب يحتاج مراجعة",
@@ -779,6 +783,12 @@ MSG_AR = [
     (r"measurement (\S+): the formula '(.+)' is not valid: (.+)", "القياس {0}: المعادلة '{1}' غير صحيحة: {2}"),
     (r"measurement (\S+): write the formula \(e\.g\. FL - 10\)", "القياس {0}: اكتب المعادلة (مثل FL - 10)"),
     (r"measurement (\S+): the lowest value is above the highest", "القياس {0}: أقل قيمة أكبر من أعلى قيمة"),
+    (r"pattern distorted, no cutting file: (.+?)(?: — the model is in (.+))?",
+     "تشوه في البترون، لم يُكتب ملف قص: {0}"),
+    (r"(.+): its outline crosses itself", "{0}: حدود القطعة تتقاطع مع نفسها"),
+    (r"(.+): (\d+) needle tip\(s\) — a spike or a slit in the outline",
+     "{0}: {1} سن حاد — نتوء أو شق في حدود القطعة"),
+    (r"(.+): the piece has \(almost\) no area", "{0}: القطعة بلا مساحة تقريبًا"),
     (r"it is not read again", "لا يُقرأ من جديد"),
     (r"no pattern for this order: none of its Variations is a pattern of the customer \((.+)\)",
      "لا يوجد بترون لهذا الطلب: لا توجد في الطلب أي Variation من بترونات العميل ({0})"),
@@ -836,7 +846,9 @@ def _tr_msg(text: str) -> str:
     for pat, ar in MSG_AR:
         m = re.fullmatch(pat, text.strip())
         if m:
-            return ar.format(*(_tr_msg(g) for g in m.groups()))
+            return ar.format(*(_tr_msg(g) for g in m.groups() if g is not None))
+    if "; " in text:                                    # several reasons: each one
+        return "; ".join(_tr_msg(p) for p in text.split("; "))
     m = re.fullmatch(r"([A-Za-z]*\d+[\w-]*|[\w ]{1,24}):\s+(.+)", text)     # "R003: …", "GRAFIS robot: …"
     if m and m.group(2) != _tr_msg(m.group(2)):
         return f"{tr(m.group(1))}: {_tr_msg(m.group(2))}"

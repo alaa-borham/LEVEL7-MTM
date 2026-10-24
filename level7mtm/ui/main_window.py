@@ -1474,8 +1474,13 @@ class GrafisPage(Page):
         self.auto.setToolTip(tr("Automatic: nest and write cutting files (PLT / ISO)"))
         self.auto.setChecked(bool(self.ws.db.get_setting("cutting.auto", True)))
         self.auto.toggled.connect(lambda on: (self.ws.db.set_setting("cutting.auto", on), self.refresh()))
+        self.pcheck = QCheckBox(tr("Check the pattern for distortion"))
+        self.pcheck.setToolTip(tr("A piece with a spike, a slit or an outline crossing itself: no cutting file, the "
+                                  "model goes to MDL-ERR with the reason"))
+        self.pcheck.setChecked(bool(self.ws.db.get_setting("cutting.pattern_check", True)))
+        self.pcheck.toggled.connect(lambda on: self.ws.db.set_setting("cutting.pattern_check", on))
         r1 = QHBoxLayout()
-        for w in (self.auto_mdl, self.robot, self.auto):
+        for w in (self.auto_mdl, self.robot, self.auto, self.pcheck):
             r1.addWidget(w)
         r1.addStretch()
         al.addLayout(r1)
@@ -4069,6 +4074,7 @@ class MainWindow(QMainWindow):
                              [(tr("Cutting files"), self.open_cutting),
                               (tr("Markers (L7N)"), self.open_markers),
                               (tr("Order models (MDL, saved)"), self.open_mdl_archive),
+                              (tr("Pattern errors (MDL-ERR)"), self.open_mdl_err),
                               (tr("Finished XML (done)"), self.open_done_xml),
                               (tr("Errors (ER)"), lambda: self.pages["Home"]._open_er())])]),
             ("system", tr("System"), [("setup", "setup", tr("Setup"), self.open_setup),
@@ -4304,6 +4310,16 @@ class MainWindow(QMainWindow):
         except OSError:
             pass
         self._open_folder(d, tr("Markers (L7N)"))
+
+    def open_mdl_err(self):
+        """The models whose pattern came out distorted (MDL-ERR): never cut; the .txt beside each says why."""
+        from ..services.pattern_check import err_folder
+        d = err_folder(self.ws)
+        try:
+            os.makedirs(d, exist_ok=True)
+        except OSError:
+            pass
+        self._open_folder(d, tr("Pattern errors (MDL-ERR)"))
 
     def open_mdl_archive(self):
         """The copy of every order model as GRAFIS saved it (MDL-ARCHIVE): the reference when something is wrong."""
