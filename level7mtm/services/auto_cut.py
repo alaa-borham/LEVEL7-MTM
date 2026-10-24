@@ -88,6 +88,73 @@ def customer_formats(ws, cid: str) -> list[str] | None:
     return None
 
 
+# the room between the pieces on the marker (owner: "a setting for each customer, different from the other"):
+# LEVEL7 Nesting's command line reads only what it is given — nothing given, everything was 0
+GAPS = (("spacing", "--spacing", "Gap between the pieces"),
+        ("buffer_x", "--buffer-x", "Extra gap along the marker"),
+        ("buffer_y", "--buffer-y", "Extra gap across the fabric"),
+        ("margin", "--margin", "Margin at the fabric edges"))
+
+
+def customer_gaps(ws, cid: str | None) -> dict:
+    """The gaps (mm) for this customer / product (a product without its own: its customer's), else 0."""
+    from .customers import get
+    out = {k: 0.0 for k, _, _ in GAPS}
+    if not cid:
+        return out
+    c = get(ws, cid)
+    for one in [cid] + ([c["parent"]] if c and c.get("parent") else []):
+        got = ws.db.get_setting(f"nesting.gaps@{one}")
+        if got:
+            out.update({k: float(got.get(k) or 0.0) for k, _, _ in GAPS})
+            return out
+    return out
+
+
+def set_customer_gaps(ws, cid: str, values: dict) -> None:
+    clean = {}
+    for k, _, label in GAPS:
+        v = float(values.get(k) or 0.0)
+        if v < 0 or v > 100:
+            raise ValueError(f"{label}: {v:g} mm — between 0 and 100 mm")
+        clean[k] = v
+    ws.db.set_setting(f"nesting.gaps@{cid}", clean)
+
+
+_NEST_FLAGS: dict = {}
+
+
+def _nest_flags(cmd, env) -> str:
+    """``nest --help`` of this LEVEL7 Nesting (an older one may not know the gap options: never sent to it)."""
+    key = tuple(cmd)
+    if key not in _NEST_FLAGS:
+        try:
+            p = subprocess.run(cmd + ["nest", "--help"], env=env, capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", timeout=60, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            _NEST_FLAGS[key] = (p.stdout or "") + (p.stderr or "")
+        except (OSError, subprocess.SubprocessError):
+            _NEST_FLAGS[key] = ""
+    return _NEST_FLAGS[key]
+
+
+def gap_args(ws, cid: str | None, cmd, env, log: list | None = None) -> list[str]:
+    """The customer's gaps as LEVEL7 Nesting options (only those set, and only those it knows)."""
+    gaps = customer_gaps(ws, cid)
+    if not any(gaps.values()):
+        return []
+    known = _nest_flags(cmd, env)
+    out, missing = [], []
+    for k, flag, _ in GAPS:
+        if gaps[k]:
+            if flag in known:
+                out += [flag, f"{gaps[k]:g}"]
+            else:
+                missing.append(flag)
+    if missing and log is not None:
+        log.append(f"LEVEL7 Nesting too old for {', '.join(missing)} (update it): nested without them")
+    return out
+
+
 def chosen_cut_folder(ws, cid: str) -> str | None:
     """The folder the owner chose for this customer's cutting files (a product without its own: its customer's);
     None = <cutting folder>/<customer name>."""
@@ -310,6 +377,8 @@ def _auto_cut_inner(ws, chk, scb_path: str, force: bool = False) -> dict:
     stem = os.path.join(l7n_dir, name)
     cut_stem = os.path.join(cut_dir, name)
     nest = cmd + ["nest", scb_path, "--width", f"{width:g}", "--time", f"{st['time']:g}", "-o", stem + ".l7n"]
+    one = next(iter(custs_all)) if len(custs_all) == 1 else None
+    nest += gap_args(ws, one, cmd, env, log)              # the customer's gaps between the pieces
     finfo = _info(cmd, env, scb_path)
     if len(sizes) == 1:
         key = _size_key(cmd, env, scb_path, sizes[0], log, finfo)

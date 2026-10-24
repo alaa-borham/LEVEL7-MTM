@@ -770,3 +770,25 @@ def test_held_order_whose_variation_has_a_meaning_now_is_found(ws, xml53):
     assert stale_held(ws) == [rid]
     outs, skipped = reread_lines(ws, stale_held(ws))
     assert not skipped and outs[0].lines[0]["status"] == "ready" and stale_held(ws) == []
+
+
+def test_nesting_gaps_per_customer(ws, monkeypatch):
+    """Owner: the room between the pieces is each customer's own; sent to LEVEL7 Nesting only when set and only the
+    options it knows (an older one: said, nested without them)."""
+    import pytest
+
+    from level7mtm.services import auto_cut, customers
+    a = customers.add_customer(ws, "Richy", "From Richy")
+    b = customers.add_customer(ws, "Dubai", "From Dubai")
+    assert auto_cut.customer_gaps(ws, a) == {"spacing": 0.0, "buffer_x": 0.0, "buffer_y": 0.0, "margin": 0.0}
+    auto_cut.set_customer_gaps(ws, a, {"spacing": 3, "margin": 10})
+    auto_cut.set_customer_gaps(ws, b, {"spacing": 1.5})
+    assert auto_cut.customer_gaps(ws, a)["spacing"] == 3.0 and auto_cut.customer_gaps(ws, b)["spacing"] == 1.5
+    with pytest.raises(ValueError):
+        auto_cut.set_customer_gaps(ws, a, {"spacing": -1})
+    monkeypatch.setattr(auto_cut, "_nest_flags", lambda cmd, env: "--spacing --buffer-x --buffer-y --margin")
+    assert auto_cut.gap_args(ws, a, ["cli"], {}) == ["--spacing", "3", "--margin", "10"]
+    assert auto_cut.gap_args(ws, None, ["cli"], {}) == []
+    monkeypatch.setattr(auto_cut, "_nest_flags", lambda cmd, env: "--spacing")
+    log = []
+    assert auto_cut.gap_args(ws, a, ["cli"], {}, log) == ["--spacing", "3"] and "--margin" in log[0]

@@ -2955,6 +2955,48 @@ class XValuesPage(Page):
 CHECK_MODES = (("range", "From … to"), ("none", "No check"), ("formula", "Formula"))
 
 
+class NestingGapsPanel(QWidget):
+    """The room between the pieces on this customer's markers (owner: each customer his own), in mm."""
+
+    def __init__(self, page):
+        super().__init__()
+        self.page, self.ws = page, page.ws
+        from ..services.auto_cut import GAPS
+        f = QFormLayout(self)
+        note = QLabel(tr("Sent to LEVEL7 Nesting with every marker of this customer (0 = none). A product without "
+                         "its own values takes its customer's."))
+        note.setWordWrap(True)
+        f.addRow(note)
+        self.boxes = {}
+        for k, _, label_ in GAPS:
+            b = QDoubleSpinBox()
+            from PySide6.QtCore import QLocale
+            b.setLocale(QLocale(QLocale.English, QLocale.UnitedStates))
+            b.setLayoutDirection(Qt.LeftToRight)
+            b.setRange(0, 100)
+            b.setDecimals(1)
+            b.setSingleStep(0.5)
+            b.setSuffix(" mm")
+            b.setMinimumWidth(140)
+            self.boxes[k] = b
+            f.addRow(tr(label_) + ":", b)
+
+    def refresh(self):
+        from ..services.auto_cut import customer_gaps
+        g = customer_gaps(self.ws, self.ws.customer())
+        for k, b in self.boxes.items():
+            b.setValue(g[k])
+
+    def save(self):
+        from ..services.auto_cut import set_customer_gaps
+        try:
+            set_customer_gaps(self.ws, self.ws.customer(), {k: b.value() for k, b in self.boxes.items()})
+        except ValueError as e:
+            QMessageBox.warning(self, tr("Nesting gaps"), tr_msg(str(e)))
+            return False
+        return True
+
+
 class MeasureChecksPanel(QWidget):
     """The customer's / product's checks of each XML measurement, for all his patterns or one pattern: from … to,
     no check, or a value computed by a formula from the other measurements (services/checks.py)."""
@@ -3196,7 +3238,8 @@ class CustomersPage(Page):
                                                ("X values for GRAFIS", "xvalues", "Size table setup"),
                                                ("Design options", "options", "Piece options setup"),
                                                ("GRAFIS parts", "parts", "Fixed pieces"),
-                                               ("Measurement checks", "ruler", "Measurement checks"))):
+                                               ("Measurement checks", "ruler", "Measurement checks"),
+                                               ("Nesting gaps", "nest", "Nesting gaps"))):
             b = QToolButton()
             b.setObjectName("ribbonButton")
             b.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
@@ -3217,7 +3260,7 @@ class CustomersPage(Page):
 
     LABELS = {"patterns": "Patterns", "X values for GRAFIS": "Size table setup",
               "Design options": "Piece options setup", "GRAFIS parts": "Fixed pieces",
-              "Measurement checks": "Measurement checks"}
+              "Measurement checks": "Measurement checks", "Nesting gaps": "Nesting gaps"}
 
     def show_tab(self, key: str):
         self.open_editor(key)
@@ -3227,8 +3270,9 @@ class CustomersPage(Page):
         from ..services.customers import names
         if self.editor_dialog is not None and self.editor_dialog.isVisible():
             self.editor_dialog.close()
-        if key in ("patterns", "Measurement checks"):
-            page = (PatternsPanel if key == "patterns" else MeasureChecksPanel)(self)
+        if key in ("patterns", "Measurement checks", "Nesting gaps"):
+            page = {"patterns": PatternsPanel, "Measurement checks": MeasureChecksPanel,
+                    "Nesting gaps": NestingGapsPanel}[key](self)
         else:
             page = {"X values for GRAFIS": XValuesPage, "Design options": OptionsPage,
                     "GRAFIS parts": GrafisPartsPage}[key](self.win)
