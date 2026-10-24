@@ -344,7 +344,9 @@ def _auto_cut_inner(ws, chk, scb_path: str, force: bool = False) -> dict:
         result["message"] = "nesting did not produce a valid marker: " + _why(out_text, rc)
         return _save(ws, chk, scb_path, result)
     from .pattern_check import check_marker, to_err
-    bad = check_marker(stem + ".l7n") if ws.db.get_setting("cutting.pattern_check", True) else []
+    from .pattern_check import reference, template_of
+    bad = check_marker(stem + ".l7n", reference(ws, template_of(ws, scb_path))) \
+        if ws.db.get_setting("cutting.pattern_check", True) else []
     if bad:                                                # owner: a distorted pattern is never cut
         from .pattern_check import SHAPES
         moved = to_err(ws, scb_path, bad, SHAPES.get(os.path.abspath(stem + ".l7n"))) \

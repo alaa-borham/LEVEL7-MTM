@@ -115,6 +115,7 @@ def _fresh_pattern_checks():
     from level7mtm.services import pattern_check
     pattern_check.SOUND.clear()
     pattern_check.BAD.clear()
+    pattern_check._REFS.clear()
     from level7mtm.services import checks
     checks._LEARNED.clear()                         # the limits learned from another test's orders
     yield

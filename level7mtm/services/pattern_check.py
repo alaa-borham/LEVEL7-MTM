@@ -160,18 +160,88 @@ def defects_at(name: str, outline) -> tuple[list[str], list[tuple[float, float]]
     return out, marks
 
 
+# a piece far from the same piece of the base pattern (owner: the back with a long fin out of its side — no sharp
+# tip, no crossing): measured on the owner's patterns, the pieces of orders of one base pattern differ by about 0.01
+# in solidity (area / area of its convex hull) and 1 % in roundness (4·pi·area / perimeter²); the deformed backs
+# fell from 0.94 to 0.69 in solidity and from 0.54 to 0.39 in roundness
+SOLID_DROP = 0.06                                  # (other measurements than the base: up to 0.025 on a sleeve)
+ROUND_RATIO = 0.75                                 # (roundness follows the proportions too: a longer sleeve -12 %)
+
+
+def _hull(pts):
+    q = sorted(set(pts))
+    if len(q) < 3:
+        return q
+
+    def cr(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    lo, up = [], []
+    for v in q:
+        while len(lo) >= 2 and cr(lo[-2], lo[-1], v) <= 0:
+            lo.pop()
+        lo.append(v)
+    for v in reversed(q):
+        while len(up) >= 2 and cr(up[-2], up[-1], v) <= 0:
+            up.pop()
+        up.append(v)
+    return lo[:-1] + up[:-1]
+
+
+def _perimeter(pts) -> float:
+    return sum(math.dist(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts)))
+
+
+def shape_of(outline) -> tuple[float, float] | None:
+    """(solidity, roundness) of a piece: both stay the same when the piece is only larger or smaller."""
+    pts = _clean(outline)
+    if len(pts) < 3:
+        return None
+    a, h, per = _area(pts), _area(_hull(pts)), _perimeter(pts)
+    if a <= 0 or h <= 0 or per <= 0:
+        return None
+    return a / h, 4 * math.pi * a / (per * per)
+
+
+def _deepest_dent(pts):
+    """The point of the outline furthest inside its convex hull (where a fin leaves the piece)."""
+    h = _hull(pts)
+
+    def seg_d(p, a, b):
+        ax, ay, bx, by = a[0], a[1], b[0], b[1]
+        dx, dy = bx - ax, by - ay
+        t = max(0.0, min(1.0, ((p[0] - ax) * dx + (p[1] - ay) * dy) / ((dx * dx + dy * dy) or 1.0)))
+        return math.dist(p, (ax + t * dx, ay + t * dy))
+    return max(pts, key=lambda p: min(seg_d(p, h[i], h[(i + 1) % len(h)]) for i in range(len(h))))
+
+
+def against_base(name: str, outline, ref: dict | None) -> tuple[list[str], list]:
+    """A piece whose shape is far from the same piece of the base pattern."""
+    base = (ref or {}).get(name)
+    me = shape_of(outline)
+    if not base or not me:
+        return [], []
+    (s, r), (bs, br) = me, base
+    if s >= bs - SOLID_DROP and r >= br * ROUND_RATIO:
+        return [], []
+    return ([f"{name}: its outline is far from the base pattern (solidity {s:.2f}, base {bs:.2f}; roundness "
+             f"{r:.2f}, base {br:.2f})"], [_deepest_dent(_clean(outline))])
+
+
 SHAPES: dict = {}                                   # checked file / model (abs path) -> the distorted pieces drawn
 _SHAPES_OF: dict = {}                               # content (sha) -> the same, for a content checked before
 
 
-def _defects_of(pieces, key: str | None = None) -> list[str]:
-    """The defects of all pieces (each piece once); the distorted ones are kept for the picture under ``key``."""
+def _defects_of(pieces, key: str | None = None, ref: dict | None = None) -> list[str]:
+    """The defects of all pieces (each piece once); the distorted ones are kept for the picture under ``key``.
+    ``ref``: the shapes of the base pattern's pieces (a piece far from its own is distorted too)."""
     found, seen, shapes = [], set(), []
     for name, outline in pieces:
         if name in seen:
             continue                                  # each piece once (its sizes are the same pattern)
         seen.add(name)
         msgs, marks = defects_at(name, outline)
+        if not msgs:
+            msgs, marks = against_base(name, outline, ref)
         for dd in msgs:
             if dd not in found:
                 found.append(dd)
@@ -217,13 +287,62 @@ def picture_of(ws, model: str) -> str | None:
     return p if model and os.path.isfile(p) else None
 
 
-def check_marker(path: str) -> list[str]:
+def check_marker(path: str, ref: dict | None = None) -> list[str]:
     """The defects of the pieces in a marker; [] = the pattern is sound (or the marker cannot be read)."""
     try:
         pieces = pieces_of_marker(path)
     except (OSError, KeyError, ValueError, TypeError, zipfile.BadZipFile):
         return []
-    return _defects_of(pieces, path)
+    return _defects_of(pieces, path, ref)
+
+
+_REFS: dict = {}                                    # base pattern content (sha) -> {piece: (solidity, roundness)}
+
+
+def template_of(ws, model: str) -> str | None:
+    """The base pattern an order model was written from."""
+    for r in ws.db.q("SELECT info FROM grafis_orders WHERE path=? ORDER BY id DESC LIMIT 1", (model,)):
+        try:
+            t = json.loads(r["info"] or "{}").get("template")
+        except (TypeError, ValueError):
+            t = None
+        return t if t and os.path.isfile(t) else None
+    return None
+
+
+def reference(ws, template: str | None) -> dict:
+    """The shapes of the base pattern's pieces (read once per pattern content: a quick marker of it)."""
+    if not template:
+        return {}
+    try:
+        from .grafis_robot import file_sha
+        sha = file_sha(template)
+    except OSError:
+        return {}
+    if sha in _REFS:
+        return _REFS[sha]
+    kept = ws.db.get_setting("pattern.refs") or {}
+    if sha in kept:
+        _REFS[sha] = {k: tuple(v) for k, v in kept[sha].items()}
+        return _REFS[sha]
+    got = _read_pieces(ws, template, None)
+    if not got:
+        return {}
+    pieces = got[0]
+    ref = {}
+    for name, outline in pieces:
+        if name not in ref:
+            m = shape_of(outline)
+            if m:
+                ref[name] = m
+    _REFS[sha] = ref
+    try:
+        kept = dict(list(kept.items())[-49:])
+        kept[sha] = {k: list(v) for k, v in ref.items()}
+        ws.db.set_setting("pattern.refs", kept)
+    except Exception:  # noqa: BLE001
+        pass
+    return ref
 
 
 def _pts(raw) -> list[tuple[float, float]] | None:
@@ -332,54 +451,62 @@ def _size_of(path: str) -> str | None:
         return None
 
 
+def _read_pieces(ws, path: str, width_mm: float | None):
+    """(pieces, how) of a GRAFIS model read by LEVEL7 Nesting: from ``info --json`` when it gives the outlines, else
+    from a quick marker made for the check only (thrown away); None (LAST says why) when it cannot be read."""
+    import subprocess
+    import tempfile
+
+    from .auto_cut import NestingNotConfigured, _info, _run, nesting_command
+    try:
+        cmd, env = nesting_command(ws)
+    except NestingNotConfigured:
+        LAST["text"] = "pattern not checked: LEVEL7 Nesting not found"
+        return None
+    info = _info(cmd, env, path)
+    pieces = _outlines_of_info(info)
+    if pieces:
+        return pieces, "info"
+    d = tempfile.mkdtemp(prefix="l7check_")
+    try:
+        out = os.path.join(d, "check.l7n")
+        log: list[str] = []
+        # one garment of the model's size: without --sizes LEVEL7 Nesting makes no marker ("nothing to nest:
+        # set size quantities") and the check never ran
+        names = [n for n in (info.get("size_names") or []) if isinstance(n, str)] if isinstance(info, dict) \
+            else []
+        size = names[0] if names else _size_of(path)
+        args = cmd + ["nest", path, "--width", f"{width_mm or 1500:g}", "--time", "1", "-o", out]
+        if size:
+            args += ["--sizes", f"{size}=1"]
+        if _run(args, env, log, 120) != 0 or not os.path.isfile(out):
+            tail = " ".join(" ".join(log[1:]).split())[-160:]
+            LAST["text"] = f"pattern not checked: the check marker was not made ({tail})"
+            return None
+        return pieces_of_marker(out), "marker"
+    except (OSError, subprocess.SubprocessError, KeyError, ValueError, TypeError, zipfile.BadZipFile) as e:
+        LAST["text"] = f"pattern not checked: {type(e).__name__}: {e}"
+        return None
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def _check_model(ws, path: str, width_mm: float | None = None) -> list[str]:
     """The pattern as CAD saved it, checked before it waits for the nesting (owner: "the files distorted in CAD
     still reach the nesting queue instead of Needs attention"). The pieces are read by LEVEL7 Nesting: from
     ``info --json`` when it gives the outlines, else from a quick marker made for the check only (thrown away).
     [] = sound, or it could not be checked (then the check after the nesting still holds)."""
-    import subprocess
-    import tempfile
-
-    from .auto_cut import NestingNotConfigured, _info, _run, nesting_command
     if not ws.db.get_setting("cutting.pattern_check", True):
         LAST["text"] = "pattern not checked: the check is off"
         return []
     if not os.path.isfile(path):
         LAST["text"] = "pattern not checked: the model is not there"
         return []
-    try:
-        cmd, env = nesting_command(ws)
-    except NestingNotConfigured:
-        LAST["text"] = "pattern not checked: LEVEL7 Nesting not found"
+    got = _read_pieces(ws, path, width_mm)
+    if not got:
         return []
-    info = _info(cmd, env, path)
-    pieces = _outlines_of_info(info)
-    how = "info"
-    if not pieces:
-        how = "marker"
-        d = tempfile.mkdtemp(prefix="l7check_")
-        try:
-            out = os.path.join(d, "check.l7n")
-            log: list[str] = []
-            # one garment of the model's size: without --sizes LEVEL7 Nesting makes no marker ("nothing to nest:
-            # set size quantities") and the check never ran
-            names = [n for n in (info.get("size_names") or []) if isinstance(n, str)] if isinstance(info, dict) \
-                else []
-            size = names[0] if names else _size_of(path)
-            args = cmd + ["nest", path, "--width", f"{width_mm or 1500:g}", "--time", "1", "-o", out]
-            if size:
-                args += ["--sizes", f"{size}=1"]
-            if _run(args, env, log, 120) != 0 or not os.path.isfile(out):
-                tail = " ".join(" ".join(log[1:]).split())[-160:]
-                LAST["text"] = f"pattern not checked: the check marker was not made ({tail})"
-                return []
-            pieces = pieces_of_marker(out)
-        except (OSError, subprocess.SubprocessError, KeyError, ValueError, TypeError, zipfile.BadZipFile) as e:
-            LAST["text"] = f"pattern not checked: {type(e).__name__}: {e}"
-            return []
-        finally:
-            shutil.rmtree(d, ignore_errors=True)
-    found = _defects_of(pieces, path)
+    pieces, how = got
+    found = _defects_of(pieces, path, reference(ws, template_of(ws, path)))
     n = len({name for name, _ in pieces})
     LAST["text"] = f"pattern checked: {n} pieces ({how})" + (" sound" if not found else "")
     return found

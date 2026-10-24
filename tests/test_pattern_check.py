@@ -182,3 +182,27 @@ def test_robot_message_with_a_dash_inside_is_translated_whole():
         assert t.startswith("AI TOOL: ") and "needle" not in t and "سن حاد" in t
     finally:
         set_language("en")
+
+
+def test_a_fin_out_of_the_back_is_found_against_the_base_pattern(ws, tmp_path, monkeypatch):
+    """The back with a long fin out of its side (owner's markers 10041-45579, 45551, 45482 …): no sharp tip, no
+    crossing — far from the same piece of the base pattern in solidity; the same piece in other proportions is not."""
+    back = [(0, 0), (500, 0), (520, 600), (540, 1200), (480, 1500), (300, 1560), (200, 1560), (20, 1500), (-40, 1200),
+            (-20, 600)]
+    fin = back[:3] + [(540, 640), (700, 760), (780, 1000), (720, 1040), (600, 820), (530, 700)] + back[3:]
+    longer = [(x * 0.9, y * 1.1) for x, y in back]                      # other measurements: sound
+    ref = {"back": pc.shape_of(back)}
+    assert pc.against_base("back", longer, ref) == ([], [])
+    msgs, marks = pc.against_base("back", fin, ref)
+    assert msgs and "far from the base pattern" in msgs[0] and len(marks) == 1
+    assert pc.against_base("front", fin, ref) == ([], [])               # no base piece of that name: not judged
+    tpl = tmp_path / "Base.mdl"
+    tpl.write_bytes(b"base")
+    monkeypatch.setattr(pc, "_read_pieces", lambda ws_, p, w: ([("back", back)], "marker"))
+    assert pc.reference(ws, str(tpl))["back"] == pc.shape_of(back)
+    pc._REFS.clear()
+    assert pc.reference(ws, str(tpl))["back"] == tuple(pc.shape_of(back))          # kept over a restart
+    from level7mtm.ui.i18n import set_language, tr_msg
+    set_language("ar")
+    assert "بعيد عن البترون الأساسي" in tr_msg(msgs[0])
+    set_language("en")

@@ -843,6 +843,8 @@ MSG_AR = [
     (r"(.+): (\d+) needle tip\(s\) — a spike or a slit in the outline",
      "{0}: {1} سن حاد — نتوء أو شق في حدود القطعة"),
     (r"(.+): the piece has \(almost\) no area", "{0}: القطعة بلا مساحة تقريبًا"),
+    (r"(.+): its outline is far from the base pattern \(solidity ([\d.]+), base ([\d.]+); roundness ([\d.]+), base ([\d.]+)\)",
+     "{0}: شكل القطعة بعيد عن البترون الأساسي (نتوء أو زعنفة خارج الحدود؛ الامتلاء {1} والأساسي {2})"),
     (r"(.+): open in CAD now, read again after it is saved", "{0}: مفتوح في CAD الآن — يُعاد بعد حفظه"),
     (r"the nesting stopped on an error: (.+)", "توقف التعشيق بسبب خطأ: {0}"),
     (r"the saved model could not be read: (.+)", "تعذّرت قراءة الموديل المحفوظ: {0}"),
