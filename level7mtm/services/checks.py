@@ -170,3 +170,70 @@ def apply_checks(ln, rules: dict[str, dict], specs: dict) -> None:
 
 def _g(x) -> str:
     return "" if x is None else f"{x:g}"
+
+
+# ------------------------------------------------------------------ limits learned from the customer's orders
+# owner: most distorted patterns came from a wrong value in the XML (e.g. DSB ten times too large): held before
+# CAD when a value is far from what this customer's orders usually have — "DSB = 165 cm, usually 14–20 cm"
+LEARNED_MIN = 20                                   # orders with the measurement before limits are learned
+LEARNED_MAX = 3000                                 # the newest orders looked at
+LEARNED_FENCE = 3.0                                # outside the middle half widened 3 times on each side
+_LEARNED: dict = {}                                # cid -> (time, {(code, unit): (lo, hi, low, high, n)})
+_LEARNED_S = 600.0
+
+
+def _quantile(xs: list[float], q: float) -> float:
+    k = (len(xs) - 1) * q
+    i = int(k)
+    return xs[i] if i + 1 >= len(xs) else xs[i] + (xs[i + 1] - xs[i]) * (k - i)
+
+
+def learned_limits(ws, cid: str, fresh: bool = False) -> dict:
+    """{(code, unit): (lo, hi, usual_low, usual_high, n)} from this customer's orders that were nested and cut."""
+    import json
+    import time
+    hit = _LEARNED.get(cid)
+    if hit and not fresh and time.monotonic() - hit[0] < _LEARNED_S:
+        return hit[1]
+    values: dict = {}
+    for r in ws.db.q("SELECT r.normalized FROM revisions r JOIN orders o ON o.id=r.order_id WHERE o.customer_id=? "
+                     "AND r.status IN ('completed', 'approved') ORDER BY r.id DESC LIMIT ?", (cid, LEARNED_MAX)):
+        try:
+            ms = json.loads(r["normalized"]).get("measurements", {})
+        except (TypeError, ValueError):
+            continue
+        for code, m in ms.items():
+            try:
+                v = float(str(m.get("source_value")).replace(",", "."))
+            except (TypeError, ValueError):
+                continue
+            values.setdefault((code, m.get("source_unit") or "cm"), []).append(v)
+    out = {}
+    for key, xs in values.items():
+        if len(xs) < LEARNED_MIN:
+            continue
+        xs.sort()
+        q1, q3, med = _quantile(xs, 0.25), _quantile(xs, 0.75), _quantile(xs, 0.5)
+        iqr = max(q3 - q1, abs(med) * 0.05, 0.5)      # all alike: a small spread still allowed
+        out[key] = (q1 - LEARNED_FENCE * iqr, q3 + LEARNED_FENCE * iqr, _quantile(xs, 0.02), _quantile(xs, 0.98),
+                    len(xs))
+    _LEARNED[cid] = (time.monotonic(), out)
+    return out
+
+
+def apply_learned(ln, limits: dict, rules: dict) -> None:
+    """A value far from the customer's usual ones holds the line for review (in place). A measurement with the
+    owner's own check (range / none / formula) follows that check only."""
+    for code, m in ln.measurements.items():
+        if code in rules:
+            continue
+        v = _value(m)
+        lim = limits.get((code, m.source_unit or "cm"))
+        if v is None or lim is None:
+            continue
+        lo, hi, a, b, n = lim
+        if lo <= v <= hi:
+            continue
+        ln.problems.append(Problem("review", "measure.unusual", f"{code} = {m.source_value} {m.source_unit} is "
+                                   f"unusual for this customer (usually {_g(round(a, 1))}–{_g(round(b, 1))} "
+                                   f"{m.source_unit}, from {n} orders)", code))

@@ -330,6 +330,9 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
                 row["waiting"] = (row["waiting"] or tr("Waiting for nesting")) + " — " + why
         if row["problems"] and row["stage"] != "cut":
             row["stage_reached"], row["stage"] = row["stage"], "err"
+            if row.get("mdl") and any("pattern distorted" in p for p in row["problems"]):
+                from ..services.pattern_check import picture_of
+                row["defect_svg"] = picture_of(ws, row["mdl"])   # the distorted pieces, each defect circled
         if row["stage"] == "cut" and (row["times"].get("cut") or "") < shift_start:
             continue                                          # cut in a shift before: off the list, files kept
         out.append(row)
@@ -1712,6 +1715,16 @@ class Inspector(QScrollArea):
                                     f"background: rgba({bad.red()},{bad.green()},{bad.blue()},0.10);")
         self.problems.hide()
         self.lay.addWidget(self.problems)
+        self.defect = QLabel()                            # the distorted pieces, each defect circled in red
+        self.defect.setAlignment(Qt.AlignCenter)
+        self.defect.setCursor(Qt.PointingHandCursor)
+        self.defect.setToolTip(tr("The distorted pieces — click to open the picture larger"))
+        self.defect.setMinimumWidth(0)
+        self.defect.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.defect.mousePressEvent = lambda _e: self._open_defect()
+        self.defect.hide()
+        self._defect_path = None
+        self.lay.addWidget(self.defect)
         self.waiting = QLabel()                           # not an error: why the order waits (e.g. robot off)
         self.waiting.setWordWrap(True)
         warn = themes.colour("warn")
@@ -1801,6 +1814,36 @@ class Inspector(QScrollArea):
             if w:
                 w.deleteLater()
 
+    def _show_defect(self, path: str | None):
+        self._defect_path = path
+        if not path:
+            self.defect.clear()
+            self.defect.hide()
+            return
+        from PySide6.QtSvg import QSvgRenderer
+        r = QSvgRenderer(path)
+        if not r.isValid():
+            self.defect.hide()
+            return
+        sz = r.defaultSize()
+        w = max(120, min(self.viewport().width() - 24, 420))
+        h = max(1, int(sz.height() * w / max(sz.width(), 1)))
+        pm = QPixmap(w * 2, h * 2)
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        r.render(p)
+        p.end()
+        pm.setDevicePixelRatio(2.0)
+        self.defect.setPixmap(pm)
+        self.defect.setFixedHeight(h + 4)
+        self.defect.show()
+
+    def _open_defect(self):
+        if self._defect_path:
+            from PySide6.QtCore import QUrl
+            from PySide6.QtGui import QDesktopServices
+            QDesktopServices.openUrl(QUrl.fromLocalFile(self._defect_path))
+
     def show_row(self, r: dict | None):
         c = themes.colours()
         self._clear(self.xgrid)
@@ -1817,6 +1860,7 @@ class Inspector(QScrollArea):
             self.ring.set_value(None)
             self.problems.setText("")
             self.problems.hide()
+            self._show_defect(None)
             self.waiting.hide()
             return
         self.title.setText(ltr(r["line"]))
@@ -1870,6 +1914,7 @@ class Inspector(QScrollArea):
             self.stages.addWidget(tm, i, 2)
         self.problems.setText("\n".join("⚠ " + tr_msg(p) for p in r["problems"][:6]))
         self.problems.setVisible(bool(r["problems"]))
+        self._show_defect(r.get("defect_svg"))
         wait = r.get("waiting") if r["stage"] in ("grafis", "nest") else ""
         self.waiting.setText("⏳ " + wait if wait else "")
         self.waiting.setVisible(bool(wait))

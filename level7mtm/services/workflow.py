@@ -260,12 +260,15 @@ class Workspace:
         for ln in res.lines:                            # a pattern's Variation chooses the model: not an option
             ln.problems = [p for p in ln.problems if not (p.code == "option.unknown" and _plain(p.field or "") in pats)]
         from ..erp.mapping import measure_specs
-        from .checks import apply_checks, rules_for
+        from .checks import apply_checks, apply_learned, learned_limits, rules_for
         specs = measure_specs(profile)
+        learned = learned_limits(self, cid) if self.db.get_setting("measure.learned", True) else {}
         for ln in res.lines:                            # the owner's measurement checks (per pattern)
             rules = rules_for(self, cid, ln.option_codes)
             if rules:
                 apply_checks(ln, rules, specs)
+            if learned:                                 # a value far from this customer's usual ones: held
+                apply_learned(ln, learned, rules)
         status = "imported" if res.ok else "failed"
         msg = "; ".join(p.message for p in res.problems if p.severity == "error")
         out = FileOutcome(name, status, msg)

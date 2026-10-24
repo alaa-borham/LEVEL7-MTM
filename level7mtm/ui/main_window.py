@@ -1484,6 +1484,11 @@ class GrafisPage(Page):
                                   "model goes to MDL-ERR with the reason"))
         self.pcheck.setChecked(bool(self.ws.db.get_setting("cutting.pattern_check", True)))
         self.pcheck.toggled.connect(lambda on: self.ws.db.set_setting("cutting.pattern_check", on))
+        self.learned = QCheckBox(tr("Hold unusual measurements"))
+        self.learned.setToolTip(tr("A measurement far from the values this customer's orders usually have (learned "
+                                   "from the orders cut) holds the order before CAD"))
+        self.learned.setChecked(bool(self.ws.db.get_setting("measure.learned", True)))
+        self.learned.toggled.connect(lambda on: self.ws.db.set_setting("measure.learned", on))
         self.par = QSpinBox()
         self.par.setRange(1, 4)
         self.par.setToolTip(tr("How many models LEVEL7 Nesting nests at the same time (each uses one processor core "
@@ -1491,7 +1496,7 @@ class GrafisPage(Page):
         self.par.setValue(int(self.ws.db.get_setting("nesting.parallel", 1) or 1))
         self.par.valueChanged.connect(lambda v: self.ws.db.set_setting("nesting.parallel", int(v)))
         r1 = QHBoxLayout()
-        for w in (self.auto_mdl, self.robot, self.auto, self.pcheck):
+        for w in (self.auto_mdl, self.robot, self.auto, self.pcheck, self.learned):
             r1.addWidget(w)
         r1.addWidget(QLabel(tr("Nestings at once") + ":"))
         r1.addWidget(self.par)

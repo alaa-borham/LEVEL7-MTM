@@ -69,6 +69,11 @@ def _hits(p1, p2, q1, q2) -> bool:
 
 
 def crosses_itself(pts) -> bool:
+    return crossing(pts) is not None
+
+
+def crossing(pts) -> tuple[float, float] | None:
+    """Where the outline crosses itself first (None: it does not)."""
     n = len(pts)
     segs = [(pts[i], pts[(i + 1) % n]) for i in range(n)]
     boxes = [(min(a[0], b[0]), max(a[0], b[0]), min(a[1], b[1]), max(a[1], b[1])) for a, b in segs]
@@ -82,8 +87,12 @@ def crosses_itself(pts) -> bool:
             if boxes[j][2] > boxes[i][3] or boxes[j][3] < boxes[i][2]:
                 continue
             if _hits(*segs[i], *segs[j]):
-                return True
-    return False
+                (x1, y1), (x2, y2) = segs[i]
+                (x3, y3), (x4, y4) = segs[j]
+                den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+                t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den if den else 0.5
+                return (x1 + t * (x2 - x1), y1 + t * (y2 - y1))
+    return None
 
 
 def _along(pts, i, step, length):
@@ -102,7 +111,12 @@ def _along(pts, i, step, length):
 
 def needles(pts) -> int:
     """How many spike tips (wedges) the outline has; cut lines (slits of parallel sides) are not counted."""
-    n, found, last = len(pts), 0, -10
+    return len(needle_tips(pts))
+
+
+def needle_tips(pts) -> list[tuple[float, float]]:
+    """The spike tips (wedges) of the outline: where they are."""
+    n, found, last = len(pts), [], -10
     for i in range(n):
         a, b = _along(pts, i, -1, NEEDLE_MM), _along(pts, i, 1, NEEDLE_MM)
         if a is None or b is None:
@@ -120,22 +134,87 @@ def needles(pts) -> int:
         if fa is None or fb is None or math.dist(fa, fb) < max(near * 1.2, SLIT_MM):
             continue                                   # sides that keep their width: a cut line of the pattern
             #                                            (e.g. the jabzour slit), not a wedge
-        found += 1
+        found.append(pts[i])
         last = i
     return found
 
 
 def defects(name: str, outline) -> list[str]:
+    return defects_at(name, outline)[0]
+
+
+def defects_at(name: str, outline) -> tuple[list[str], list[tuple[float, float]]]:
+    """The defects of a piece and where they are (the points to circle in the picture)."""
     pts = _clean(outline)
     if len(pts) < 3 or _area(pts) < MIN_AREA_MM2:
-        return [f"{name}: the piece has (almost) no area"]
-    out = []
-    if crosses_itself(pts):
+        return [f"{name}: the piece has (almost) no area"], list(pts[:1])
+    out, marks = [], []
+    x = crossing(pts)
+    if x is not None:
         out.append(f"{name}: its outline crosses itself")
-    k = needles(pts)
-    if k:
-        out.append(f"{name}: {k} needle tip(s) — a spike or a slit in the outline")   # (a wedge, see needles)
-    return out
+        marks.append(x)
+    tips = needle_tips(pts)
+    if tips:
+        out.append(f"{name}: {len(tips)} needle tip(s) — a spike or a slit in the outline")   # (a wedge, see needles)
+        marks += tips
+    return out, marks
+
+
+SHAPES: dict = {}                                   # checked file / model (abs path) -> the distorted pieces drawn
+_SHAPES_OF: dict = {}                               # content (sha) -> the same, for a content checked before
+
+
+def _defects_of(pieces, key: str | None = None) -> list[str]:
+    """The defects of all pieces (each piece once); the distorted ones are kept for the picture under ``key``."""
+    found, seen, shapes = [], set(), []
+    for name, outline in pieces:
+        if name in seen:
+            continue                                  # each piece once (its sizes are the same pattern)
+        seen.add(name)
+        msgs, marks = defects_at(name, outline)
+        for dd in msgs:
+            if dd not in found:
+                found.append(dd)
+        if msgs:
+            shapes.append({"name": name, "outline": [tuple(q) for q in outline], "marks": marks})
+    if key:
+        SHAPES[os.path.abspath(key)] = shapes
+    return found
+
+
+def picture(shapes: list[dict], size: int = 360) -> str:
+    """The distorted pieces side by side as SVG, each defect circled in red (shown in the order's properties)."""
+    if not shapes:
+        return ""
+    gap, panels = 16, []
+    w_each = size
+    for k, sh in enumerate(shapes):
+        xs = [p[0] for p in sh["outline"]]
+        ys = [p[1] for p in sh["outline"]]
+        minx, maxx, miny, maxy = min(xs), max(xs), min(ys), max(ys)
+        sc = (size - 40) / max(maxx - minx, maxy - miny, 1.0)
+        ox = k * (w_each + gap) + 20 + ((size - 40) - (maxx - minx) * sc) / 2
+        oy = 30 + ((size - 40) - (maxy - miny) * sc) / 2
+
+        def tx(p):
+            return ox + (p[0] - minx) * sc, oy + (maxy - p[1]) * sc   # y up, as in CAD
+        pts = " ".join(f"{a:.1f},{b:.1f}" for a, b in map(tx, sh["outline"]))
+        circles = "".join(f"<circle cx='{a:.1f}' cy='{b:.1f}' r='14' fill='none' stroke='#ff3b3b' stroke-width='3'/>"
+                          for a, b in map(tx, sh["marks"]))
+        name = (sh["name"] or "?").replace("&", "&amp;").replace("<", "&lt;")
+        panels.append(f"<text x='{k * (w_each + gap) + 20}' y='20' fill='#e8eef5' font-family='Segoe UI, Arial' "
+                      f"font-size='15' font-weight='700'>{name}</text><polygon points='{pts}' fill='#203040' "
+                      f"stroke='#e8eef5' stroke-width='1.6'/>{circles}")
+    width = len(shapes) * (w_each + gap) - gap
+    return (f"<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{size + 30}' "
+            f"viewBox='0 0 {width} {size + 30}'><rect x='0' y='0' width='{width}' height='{size + 30}' fill='#0d141c'/>"
+            + "".join(panels) + "</svg>")
+
+
+def picture_of(ws, model: str) -> str | None:
+    """The picture of a model moved to MDL-ERR (its distorted pieces), if there is one."""
+    p = os.path.join(err_folder(ws), os.path.splitext(os.path.basename(model or ""))[0] + ".svg")
+    return p if model and os.path.isfile(p) else None
 
 
 def check_marker(path: str) -> list[str]:
@@ -144,12 +223,7 @@ def check_marker(path: str) -> list[str]:
         pieces = pieces_of_marker(path)
     except (OSError, KeyError, ValueError, TypeError, zipfile.BadZipFile):
         return []
-    out = []
-    for name, outline in pieces:
-        for d in defects(name, outline):
-            if d not in out:
-                out.append(d)
-    return out
+    return _defects_of(pieces, path)
 
 
 def _pts(raw) -> list[tuple[float, float]] | None:
@@ -222,6 +296,7 @@ def check_model(ws, path: str, width_mm: float | None = None) -> list[str]:
         sha = None
     if sha and sha in BAD:
         LAST["text"] = "pattern checked before: distorted"
+        SHAPES[os.path.abspath(path)] = _SHAPES_OF.get(sha, [])
         return list(BAD[sha])
     if sha and (sha in SOUND or sha in _sound_kept(ws)):
         LAST["text"] = "pattern checked before: sound"
@@ -234,6 +309,7 @@ def check_model(ws, path: str, width_mm: float | None = None) -> list[str]:
     if sha and LAST["text"].startswith("pattern checked"):
         if found:
             BAD[sha] = list(found)
+            _SHAPES_OF[sha] = SHAPES.get(os.path.abspath(path), [])
         else:
             SOUND.add(sha)                            # the nesting does not check it again
             try:
@@ -303,16 +379,9 @@ def _check_model(ws, path: str, width_mm: float | None = None) -> list[str]:
             return []
         finally:
             shutil.rmtree(d, ignore_errors=True)
-    found = []
-    seen = set()
-    for name, outline in pieces:
-        if name in seen:
-            continue                                  # each piece once (its sizes are the same pattern)
-        seen.add(name)
-        for dd in defects(name, outline):
-            if dd not in found:
-                found.append(dd)
-    LAST["text"] = f"pattern checked: {len(seen)} pieces ({how})" + (" sound" if not found else "")
+    found = _defects_of(pieces, path)
+    n = len({name for name, _ in pieces})
+    LAST["text"] = f"pattern checked: {n} pieces ({how})" + (" sound" if not found else "")
     return found
 
 
@@ -326,10 +395,13 @@ def err_folder(ws) -> str:
         os.path.join(ws.folder, "grafis", "MDL-ERR")
 
 
-def to_err(ws, model: str, problems: list[str]) -> str | None:
-    """The model with a distorted pattern into MDL-ERR, with <name>.txt saying which piece and why."""
+def to_err(ws, model: str, problems: list[str], shapes: list[dict] | None = None) -> str | None:
+    """The model with a distorted pattern into MDL-ERR, with <name>.txt saying which piece and why and <name>.svg
+    showing the distorted pieces with each defect circled (owner: "a picture of the distorted piece")."""
     from ..storage.db import now
     d = err_folder(ws)
+    if shapes is None:
+        shapes = SHAPES.get(os.path.abspath(model), [])
     try:
         os.makedirs(d, exist_ok=True)
         stem = os.path.splitext(os.path.basename(model))[0]
@@ -337,6 +409,10 @@ def to_err(ws, model: str, problems: list[str]) -> str | None:
             fh.write(f"LEVEL7 MTM — pattern distorted / تشوه في البترون\n{now()}\n\n")
             for p in problems:
                 fh.write(f"- {p}\n")
+        svg = picture(shapes)
+        if svg:
+            with open(os.path.join(d, stem + ".svg"), "w", encoding="utf-8") as fh:
+                fh.write(svg)
         if not os.path.isfile(model):
             return None
         target = os.path.join(d, os.path.basename(model))

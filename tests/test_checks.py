@@ -141,3 +141,40 @@ def test_markers_folder_chosen_by_the_owner(ws, tmp_path):
     assert find_marker(ws, old) == old                                   # still found before it moved
     assert tidy_markers(ws) == 1 and (mine / "A-1.l7n").exists() and not os.path.exists(old)
     assert json.loads(ws.db.one("SELECT info FROM cutting_jobs")["info"])["l7n"] == str(mine / "A-1.l7n")
+
+
+def test_limits_learned_from_the_customers_orders(ws):
+    """A value far from this customer's usual ones (e.g. DSB ten times too large) holds the order before CAD;
+    a measurement with the owner's own check follows that check only."""
+    from types import SimpleNamespace
+
+    from level7mtm.erp.importer import Measured
+    from level7mtm.services import checks
+    with ws.db.tx() as c:
+        for i in range(30):
+            oid = c.execute("INSERT INTO orders(source, line_ref, order_no, reseller, customer_id, created_at) "
+                            "VALUES ('ERP', ?, ?, 'R', 'C1', '2026-10-01')", (f"L{i}", f"O{i}")).lastrowid
+            norm = {"measurements": {"DSB": {"source_value": str(14 + i % 7), "source_unit": "cm"},
+                                     "FL": {"source_value": str(140 + i % 10), "source_unit": "cm"}}}
+            c.execute("INSERT INTO revisions(order_id, revision, status, raw_line, normalized, data_sha256, "
+                      "imported_at, line_number) VALUES (?, '0', 'completed', '{}', ?, ?, '2026-10-01', ?)",
+                      (oid, __import__("json").dumps(norm), f"s{i}", f"L{i}"))
+    lim = checks.learned_limits(ws, "C1", fresh=True)
+    assert lim[("DSB", "cm")][4] == 30 and checks.learned_limits(ws, "C2", fresh=True) == {}
+
+    def line(dsb, fl="145"):
+        mk = lambda c, v: Measured(c, c, v, "cm", float(v) * 10, "length", {"en": c}, "", "confirmed", c)  # noqa: E731
+        return SimpleNamespace(measurements={"DSB": mk("DSB", dsb), "FL": mk("FL", fl)}, problems=[])
+    ok = line("18")
+    checks.apply_learned(ok, lim, {})
+    assert ok.problems == []
+    bad = line("165")
+    checks.apply_learned(bad, lim, {})
+    assert [p.code for p in bad.problems] == ["measure.unusual"] and "DSB = 165 cm is unusual" in bad.problems[0].message
+    own = line("165")
+    checks.apply_learned(own, lim, {"DSB": {"mode": "none"}})          # the owner's own check: followed only
+    assert own.problems == []
+    from level7mtm.ui.i18n import set_language, tr_msg
+    set_language("ar")
+    assert "غير معتادة" in tr_msg(bad.problems[0].message)
+    set_language("en")

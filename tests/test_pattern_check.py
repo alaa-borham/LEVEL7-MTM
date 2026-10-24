@@ -141,3 +141,32 @@ def test_info_with_sizes_as_a_list_is_read(ws, tmp_path, monkeypatch):
     monkeypatch.setattr(auto_cut, "nesting_command", lambda ws_: (["cli"], {}))
     monkeypatch.setattr(auto_cut, "_info", lambda c, e, p: 1 / 0)
     assert pc.check_model(ws, str(m)) == []
+
+
+def test_distorted_pieces_pictured_with_each_defect_circled(ws, tmp_path):
+    """MDL-ERR holds <model>.svg: the distorted pieces (not the sound ones), each defect circled in red; the order's
+    properties show it."""
+    l7n = tmp_path / "p.l7n"
+    spike = [[0, 0], [300, 0], [300, 400], [170, 400], [150, 900], [130, 400], [0, 400]]
+    doc = {"project": {"pieces": [{"uid": "a", "name": "back", "sizes": {"s": {"cut": spike}}},
+                                  {"uid": "b", "name": "front", "sizes": {"s": {"cut": [[0, 0], [500, 0], [500, 800],
+                                                                                     [0, 800]]}}}],
+                       "markers": [{"placements": [{"piece_uid": "a", "size": "s"}, {"piece_uid": "b", "size": "s"}]}]}}
+    with zipfile.ZipFile(l7n, "w") as z:
+        z.writestr("project.json", json.dumps(doc))
+    bad = pc.check_marker(str(l7n))
+    shapes = pc.SHAPES[os.path.abspath(str(l7n))]
+    assert [s["name"] for s in shapes] == ["back"] and len(shapes[0]["marks"]) == 1
+    assert pc.needle_tips(pc._clean([tuple(p) for p in spike])) == [(150.0, 900.0)]
+    ws.db.set_setting("grafis.input", str(tmp_path / "A" / "MDL"))
+    m = tmp_path / "A" / "MDL" / "Order-5.mdl"
+    m.parent.mkdir(parents=True)
+    m.write_bytes(b"x")
+    pc.to_err(ws, str(m), bad, shapes)
+    svg = pc.picture_of(ws, str(m))
+    assert svg and svg.endswith("Order-5.svg")
+    text = open(svg, encoding="utf-8").read()
+    assert "back" in text and "front" not in text and text.count("<circle") == 1 and "#ff3b3b" in text
+    from PySide6.QtSvg import QSvgRenderer
+    assert QSvgRenderer(svg).isValid()
+    assert pc.crossing([(0, 0), (400, 300), (400, 0), (0, 500)]) is not None

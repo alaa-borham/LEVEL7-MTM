@@ -655,6 +655,10 @@ AR = {
     "Folder watch is off: the robot and the saved GRAFIS files wait. Click «Folder watch» in the status bar to switch it on.": "مراقبة المجلدات متوقفة: الروبوت وملفات GRAFIS المحفوظة تنتظر. اضغط «مراقبة المجلدات» في شريط الحالة أسفل النافذة لتشغيلها.",
     "The model is written again from the base pattern; the robot takes it in a few seconds":
         "يُكتب الموديل من جديد من البترون الأساسي، ويأخذه AI TOOL خلال ثوانٍ",
+    "The distorted pieces — click to open the picture larger": "القطع المشوهة — اضغط لفتح الصورة بحجم أكبر",
+    "Hold unusual measurements": "إيقاف القياسات غير المعتادة",
+    "A measurement far from the values this customer's orders usually have (learned from the orders cut) holds the order before CAD":
+        "القياس البعيد جداً عن القيم المعتادة لطلبات هذا العميل (تُتعلَّم من الطلبات التي قُصّت) يوقف الطلب قبل CAD",
     "Nestings at once": "عدد التعشيقات في وقت واحد",
     "How many models LEVEL7 Nesting nests at the same time (each uses one processor core and its own memory)":
         "كم موديلاً يعشّق LEVEL7 Nesting في نفس الوقت (كل تعشيق يستخدم نواة معالج وذاكرة خاصة به)",
@@ -778,6 +782,8 @@ MSG_AR = [
     (r"GRAFIS short of memory \(answered OK, GRAFIS starts anew after this model\)",
      "ذاكرة GRAFIS ممتلئة (ضُغط موافق، ويُعاد تشغيل GRAFIS بعد هذا الموديل)"),
     (r"GRAFIS was not open", "لم يكن GRAFIS مفتوحاً"),
+    (r"(\S+) = (\S+) (\S+) is unusual for this customer \(usually (\S+)–(\S+) (\S+), from (\d+) orders\)",
+     "{0} = {1} {2} قيمة غير معتادة لهذا العميل (المعتاد {3}–{4} {5} من {6} طلب) — صحّح القيمة أو اضبط حدّها في «فحص القياسات»"),
     (r"pattern checked: (\d+) pieces \((\w+)\) sound", "فُحص البترون: {0} قطعة سليمة"),
     (r"pattern not checked: (.+)", "لم يُفحص البترون: {0}"),
     (r"the check is off", "الفحص متوقف"),

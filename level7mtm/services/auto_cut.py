@@ -346,7 +346,9 @@ def _auto_cut_inner(ws, chk, scb_path: str, force: bool = False) -> dict:
     from .pattern_check import check_marker, to_err
     bad = check_marker(stem + ".l7n") if ws.db.get_setting("cutting.pattern_check", True) else []
     if bad:                                                # owner: a distorted pattern is never cut
-        moved = to_err(ws, scb_path, bad) if scb_path.lower().endswith(".mdl") else None
+        from .pattern_check import SHAPES
+        moved = to_err(ws, scb_path, bad, SHAPES.get(os.path.abspath(stem + ".l7n"))) \
+            if scb_path.lower().endswith(".mdl") else None
         result["message"] = "pattern distorted, no cutting file: " + "; ".join(bad) + \
             (f" — the model is in {os.path.dirname(moved)}" if moved else "")
         result["pattern_errors"] = bad
