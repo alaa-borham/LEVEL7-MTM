@@ -89,9 +89,11 @@ def test_model_checked_as_soon_as_cad_saved_it(ws, tmp_path, monkeypatch):
             z.writestr("project.json", json.dumps(doc))
         return 0
     pc.BAD.clear()                                                      # (the same file checked anew)
-    monkeypatch.setattr(auto_cut, "_info", lambda c, e, p: {"pieces": [{"name": "back"}]})   # no outlines
+    monkeypatch.setattr(auto_cut, "_info", lambda c, e, p: {"pieces": [{"name": "back", "sizes": ["base:__HN40_0"]}],
+                                                             "size_names": ["base:__HN40_0"]})   # no outlines
     monkeypatch.setattr(auto_cut, "_run", nest)
     assert pc.check_model(ws, str(m), 1450)[0].startswith("back:")
+    assert ran and "--sizes" in ran[0] and "base:__HN40_0=1" in ran[0]     # else LEVEL7 Nesting nests nothing
     assert ran and "--time" in ran[0] and "1450" in ran[0] and not os.path.exists(ran[0][ran[0].index("-o") + 1])
     ws.db.set_setting("cutting.pattern_check", False)
     assert pc.check_model(ws, str(m)) == []

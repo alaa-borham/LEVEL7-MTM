@@ -244,6 +244,18 @@ def check_model(ws, path: str, width_mm: float | None = None) -> list[str]:
     return found
 
 
+def _size_of(path: str) -> str | None:
+    """The size key of a GRAFIS model as LEVEL7 Nesting names it ("base:<size>") — for an older LEVEL7 Nesting whose
+    info gives no size names."""
+    try:
+        from ..grafis.container import read_container
+        from ..grafis.textsections import read_text
+        sizes = read_text(read_container(path)).sizes
+        return f"base:{sizes[0].name}" if sizes else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _check_model(ws, path: str, width_mm: float | None = None) -> list[str]:
     """The pattern as CAD saved it, checked before it waits for the nesting (owner: "the files distorted in CAD
     still reach the nesting queue instead of Needs attention"). The pieces are read by LEVEL7 Nesting: from
@@ -264,7 +276,8 @@ def _check_model(ws, path: str, width_mm: float | None = None) -> list[str]:
     except NestingNotConfigured:
         LAST["text"] = "pattern not checked: LEVEL7 Nesting not found"
         return []
-    pieces = _outlines_of_info(_info(cmd, env, path))
+    info = _info(cmd, env, path)
+    pieces = _outlines_of_info(info)
     how = "info"
     if not pieces:
         how = "marker"
@@ -272,8 +285,15 @@ def _check_model(ws, path: str, width_mm: float | None = None) -> list[str]:
         try:
             out = os.path.join(d, "check.l7n")
             log: list[str] = []
-            if _run(cmd + ["nest", path, "--width", f"{width_mm or 1500:g}", "--time", "1", "-o", out], env, log,
-                    240) != 0 or not os.path.isfile(out):
+            # one garment of the model's size: without --sizes LEVEL7 Nesting makes no marker ("nothing to nest:
+            # set size quantities") and the check never ran
+            names = [n for n in (info.get("size_names") or []) if isinstance(n, str)] if isinstance(info, dict) \
+                else []
+            size = names[0] if names else _size_of(path)
+            args = cmd + ["nest", path, "--width", f"{width_mm or 1500:g}", "--time", "1", "-o", out]
+            if size:
+                args += ["--sizes", f"{size}=1"]
+            if _run(args, env, log, 240) != 0 or not os.path.isfile(out):
                 tail = " ".join(" ".join(log[1:]).split())[-160:]
                 LAST["text"] = f"pattern not checked: the check marker was not made ({tail})"
                 return []
