@@ -139,3 +139,34 @@ def test_a_distorted_model_is_held_before_the_nesting(ws, tmp_path, monkeypatch)
     assert any("pattern distorted in CAD" in m for _, m in r["check"].issues)
     assert not os.path.exists(p1) and (tmp_path / "A" / "MDL-ERR" / os.path.basename(p1)).exists()
     assert ws.revision(r["check"].lines[0]["revision_id"])["status"] != "sent_to_nesting"
+
+
+@needs_mdl
+def test_distorted_models_leave_the_nesting_queue_ahead_of_their_turn(ws, tmp_path, monkeypatch):
+    """Models waiting in the nesting queue are checked ahead of their turn: a distorted one leaves the queue at
+    once (also one handed over before the check existed); a sound one is checked once only."""
+    from level7mtm.services import pattern_check
+    from level7mtm.services.mdl_intake import precheck_queue, queue
+    ws.db.set_setting("grafis.mdl", MDL)
+    ws.db.set_setting("grafis.input", str(tmp_path / "A" / "MDL"))
+    ws.db.set_setting("errors.folder", str(tmp_path / "ER"))
+    ws.db.set_setting("cutting.auto", True)
+    p1, p2 = (g["path"] for g in import_and_prepare(ws, XML_53).grafis)
+    _saved_by_grafis(p1, recalculated=True)
+    assert register_mdl(ws, p1, cut=False)["status"] == "handed_over"      # nested before the check existed
+    _saved_by_grafis(p2, recalculated=True)
+    for p in (p1, p2):
+        os.utime(p, (os.path.getatime(p), os.path.getmtime(p) - 60))
+    monkeypatch.setattr(pattern_check, "_check_model", lambda ws_, p, w=None: (
+        pattern_check.LAST.update(text="pattern checked: 1 pieces (info)") or ["back: its outline crosses itself"]))
+    if not queue(ws):
+        import pytest
+        pytest.skip("nesting not enabled in this workspace")
+    assert sorted(queue(ws)) == sorted([p1, p2])
+    held = precheck_queue(ws, 5)
+    assert sorted(held) == sorted([p1, p2]) and queue(ws) == []
+    for p in (p1, p2):
+        assert (tmp_path / "A" / "MDL-ERR" / os.path.basename(p)).exists()
+    rev = ws.db.one("SELECT status FROM revisions WHERE id=(SELECT revision_id FROM grafis_orders WHERE path=?)",
+                    (p1,))
+    assert rev["status"] != "sent_to_nesting"

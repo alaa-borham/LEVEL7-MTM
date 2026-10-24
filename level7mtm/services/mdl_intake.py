@@ -312,3 +312,58 @@ def handled_before(ws, path: str) -> bool:
                      (path,)):
         return json.loads(g["info"]).get("sha256") == sha
     return False
+
+
+def precheck_queue(ws, limit: int = 1) -> list[str]:
+    """The pattern of the models waiting in the nesting queue checked ahead of their turn (owner: "this order came
+    distorted into the nesting queue and waits for its turn"): a distorted one leaves the queue at once — under
+    Needs attention, the model in MDL-ERR, its XML in error. At most ``limit`` models are checked now (each takes a
+    few seconds); returns the paths held."""
+    from .pattern_check import check_model, known_result
+    if not ws.db.get_setting("cutting.pattern_check", True):
+        return []
+    busy = _NOW.get("path")
+    held, done = [], 0
+    for p in queue(ws):
+        if done >= limit:
+            break
+        if p == busy or known_result(ws, p) == []:
+            continue                                  # being nested now / sound
+        done += 1
+        r = ws.db.one("SELECT id, issues, lines FROM grafis_results WHERE path=? AND handed_over=1 AND archived=0 "
+                      "ORDER BY id DESC", (p,))
+        width = None
+        if r:
+            try:
+                rid = json.loads(r["lines"])[0]["revision_id"]
+                width = ws.revision(rid)["normalized"].get("fabric_width_mm")
+            except Exception:  # noqa: BLE001
+                width = None
+        bad = check_model(ws, p, width)
+        if not bad:
+            continue
+        if r is None:                                 # saved by CAD, not read yet: read now — held there
+            _register_mdl(ws, p, cut=False)           # (not register_mdl: _NOW is the nesting worker's)
+        else:                                         # handed over before the check existed: taken back
+            _take_back_distorted(ws, r, p, bad)
+        held.append(p)
+    return held
+
+
+def _take_back_distorted(ws, r, path: str, bad: list[str]) -> None:
+    from . import errors_folder
+    from .done_folder import move_failed
+    from .pattern_check import to_err
+    msg = "pattern distorted in CAD, not nested: " + "; ".join(bad)
+    lines = json.loads(r["lines"])
+    with ws.db.tx() as c:
+        c.execute("UPDATE grafis_results SET handed_over=0, status='needs_review', issues=?, nesting_path=NULL "
+                  "WHERE id=?", (json.dumps(json.loads(r["issues"]) + [["blocking", msg]], ensure_ascii=False),
+                                 r["id"]))
+        for ln in lines:
+            c.execute("UPDATE revisions SET status='ready' WHERE id=? AND status='sent_to_nesting'",
+                      (ln["revision_id"],))
+        ws.db.audit(c, ws.actor, "grafis.mdl_saved.distorted", "file", os.path.basename(path), {"issues": bad})
+    to_err(ws, path, bad)
+    errors_folder.report(ws, os.path.splitext(os.path.basename(path))[0], [msg], "pattern check")
+    move_failed(ws, [ln["revision_id"] for ln in lines], [msg], "pattern check")

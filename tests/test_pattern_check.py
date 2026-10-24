@@ -88,6 +88,7 @@ def test_model_checked_as_soon_as_cad_saved_it(ws, tmp_path, monkeypatch):
         with zipfile.ZipFile(cmd[cmd.index("-o") + 1], "w") as z:
             z.writestr("project.json", json.dumps(doc))
         return 0
+    pc.BAD.clear()                                                      # (the same file checked anew)
     monkeypatch.setattr(auto_cut, "_info", lambda c, e, p: {"pieces": [{"name": "back"}]})   # no outlines
     monkeypatch.setattr(auto_cut, "_run", nest)
     assert pc.check_model(ws, str(m), 1450)[0].startswith("back:")

@@ -2133,7 +2133,12 @@ class GrafisPage(Page):
 
         def work():
             from ..services.grafis_robot import step
-            return step(self.ws)                      # one pending model (if the robot is on)
+            r = step(self.ws)                         # one pending model (if the robot is on)
+            if r is None:                             # nothing for CAD: the nesting queue checked ahead —
+                from ..services.mdl_intake import precheck_queue   # a distorted model leaves it at once
+                if precheck_queue(self.ws, 1):
+                    return {"status": "held", "message": ""}
+            return r
 
         def done(r):
             _ROBOT_POLL.release()

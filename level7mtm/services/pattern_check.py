@@ -183,19 +183,47 @@ def _outlines_of_info(info: dict) -> list[tuple[str, list]]:
 
 
 SOUND: set = set()                                # contents found sound (the robot's check, then the nesting's)
+BAD: dict = {}                                     # contents found distorted: their defects
 LAST = {"text": ""}                                # what the last check_model did (said with the robot's result)
+
+
+def _sound_kept(ws) -> set:
+    try:
+        return set(ws.db.get_setting("pattern.sound") or [])
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def known_result(ws, path: str) -> list[str] | None:
+    """The check of this content done before: [] sound, the defects, or None (not checked yet)."""
+    try:
+        from .grafis_robot import file_sha
+        sha = file_sha(path)
+    except OSError:
+        return None
+    if sha in BAD:
+        return BAD[sha]
+    if sha in SOUND or sha in _sound_kept(ws):
+        return []
+    return None
 
 
 def check_model(ws, path: str, width_mm: float | None = None) -> list[str]:
     """See _check_model; a failure of the check itself never stops the model (the check after the nesting
-    still holds)."""
+    still holds). A content checked before is not checked again (kept over a restart when sound)."""
     LAST["text"] = ""
+    if not ws.db.get_setting("cutting.pattern_check", True):
+        LAST["text"] = "pattern not checked: the check is off"
+        return []
     try:
         from .grafis_robot import file_sha
         sha = file_sha(path)
     except OSError:
         sha = None
-    if sha and sha in SOUND:
+    if sha and sha in BAD:
+        LAST["text"] = "pattern checked before: distorted"
+        return list(BAD[sha])
+    if sha and (sha in SOUND or sha in _sound_kept(ws)):
         LAST["text"] = "pattern checked before: sound"
         return []
     try:
@@ -203,8 +231,16 @@ def check_model(ws, path: str, width_mm: float | None = None) -> list[str]:
     except Exception as e:  # noqa: BLE001 - only a check
         LAST["text"] = f"pattern not checked: {type(e).__name__}: {e}"
         return []
-    if sha and not found and LAST["text"].startswith("pattern checked"):
-        SOUND.add(sha)                                # the nesting does not check it again
+    if sha and LAST["text"].startswith("pattern checked"):
+        if found:
+            BAD[sha] = list(found)
+        else:
+            SOUND.add(sha)                            # the nesting does not check it again
+            try:
+                kept = list(_sound_kept(ws))[-1999:] + [sha]
+                ws.db.set_setting("pattern.sound", kept)
+            except Exception:  # noqa: BLE001
+                pass
     return found
 
 

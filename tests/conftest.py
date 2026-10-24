@@ -107,3 +107,12 @@ def use_model(ws, model: dict, tag: str = "") -> int:
     c["products"]["saudi-thobe"]["styles"]["alshiaka-2027"]["base_pattern"]["version"] = model["version"]
     ws.set_active("catalog", ws.save_document("catalog", c))
     return pk
+
+
+@pytest.fixture(autouse=True)
+def _fresh_pattern_checks():
+    """The pattern check remembers contents it checked (per program run): each test starts with none."""
+    from level7mtm.services import pattern_check
+    pattern_check.SOUND.clear()
+    pattern_check.BAD.clear()
+    yield
