@@ -91,6 +91,18 @@ class ImportResult:
         return not any(p.severity == "error" for p in self.problems)
 
 
+# the order number: reseller-order-line_revision; the reseller may itself hold a dash (L-FR20-373-1_1,
+# FR8-7776-X-2_2): the last three parts are order, line and revision
+LINE_ANY = r"^(?P<reseller>[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*?)-(?P<order>[A-Za-z0-9]+)-(?P<line>[A-Za-z0-9]+)_(?P<revision>\d+)$"
+
+
+def vkey(name: str) -> str:
+    """A Variation name as it is matched: no case, spaces (also non-breaking), "_" or dashes of any kind —
+    "Hidden With Zip Square", "hidden_with_zip square" and "Hidden With Zip\u00a0Square" are the same (the
+    piece options screen compares them so too)."""
+    return re.sub(r"[\s_\-\u2010-\u2015\u2212\u00a0\u200f\u200e]+", "", str(name)).lower()
+
+
 def _num(text: str) -> float:
     t = text.strip()
     if not re.fullmatch(r"[-+]?\d+(\.\d+)?", t):
@@ -156,7 +168,7 @@ def _line(el, profile, ns) -> ImportedLine:
                     profile["order"].get("date_format", "%Y-%m-%d"))
     rx = profile.get("line_number", {}).get("regex")
     if rx:
-        m = re.match(rx, num)
+        m = re.match(rx, num) or re.match(LINE_ANY, num)      # e.g. L-FR20-373-1_1: a reseller with a dash
         if m:
             g = m.groupdict()
             ln.reseller, ln.order_no, ln.line_no, ln.revision = g.get("reseller"), g.get("order"), g.get("line"), g.get("revision")
@@ -226,10 +238,11 @@ def _line(el, profile, ns) -> ImportedLine:
 
     O = profile["options"]
     omap = O.get("map", {})
-    norm = {k.strip().lower(): k for k in omap} if O.get("match") == "exact_ignore_case" else {k: k for k in omap}
+    loose = O.get("match") == "exact_ignore_case"
+    norm = {vkey(k): k for k in omap} if loose else {k: k for k in omap}
     for code in select(el, O["path"], ns):
         ln.option_codes.append(code)
-        key = norm.get(code.strip().lower() if O.get("match") == "exact_ignore_case" else code)
+        key = norm.get(vkey(code) if loose else code)
         if key is None:
             p.append(Problem("review", "option.unknown", f"design code {code!r} is not mapped to a model option", code))
             continue

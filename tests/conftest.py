@@ -47,6 +47,7 @@ def model():
 def ws(tmp_path):
     from level7mtm.services.workflow import Workspace
     w = Workspace(str(tmp_path / "ws"), actor="test")
+    w.db.set_setting("reread.at_start", False)   # a test reads its orders again itself when it means to
     yield w
     _close_windows(w)                       # no window of this test may poll a closed database afterwards
     w.db.close()

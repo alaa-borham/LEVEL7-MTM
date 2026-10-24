@@ -714,3 +714,42 @@ def test_held_orders_read_again_at_once_after_saving(ws, xml53, monkeypatch):
     assert now_["status"] == "ready"
     win.close()
     app.processEvents()
+
+
+def test_held_orders_read_again_when_the_program_opens(ws, xml53):
+    """A Variation given a meaning before (the question then missed): the order is read again when the program
+    opens, without anybody saving again."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    import time
+
+    from level7mtm.services.options import option_table, save_options
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    rid = ws.import_data(open(xml53, "rb").read().replace(b"Collar Square", b"Collar Weird"), "w.xml") \
+        .lines[0]["revision_id"]
+    line = ws.revision(rid)["line_number"]
+    g = option_table(ws)
+    next(v for v in next(x for x in g if x["group"] == "collar")["values"]
+         if v["value"] == "square")["erp_names"].append("Collar Weird")
+    save_options(ws, g)                                                   # saved; never read again
+    ws.db.set_setting("reread.at_start", True)
+    win = MainWindow(ws)
+    win.show()
+    win._reread_held_at_start()
+    t0 = time.time()
+    st = lambda: ws.db.one("SELECT status FROM revisions WHERE line_number=? ORDER BY id DESC", (line,))["status"]  # noqa
+    while st() != "ready" and time.time() - t0 < 20:
+        app.processEvents()
+        time.sleep(0.05)
+    assert st() == "ready"
+    win.close()
+    app.processEvents()
+
+
+def test_order_numbers_with_a_dash_in_the_reseller(ws, xml53):
+    """Richy: L-FR20-373-1_1, FR8-7776-X-2_2 — no "line number in an unknown form" any more."""
+    data = open(xml53, "rb").read().replace(b'Number="9-53-1_2"', b'Number="L-FR20-373-1_1"')
+    out = ws.import_data(data, "r.xml")
+    probs = [p["code"] for ln in out.lines for p in ws.revision(ln["revision_id"])["normalized"]["problems"]]
+    assert "line.number" not in probs

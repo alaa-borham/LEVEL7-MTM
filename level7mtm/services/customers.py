@@ -299,8 +299,9 @@ def pattern_for(ws, rid: int) -> tuple[str | None, str]:
 
 
 def _plain(name: str) -> str:
-    """Variation names compared without case, spaces, "_" or "-" ("Richy Big" = "richy_big")."""
-    return re.sub(r"[\s_\-]+", "", str(name)).lower()
+    """Variation names compared without case, spaces, "_" or "-" ("Richy Big" = "richy_big") — as when read."""
+    from ..erp.importer import vkey
+    return vkey(name)
 
 
 def variations_seen(ws, cid: str | None = None) -> list[str]:
@@ -332,7 +333,7 @@ def programs_seen(ws, cid: str | None = None) -> list[str]:
 
 # ------------------------------------------------------------------ learning a customer's XML (owner: Richy's files
 # have other measurement codes, full girths, another table name and order numbers like GR-1963-2_2)
-LINE_ANY = r"^(?P<reseller>[A-Za-z0-9]+)-(?P<order>[A-Za-z0-9]+)-(?P<line>[A-Za-z0-9]+)_(?P<revision>\d+)$"
+from ..erp.importer import LINE_ANY  # noqa: E402 - one pattern for learning and reading
 
 
 def learn_from_xml(ws, cid: str, data: bytes) -> dict:

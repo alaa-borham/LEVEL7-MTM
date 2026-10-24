@@ -388,6 +388,7 @@ def fill_customer_box(ws, box) -> None:
 
 
 _REREADING: set = set()                        # customers whose held orders are being read again now
+_AGAIN: dict = {}                               # saved again meanwhile: read once more after (customer → message)
 
 
 def reread_held_question(page, msg: str, cid: str | None = None) -> None:
@@ -401,7 +402,8 @@ def reread_held_question(page, msg: str, cid: str | None = None) -> None:
         QMessageBox.information(page, tr("Saved"), msg)
         return
     win = page.win
-    if cid in _REREADING:                                # read again already (an earlier save): it takes this one
+    if cid in _REREADING:                                # being read again (an earlier save): once more after it, with
+        _AGAIN[cid] = msg                                # this save's settings for the orders it has passed already
         win.status(tr("Reading the held orders again") + "…")
         return
     _REREADING.add(cid)
@@ -411,6 +413,9 @@ def reread_held_question(page, msg: str, cid: str | None = None) -> None:
     def done(outs):
         _REREADING.discard(cid)
         win.refresh_cad(force=True)
+        if cid in _AGAIN:                                # saved again meanwhile: once more, then the result
+            reread_held_question(page, _AGAIN.pop(cid), cid)
+            return
         QMessageBox.information(win, tr("Saved"), msg + "\n\n" + reread_report(win.ws, outs))
 
     def work():
@@ -4005,6 +4010,7 @@ class MainWindow(QMainWindow):
         self.ws = ws
         self.pool = QThreadPool.globalInstance()
         QTimer.singleShot(4000, self, self._tidy_markers)  # old markers out of the cutting folder, in the background
+        QTimer.singleShot(6000, self, self._reread_held_at_start)
         self.current_rid = None
         self.sel_row = None
         self._cad_sig = None
@@ -4624,6 +4630,35 @@ class MainWindow(QMainWindow):
                 msg += "\n\n⚠ " + tr("Folder watch is off: the robot and the saved GRAFIS files wait. "
                                         "Click «Folder watch» in the status bar to switch it on.")
         self.marker.set_marker(marker, row, msg)
+
+    def _reread_held_at_start(self):
+        """Once when the program opens: the held orders of every customer read again with today's settings (a
+        Variation given a meaning before, the order never read since — owner: "it has a meaning and still says
+        not"). In the background; the status bar says how far it is."""
+        from ..services.customers import held_files, list_customers, reread_held
+        if not self.isVisible() or _REREADING or not self.ws.db.get_setting("reread.at_start", True):
+            return
+        tops = [c["id"] for c in list_customers(self.ws) if not c.get("parent")]
+
+        def work():
+            outs = []
+            for cid in tops:
+                fids = held_files(self.ws, cid)
+                if fids:
+                    outs += reread_held(self.ws, cid, fids)
+            return outs
+
+        def done(outs):
+            _REREADING.discard("*start*")
+            if outs:
+                self.refresh_cad(force=True)
+                ok = sum(1 for o in outs for x in o.lines if x["status"] == "ready")
+                self.status(f"{tr('Reading the held orders again')}: {len(outs)} XML — {tr('ready')}: {ok}")
+        _REREADING.add("*start*")
+        w = Worker(work)
+        w.signals.done.connect(done)
+        w.signals.failed.connect(lambda m: (_REREADING.discard("*start*"), self.status(m[:200])))
+        self.pool.start(w)
 
     def _tidy_markers(self):
         from ..services.auto_cut import tidy_markers
