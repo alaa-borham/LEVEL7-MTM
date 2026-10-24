@@ -242,11 +242,15 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
     data_of = {r["id"]: r for r in db.q("SELECT id, raw_line, normalized FROM revisions WHERE status <> 'superseded'")}
     robot_on = bool(db.get_setting("robot.enabled", False))
     tried = {}                                                # the robot's queue: written, not tried since
-    for g in db.q("SELECT id, path, created_at FROM grafis_orders WHERE status='written' AND archived=0 AND id IN "
-                  "(SELECT MAX(id) FROM grafis_orders GROUP BY revision_id) ORDER BY id"):
+    from ..services.grafis_robot import cad_ranks, cad_sorted
+    waiting_cad = []
+    for g in db.q("SELECT id, path, created_at, info FROM grafis_orders WHERE status='written' AND archived=0 AND id "
+                  "IN (SELECT MAX(id) FROM grafis_orders GROUP BY revision_id) ORDER BY id"):
         j = rj_of.get(g["path"])
         if not (j and j["at"] >= g["created_at"]):
-            tried[g["id"]] = len(tried)
+            waiting_cad.append(g)
+    for g in cad_sorted(waiting_cad, cad_ranks(ws)):          # in the order AI TOOL takes them (owner's moves)
+        tried[g["id"]] = len(tried)
     for rev in ws.list_revisions():
         if len(out) >= limit:                                 # the newest open lines (cleaned / cancelled ones
             break                                             # do not count)
@@ -288,6 +292,8 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
                     row["problems"].append(f"{tr('GRAFIS robot')}: {rj['message']}")
                 else:
                     row["waiting"] = _grafis_wait(db, go, rj, tried.get(go["id"], 0), robot_on)   # never silent
+                    if go["id"] in tried:
+                        row["cad_pos"] = tried[go["id"]]      # its place in the CAD queue (numbered in the list)
                     row["nest_queue"] = row["waiting"] == tr("Saved by GRAFIS: waiting for nesting")
         if rev["status"] == "needs_review" and not row["problems"]:   # held when read, no model tried yet
             row["problems"] = [p["message"] for p in norm.get("problems", []) if p.get("severity") in ("review", "error")]
@@ -1362,6 +1368,7 @@ class OrderBrowser(QWidget):
     reread = Signal(list)                              # right click → read their XML again with today's settings
     nesting_toggle = Signal()                          # the button on the nesting queue: start / stop the nesting
     queue_move = Signal(list, str)                     # right click on the queue: (revision ids, top/up/down/bottom)
+    cad_move = Signal(list, str)                       # right click on the CAD list: the same, for AI TOOL's order
     nesting_paused = False
 
     def __init__(self):
@@ -1507,6 +1514,8 @@ class OrderBrowser(QWidget):
                                         else r["stage"]) in stages]
             if key == "queue":                            # in the order the nesting takes them
                 mine.sort(key=lambda r: (r.get("queue_pos") is None, r.get("queue_pos") or 0))
+            elif key == "grafis":                         # in the order AI TOOL takes them
+                mine.sort(key=lambda r: (r.get("cad_pos") is None, r.get("cad_pos") or 0))
             grp = QTreeWidgetItem([f"{tr(title)}", str(len(mine))])
             counts[key], items[key] = len(mine), grp
             grp.setData(0, Qt.UserRole + 1, key)
@@ -1527,8 +1536,8 @@ class OrderBrowser(QWidget):
                 continue
             for r in mine:
                 col = c[STAGE_COLOUR[r["stage"]]]
-                it = QTreeWidgetItem([(f"{r['queue_pos'] + 1}.  " if key == "queue" and r.get("queue_pos") is not None
-                                       else "") + ltr(r["line"]),
+                pos = r.get("queue_pos") if key == "queue" else r.get("cad_pos") if key == "grafis" else None
+                it = QTreeWidgetItem([(f"{pos + 1}.  " if pos is not None else "") + ltr(r["line"]),
                                       tr("Waiting for nesting") if r["stage"] == "nest" and
                                       r.get("waiting") else tr(STAGE_TEXT[r["stage"]])])
                 it.setData(0, Qt.UserRole, r["rid"])
@@ -1635,6 +1644,12 @@ class OrderBrowser(QWidget):
             for text, how in (("To the top", "top"), ("One step up", "up"), ("One step down", "down"),
                               ("To the bottom", "bottom")):
                 m.addAction(tr(text), lambda h=how: self.queue_move.emit(rids, h))
+            m.addSeparator()
+        in_cad = {r["rid"] for r in self.rows if r.get("cad_pos") is not None}
+        if rids and all(r in in_cad for r in rids):       # the CAD queue: the order AI TOOL takes them
+            for text, how in (("To the top", "top"), ("One step up", "up"), ("One step down", "down"),
+                              ("To the bottom", "bottom")):
+                m.addAction(tr(text), lambda h=how: self.cad_move.emit(rids, h))
             m.addSeparator()
         m.addAction(tr("Read again with the current settings"), lambda: self.reread.emit(rids))
         m.addSeparator()

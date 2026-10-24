@@ -777,12 +777,63 @@ def _answer_dialogs(drv, st, notes: list) -> None:
                 notes.append(note)
 
 
+def cad_ranks(ws) -> dict:
+    """The owner's order of the CAD queue: {order line: place} (moved to the top / a step up / down / the bottom)."""
+    return ws.db.get_setting("robot.order") or {}
+
+
+def _line_of(r) -> str:
+    try:
+        return json.loads(r["info"] or "{}").get("line_number") or ""
+    except (TypeError, ValueError):
+        return ""
+
+
+def cad_sorted(rows, ranks: dict) -> list:
+    """grafis_orders rows in the order AI TOOL takes them: the owner's order first, then the oldest first."""
+    first = {r["id"]: i for i, r in enumerate(rows)}
+    return sorted(rows, key=lambda r: (ranks[_line_of(r)], 0) if _line_of(r) in ranks else (1e9, first[r["id"]]))
+
+
+def cad_queue(ws) -> list[str]:
+    """The order lines waiting for AI TOOL, in the order it takes them."""
+    rows = []
+    for r in ws.db.q("SELECT g.id, g.path, g.info, g.created_at FROM grafis_orders g WHERE g.status='written' AND "
+                     "g.archived=0 AND g.id IN (SELECT MAX(id) FROM grafis_orders GROUP BY revision_id) AND NOT EXISTS "
+                     "(SELECT 1 FROM robot_jobs j WHERE j.path=g.path AND j.at>=g.created_at) ORDER BY g.id"):
+        rows.append(r)
+    return [_line_of(r) for r in cad_sorted(rows, cad_ranks(ws)) if _line_of(r)]
+
+
+def move_in_cad(ws, lines: list[str], how: str) -> list[str]:
+    """The owner moves orders in the CAD queue: "top", "up" (one step), "down" (one step) or "bottom"."""
+    q = cad_queue(ws)
+    chosen = [x for x in q if x in set(lines)]
+    if not chosen:
+        return q
+    if how == "top":
+        q = chosen + [x for x in q if x not in chosen]
+    elif how == "bottom":
+        q = [x for x in q if x not in chosen] + chosen
+    elif how in ("up", "down"):
+        step = -1 if how == "up" else 1
+        idx = [q.index(x) for x in chosen]
+        for i in (sorted(idx) if step < 0 else sorted(idx, reverse=True)):
+            j = i + step
+            if 0 <= j < len(q) and q[j] not in chosen:
+                q[i], q[j] = q[j], q[i]
+    ws.db.set_setting("robot.order", {x: i for i, x in enumerate(q)})   # the order kept for the whole queue
+    return q
+
+
 def pending(ws, first: bool = False) -> list[dict]:
-    """Order models written by this program and still not saved by GRAFIS (and not tried by the robot); ``first``:
-    only the next one (the robot needs no more)."""
+    """Order models written by this program and still not saved by GRAFIS (and not tried by the robot), in the
+    owner's order of the CAD queue (then the oldest first); ``first``: only the next one (the robot needs no more)."""
     out = []
-    for r in ws.db.q("SELECT * FROM grafis_orders WHERE status='written' AND archived=0 AND id IN "
-                     "(SELECT MAX(id) FROM grafis_orders GROUP BY revision_id) ORDER BY id"):
+    rows = ws.db.q("SELECT * FROM grafis_orders WHERE status='written' AND archived=0 AND id IN "
+                   "(SELECT MAX(id) FROM grafis_orders GROUP BY revision_id) ORDER BY id")
+    ranks = cad_ranks(ws)
+    for r in (cad_sorted(rows, ranks) if ranks else rows):
         info = json.loads(r["info"])
         p = r["path"]
         try:

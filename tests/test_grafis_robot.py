@@ -590,3 +590,32 @@ def test_grafis_left_running_without_a_window_is_ended():
     w = W()
     assert robot.end_ghosts(w) == 2 and w.killed == [101, 102]          # 100 shows a window: left alone
     assert robot.end_ghosts(object()) == 0                              # a driver without processes: nothing
+
+
+def test_cad_queue_in_the_owners_order(ws, tmp_path):
+    """Owner: urgent orders first — the CAD queue moved to the top / a step up / down / the bottom; AI TOOL takes
+    them in that order, the rest oldest first."""
+    import hashlib
+    import json
+    paths = {}
+    with ws.db.tx() as c:
+        for i, line in enumerate(["L1", "L2", "L3", "L4"]):
+            p = tmp_path / f"{line}.mdl"
+            p.write_bytes(line.encode())
+            paths[line] = str(p)
+            oid = c.execute("INSERT INTO orders(source, line_ref, order_no, reseller, customer_id, created_at) "
+                            "VALUES ('ERP', ?, ?, 'R', 'C1', '2026-10-24')", (line, line)).lastrowid
+            rid = c.execute("INSERT INTO revisions(order_id, revision, status, raw_line, normalized, data_sha256, "
+                            "imported_at, line_number) VALUES (?, '0', 'ready', '{}', '{}', ?, '2026-10-24', ?)",
+                            (oid, line, line)).lastrowid
+            c.execute("INSERT INTO grafis_orders(revision_id, created_at, status, path, template_sha256, info) VALUES "
+                      "(?, '2026-10-24T10:00:00', 'written', ?, 't', ?)",
+                      (rid, str(p), json.dumps({"sha256": hashlib.sha256(line.encode()).hexdigest(),
+                                                    "line_number": line})))
+    assert robot.cad_queue(ws) == ["L1", "L2", "L3", "L4"]
+    assert robot.move_in_cad(ws, ["L3"], "top") == ["L3", "L1", "L2", "L4"]
+    assert robot.move_in_cad(ws, ["L4"], "up") == ["L3", "L1", "L4", "L2"]
+    assert robot.move_in_cad(ws, ["L3"], "bottom") == ["L1", "L4", "L2", "L3"]
+    assert robot.pending(ws, first=True)[0]["line_number"] == "L1"
+    robot.move_in_cad(ws, ["L2"], "top")
+    assert [j["line_number"] for j in robot.pending(ws)] == ["L2", "L1", "L4", "L3"]

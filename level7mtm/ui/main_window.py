@@ -4182,6 +4182,7 @@ class MainWindow(QMainWindow):
         self.browser.reread.connect(self.reread_orders)
         self.browser.nesting_toggle.connect(self.toggle_nesting)
         self.browser.queue_move.connect(self.move_in_queue)
+        self.browser.cad_move.connect(self.move_in_cad)
         self.browser.nesting_paused = bool(self.ws.db.get_setting("nesting.paused", False))
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
@@ -4672,6 +4673,7 @@ class MainWindow(QMainWindow):
         # the list is built again only when what it shows changed (an order in / out, its stage, its place in the
         # queue): a waiting text changing every few seconds rebuilt hundreds of rows — the list flickered (owner)
         shown = json.dumps([(r["rid"], r["line"], r["stage"], bool(r.get("nest_queue")), r.get("queue_pos"),
+                             r.get("cad_pos"),
                              bool(r.get("waiting")) and r["stage"] == "nest") for r in rows], default=str)
         if force or shown != getattr(self, "_shown_sig", None):
             self._shown_sig = shown
@@ -4800,6 +4802,14 @@ class MainWindow(QMainWindow):
         from ..services.mdl_intake import move_in_queue
         paths = [r["queue_path"] for r in self.browser.rows if r["rid"] in set(rids) and r.get("queue_path")]
         if self.guard(lambda: move_in_queue(self.ws, paths, how)) is not None:
+            self.refresh_cad(force=True)
+
+    def move_in_cad(self, rids: list, how: str):
+        """Right click on the CAD list: the orders chosen to the top / a step up / a step down / the bottom of
+        AI TOOL's queue (owner: urgent orders first)."""
+        from ..services.grafis_robot import move_in_cad
+        lines = [r["line"] for r in self.browser.rows if r["rid"] in set(rids)]
+        if self.guard(lambda: move_in_cad(self.ws, lines, how)) is not None:
             self.refresh_cad(force=True)
 
     def toggle_nesting(self):
