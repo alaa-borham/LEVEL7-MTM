@@ -373,3 +373,29 @@ def test_models_written_again_when_the_base_pattern_is_corrected(ws, tmp_path):
     assert [ln["line_number"] for o_ in outs for ln in o_.lines] == ["9-53-1_2"]
     assert outs[0].grafis[0]["path"].endswith("_v2.mdl")
     assert outdated(ws) == []
+
+
+@needs_mdl
+def test_models_written_again_when_the_parts_change(ws, tmp_path):
+    """Owner: "I changed some parts but the orders already sent to CAD and the nesting did not change" — an order
+    not cut yet gets its model again with the customer's new parts / rules; one cut already is left."""
+    import copy
+
+    from level7mtm.services.grafis_orders import outdated, redo_outdated
+    ws.db.set_setting("grafis.mdl", MDL)
+    ws.db.set_setting("grafis.input", str(tmp_path / "in"))
+    o = import_and_prepare(ws, XML_53)
+    r1, r2 = (g["revision_id"] for g in o.grafis)
+    with ws.db.tx() as c:
+        c.execute("UPDATE revisions SET status='sent_to_nesting' WHERE id=?", (r1,))   # waits for the nesting
+        c.execute("UPDATE revisions SET status='completed' WHERE id=?", (r2,))         # cut: stays as it is
+    assert outdated(ws) == []
+    pk, body = ws.active("catalog")
+    body = copy.deepcopy(body)
+    body["note"] = "parts changed"                                              # e.g. blend front: 2 copies
+    body["version"] = body.get("version", "1.0.0") + ".1"                      # (saved as a new version)
+    ws.set_active("catalog", ws.save_document("catalog", body, "parts changed"))
+    assert outdated(ws) == [r1]
+    outs = redo_outdated(ws)
+    assert [ln["line_number"] for o_ in outs for ln in o_.lines] == ["9-53-1_2"]
+    assert outdated(ws) == []

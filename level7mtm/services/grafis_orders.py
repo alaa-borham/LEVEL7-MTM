@@ -254,10 +254,11 @@ def _order_mdl(ws, rid: int, template: str | None = None, out_dir: str | None = 
 
 
 def outdated(ws) -> list[int]:
-    """Order lines not finished whose model was written from a base pattern that has changed since (owner: "the
-    base pattern is corrected" — the model written before it must not be nested): their revision ids."""
+    """Order lines not finished whose model was written from a base pattern, or with parts / rules of the customer,
+    that have changed since (owner: "the base pattern is corrected", "I changed some parts") — the model written
+    before must not be nested: their revision ids."""
     from .grafis_robot import file_sha
-    out, shas = [], {}
+    out, shas, cats = [], {}, {}
     for g in ws.db.q("SELECT g.revision_id, g.template_sha256, g.info FROM grafis_orders g JOIN revisions r ON "
                      "r.id=g.revision_id WHERE g.status='written' AND g.archived=0 AND r.status IN ('ready', "
                      "'sent_to_nesting') AND g.id IN (SELECT MAX(id) FROM grafis_orders GROUP BY revision_id)"):
@@ -271,6 +272,18 @@ def outdated(ws) -> list[int]:
                 shas[template] = None                 # the pattern is not there now: nothing to compare
         now_sha = shas[template]
         if now_sha and not g["template_sha256"].startswith(now_sha):
+            out.append(g["revision_id"])
+            continue
+        # owner: "I changed some parts (copies, mirrored, the parts of an option) but the orders already sent to CAD
+        # and the nesting did not change": the customer's parts / rules (catalog) changed since it was written
+        cid = ws.customer_of(g["revision_id"])
+        if cid not in cats:
+            try:
+                with ws.for_customer(cid):
+                    cats[cid] = f":catalog{ws.active('catalog')[0]}"
+            except Exception:  # noqa: BLE001 - no catalog: nothing to compare
+                cats[cid] = None
+        if cats[cid] and ":catalog" in g["template_sha256"] and not g["template_sha256"].endswith(cats[cid]):
             out.append(g["revision_id"])
     return out
 
