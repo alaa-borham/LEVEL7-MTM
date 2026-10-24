@@ -388,7 +388,18 @@ def test_measurement_dialog_in_cm_with_western_digits():
         d.accept()
     QTimer.singleShot(50, answer)
     assert measurement_dialog(None, "CH", "Chest", 600.0) == (615.0, "owner")
-    assert seen["text"] == "60.0 cm"
+    assert seen["text"] == "60.00 cm"
+
+    def negative():                                  # owner: DSB -165.5 cm → -16.55 cm was refused (0 … 500)
+        d = app.activeModalWidget()
+        box = d.findChild(QtWidgets.QDoubleSpinBox)
+        box.setValue(-16.55)
+        ok = [b for b in d.findChildren(QtWidgets.QPushButton) if b.isEnabled()]
+        seen["ok"] = bool(ok)                         # a reason is there already: OK at once
+        d.accept()
+    QTimer.singleShot(50, negative)
+    got = measurement_dialog(None, "DSB", "Down shoulder Back", -1655.0)
+    assert got[0] == -165.5 and got[1] and seen["ok"]
 
 
 def test_tool_shortcuts_over_the_marker(tmp_path, monkeypatch):

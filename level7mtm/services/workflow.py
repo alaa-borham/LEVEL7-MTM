@@ -418,6 +418,10 @@ class Workspace:
         norm["measurements"].setdefault(code, {"kind": "other", "label": {"en": code}, "meaning": "", "status": "manual",
                                                "variable": code, "source_value": "", "source_unit": ""})
         norm["measurements"][code]["value_mm"] = float(value_mm)
+        unit = norm["measurements"][code].get("source_unit") or ""
+        from ..erp.mapping import UNITS_TO_MM
+        if unit in UNITS_TO_MM:                           # the value in the XML's unit follows (the limits learned
+            norm["measurements"][code]["source_value"] = f"{float(value_mm) / UNITS_TO_MM[unit]:g}"   # read it)
         norm["measurements"][code]["manual"] = {"old_mm": old, "reason": reason, "at": now(), "by": self.actor}
         norm["problems"] = [p for p in norm["problems"] if p.get("field") != code]
         dsha = _sha({"m": {k: v["value_mm"] for k, v in norm["measurements"].items()}, "o": norm["options"],

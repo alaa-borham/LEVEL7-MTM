@@ -659,6 +659,8 @@ AR = {
     "Hold unusual measurements": "إيقاف القياسات غير المعتادة",
     "A measurement far from the values this customer's orders usually have (learned from the orders cut) holds the order before CAD":
         "القياس البعيد جداً عن القيم المعتادة لطلبات هذا العميل (تُتعلَّم من الطلبات التي قُصّت) يوقف الطلب قبل CAD",
+    "Corrected by hand": "تصحيح يدوي",
+    "Why the value is changed (kept in the log)": "سبب تغيير القيمة (يُحفظ في السجل)",
     "Nestings at once": "عدد التعشيقات في وقت واحد",
     "How many models LEVEL7 Nesting nests at the same time (each uses one processor core and its own memory)":
         "كم موديلاً يعشّق LEVEL7 Nesting في نفس الوقت (كل تعشيق يستخدم نواة معالج وذاكرة خاصة به)",

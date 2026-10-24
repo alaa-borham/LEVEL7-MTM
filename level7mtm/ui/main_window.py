@@ -228,20 +228,20 @@ def measurement_dialog(parent, code: str, name: str, value_mm: float) -> tuple[f
     box = QDoubleSpinBox()
     box.setLocale(QLocale(QLocale.English, QLocale.UnitedStates))    # 60.5, never ٦٠٫٥
     box.setLayoutDirection(Qt.LeftToRight)
-    box.setRange(0, 500)
-    box.setDecimals(1)
+    box.setRange(-500, 500)                       # owner: DSB / DSF are negative (-16.5 cm): accepted
+    box.setDecimals(2)                            # as the ERP sends them (42.545 → 42.55)
     box.setSingleStep(0.5)
     box.setSuffix(" cm")
     box.setValue(value_mm / 10)
     box.setMinimumWidth(160)
     f.addRow(tr("Now") + ":", QLabel(f"{value_mm / 10:g} cm"))
     f.addRow(tr("New value") + ":", box)
-    why = QLineEdit()
+    why = QLineEdit(tr("Corrected by hand"))      # a change is always recorded with why (ready: OK at once)
+    why.setPlaceholderText(tr("Why the value is changed (kept in the log)"))
     f.addRow(tr("Reason") + ":", why)
     bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
     ok = bb.button(QDialogButtonBox.Ok)
-    ok.setEnabled(False)
-    why.textChanged.connect(lambda t: ok.setEnabled(bool(t.strip())))   # a change is always recorded with why
+    why.textChanged.connect(lambda t: ok.setEnabled(bool(t.strip())))
     bb.accepted.connect(d.accept)
     bb.rejected.connect(d.reject)
     f.addRow(bb)
@@ -249,7 +249,7 @@ def measurement_dialog(parent, code: str, name: str, value_mm: float) -> tuple[f
     box.selectAll()
     if d.exec() != QDialog.Accepted or not why.text().strip():
         return None
-    return round(box.value() * 10, 1), why.text().strip()
+    return round(box.value() * 10, 2), why.text().strip()
 
 
 def ordered_ribbon(groups, cfg: dict) -> list:
