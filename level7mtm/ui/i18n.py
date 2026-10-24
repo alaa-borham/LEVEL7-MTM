@@ -662,6 +662,8 @@ AR = {
     "Corrected by hand": "تصحيح يدوي",
     "Why the value is changed (kept in the log)": "سبب تغيير القيمة (يُحفظ في السجل)",
     "Choose a list": "اختر قائمة",
+    "Copied": "نُسخ",
+    "Click to copy the order number": "اضغط لنسخ رقم الطلب",
     "Nestings at once": "عدد التعشيقات في وقت واحد",
     "How many models LEVEL7 Nesting nests at the same time (each uses one processor core and its own memory)":
         "كم موديلاً يعشّق LEVEL7 Nesting في نفس الوقت (كل تعشيق يستخدم نواة معالج وذاكرة خاصة به)",

@@ -1739,6 +1739,10 @@ class Inspector(QScrollArea):
         self.lay.setSizeConstraint(QLayout.SetMinimumSize)   # a short window: it scrolls, rows never overlap
         self.title = QLabel("—")
         self.title.setObjectName("bigTitle")
+        self._line = ""                                   # owner: the order number copied with one click
+        self.title.setCursor(Qt.PointingHandCursor)
+        self.title.setToolTip(tr("Click to copy the order number"))
+        self.title.mousePressEvent = lambda e: self.copy_line()
         self.pill = QLabel()
         self.pill.setObjectName("pill")
         hr = QHBoxLayout()
@@ -1878,6 +1882,17 @@ class Inspector(QScrollArea):
                 w.hide()                              # gone at once (deleted a moment later)
                 w.deleteLater()
 
+    def copy_line(self) -> str:
+        """The order number to the clipboard (plain: no direction marks), said next to it."""
+        if not self._line:
+            return ""
+        from PySide6.QtGui import QGuiApplication
+        from PySide6.QtWidgets import QToolTip
+        QGuiApplication.clipboard().setText(self._line)
+        QToolTip.showText(self.title.mapToGlobal(self.title.rect().bottomLeft()),
+                          f"{tr('Copied')}: {self._line}", self.title)
+        return self._line
+
     def _show_defect(self, path: str | None):
         self._defect_path = path
         if not path:
@@ -1918,6 +1933,7 @@ class Inspector(QScrollArea):
             self.buttons["robot"].setVisible(False)
         if r is None:
             self.title.setText("—")
+            self._line = ""
             self.pill.setText("")
             for v in self.kv.values():
                 v.setText("—")
@@ -1928,6 +1944,7 @@ class Inspector(QScrollArea):
             self.waiting.hide()
             return
         self.title.setText(ltr(r["line"]))
+        self._line = r["line"]
         col = c[STAGE_COLOUR[r["stage"]]]
         self.pill.setText(tr(STAGE_TEXT[r["stage"]]))
         self.pill.setStyleSheet(f"color: {col.name()}; border-color: {col.name()};")

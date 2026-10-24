@@ -941,3 +941,17 @@ def test_properties_show_the_reasons_of_the_xml(ws):
     row = next(r for r in order_rows(ws) if r["rid"] == rid)
     assert any("Collar Weird" in p for p in row["problems"]) and row["stage"] == "err"
     assert not any(p.startswith("order line needs review") for p in row["problems"])
+
+
+def test_order_number_copied_with_one_click():
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from PySide6.QtGui import QGuiApplication
+    from level7mtm.ui import cad
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    ins = cad.Inspector([("details", "i", False, "info")])
+    ins._line = "10041-45504-1_0"
+    assert ins.copy_line() == "10041-45504-1_0"
+    assert QGuiApplication.clipboard().text() == "10041-45504-1_0"               # plain, no direction marks
+    app.processEvents()
