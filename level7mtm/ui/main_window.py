@@ -4224,6 +4224,7 @@ class MainWindow(QMainWindow):
         self.browser.selected.connect(self.select_row)
         self.browser.remove.connect(self.remove_orders)
         self.browser.reread.connect(self.reread_orders)
+        self.browser.details.connect(self.open_details_of)
         self.browser.nesting_toggle.connect(self.toggle_nesting)
         self.browser.queue_move.connect(self.move_in_queue)
         self.browser.cad_move.connect(self.move_in_cad)
@@ -5053,6 +5054,11 @@ class MainWindow(QMainWindow):
     def open_details(self):
         if self.sel_row is not None:
             self.current_rid = self.sel_row["rid"]
+        self.goto("Order details")
+
+    def open_details_of(self, rid: int):
+        """Right click on an order → Order info: its details page."""
+        self.current_rid = rid
         self.goto("Order details")
 
     def open_setup(self):

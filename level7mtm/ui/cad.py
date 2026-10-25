@@ -1599,6 +1599,7 @@ class OrderBrowser(QWidget):
     selected = Signal(object)
     remove = Signal(list)                              # right click → remove: the order lines (revision ids)
     reread = Signal(list)                              # right click → read their XML again with today's settings
+    details = Signal(int)                              # right click → the order's details
     nesting_toggle = Signal()                          # the button on the nesting queue: start / stop the nesting
     queue_move = Signal(list, str)                     # right click on the queue: (revision ids, top/up/down/bottom)
     cad_move = Signal(list, str)                       # right click on the CAD list: the same, for AI TOOL's order
@@ -2019,6 +2020,9 @@ class OrderBrowser(QWidget):
             for text, how in (("To the top", "top"), ("One step up", "up"), ("One step down", "down"),
                               ("To the bottom", "bottom")):
                 m.addAction(tr(text), lambda h=how: self.cad_move.emit(rids, h))
+            m.addSeparator()
+        if len(rids) == 1:                                # owner: the order's details from the right click too
+            m.addAction(icon("info"), tr("Order info"), lambda: self.details.emit(rids[0]))
             m.addSeparator()
         m.addAction(tr("Read again with the current settings"), lambda: self.reread.emit(rids))
         m.addSeparator()

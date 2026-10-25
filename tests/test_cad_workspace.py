@@ -1014,3 +1014,18 @@ def test_pace_finish_time_customer_filter_and_production_screen(ws):
     p.show_rows(rows, {"cad": 66.0})
     assert p.tiles["grafis"][2].text() == "6" and "CAD" in p.now.text()
     app.processEvents()
+
+
+def test_right_click_opens_the_order_details(ws):
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+    from level7mtm.ui.main_window import MainWindow
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    rid = ws.import_file(XML_53).lines[0]["revision_id"]
+    win = MainWindow(ws)
+    win.browser.details.emit(rid)
+    app.processEvents()
+    assert win.current_rid == rid and win.current_page().title == "Order details"
+    win.close()
+    app.processEvents()
