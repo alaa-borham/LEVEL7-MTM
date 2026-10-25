@@ -9,18 +9,23 @@ from level7mtm.services.grafis_orders import import_and_prepare
 from level7mtm.services.mdl_intake import register_mdl
 
 
-def _saved_by_grafis(path, recalculated=True, x1=None):
+def _saved_by_grafis(path, recalculated=True, x1=None, only=None, mark=1):
     """Simulates GRAFIS saving the model: changed piece geometry of front1 (part 7) when recalculated."""
     data = read(path)
     cont = parse_container(data)
     if x1 is not None:
         data = build_order_model(data, {(2, 1): x1})[0]
         cont = parse_container(data)
-    if recalculated:
-        b = cont.get(3, 7, 7, 1)
-        p = bytearray(b.payload)
-        p[-1] ^= 0x01
-        data = rebuild(data, cont, {b.bid: bytes(p)})
+    if recalculated:                                   # Test Run All Parts: every production part recalculated
+        from level7mtm.grafis.parts import production
+        prod = {n for n, (_, sp) in production(cont).items() if sp}
+        changes = {}
+        for b in cont.find(3, 7):
+            if b.bid[1] in prod and (only is None or b.bid[1] == only):
+                p = bytearray(b.payload)
+                p[-1] ^= mark
+                changes[b.bid] = bytes(p)
+        data = rebuild(data, cont, changes)
     else:
         b = cont.get(3, 1, 1, 0)                       # GRAFIS rewrote something, but not the pieces
         data = rebuild(data, cont, {b.bid: b.payload + b"\x00" * 8})
@@ -218,3 +223,57 @@ def test_nesting_places_follow_the_setting(ws):
     for t in ts:
         t.join(10)
     assert most[0] == 2
+
+
+
+@needs_mdl
+def test_a_model_test_run_on_some_parts_only_is_held(ws, tmp_path):
+    """Owner: "the orders were not test-run on all parts" — a part still exactly as in the base pattern was not run:
+    the model is held (Needs attention) with the parts named, never nested."""
+    ws.db.set_setting("grafis.mdl", MDL)
+    ws.db.set_setting("grafis.input", str(tmp_path / "MDL"))
+    ws.db.set_setting("errors.folder", str(tmp_path / "ER"))
+    p1 = import_and_prepare(ws, XML_53).grafis[0]["path"]
+    _saved_by_grafis(p1, recalculated=True, only=7)                     # only the active part (front1) was run
+    r = register_mdl(ws, p1, cut=False)
+    assert r["status"] == "needs_review"
+    msg = next(m for _, m in r["check"].issues if "did not run on" in m)
+    assert "007" not in msg and "008" in msg                             # front1 run, back1 … not
+
+
+@needs_mdl
+def test_orders_saved_without_test_run_on_all_parts_are_taken_back(ws, tmp_path):
+    """Once: an order already nested / ready to cut whose saved model has parts as in the base pattern goes back to
+    Needs attention; its cutting files are moved into NOT TEST-RUN (never deleted)."""
+    import json
+
+    from level7mtm.services.grafis_orders import in_error
+    from level7mtm.services.mdl_intake import hold_untested
+    ws.db.set_setting("grafis.mdl", MDL)
+    ws.db.set_setting("grafis.input", str(tmp_path / "MDL"))
+    ws.db.set_setting("errors.folder", str(tmp_path / "ER"))
+    g1, g2 = import_and_prepare(ws, XML_53).grafis
+    _saved_by_grafis(g1["path"], recalculated=True)                     # all parts run: stays
+    _saved_by_grafis(g2["path"], recalculated=True, only=7)              # the active part only
+    ok = []
+    for g in (g1, g2):
+        from level7mtm.services import mdl_intake
+        chk, _ = mdl_intake.check_mdl(ws, g["path"])
+        chk.issues = []                                                  # as nested before the strict check
+        with ws.db.tx() as c:
+            c.execute("INSERT INTO grafis_results(checked_at, info, pieces, lines, issues, status, handed_over, "
+                      "nesting_path, sha256, path) VALUES ('2999-01-01', '{}', '[]', ?, '[]', 'handed_over', 1, ?, ?, ?)",
+                      (json.dumps(chk.lines), g["path"], chk.sha256, g["path"]))
+        cut = tmp_path / "CUT" / (os.path.basename(g["path"]) + ".plt")
+        cut.parent.mkdir(exist_ok=True)
+        cut.write_text("plt")
+        with ws.db.tx() as c:
+            c.execute("INSERT INTO cutting_jobs(sha256, scb_path, created_at, status, outputs, info, log) VALUES "
+                      "(?, ?, '2999-01-01', 'done', ?, '{}', '')", (chk.sha256, g["path"], json.dumps([str(cut)])))
+            c.execute("UPDATE revisions SET status='completed' WHERE id=?", (g["revision_id"],))
+        ok.append(cut)
+    held = hold_untested(ws)
+    assert held == ["9-53-2_2"]
+    assert ok[0].exists() and not ok[1].exists() and (ok[1].parent / "NOT TEST-RUN" / ok[1].name).exists()
+    assert ws.revision(g2["revision_id"])["status"] == "ready" and g2["revision_id"] in in_error(ws)
+    assert ws.revision(g1["revision_id"])["status"] == "completed"

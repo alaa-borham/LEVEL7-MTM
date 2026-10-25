@@ -4793,6 +4793,11 @@ class MainWindow(QMainWindow):
         def work():
             from ..services.customers import reread_lines, stale_held
             from ..services.grafis_orders import redo_outdated
+            if not self.ws.db.get_setting("scan.untested.v1"):   # once: orders saved without Test Run All Parts
+                from ..services.mdl_intake import hold_untested
+                held = hold_untested(self.ws)
+                self.ws.db.set_setting("scan.untested.v1", {"held": held})
+                self._untested_held = held
             outs = redo_outdated(self.ws)              # the base pattern corrected since: from it again
             stale = stale_held(self.ws)                # a Variation given a meaning since: read again
             if stale:
@@ -4805,6 +4810,15 @@ class MainWindow(QMainWindow):
 
         def done(outs):
             _REREADING.discard("*start*")
+            held = getattr(self, "_untested_held", None)
+            if held:
+                self._untested_held = None
+                self.refresh_cad(force=True)
+                QMessageBox.warning(self, "AI TOOL", tr("Orders saved by CAD without Test Run All Parts on every part")
+                                    + f": {len(held)}\n\n" + tr("They are back under Needs attention; their cutting "
+                                    "files were moved into the folder NOT TEST-RUN (not deleted). Nest them again: "
+                                    "the model is written again from the base pattern and CAD runs it anew.") +
+                                    "\n\n" + ", ".join(held[:30]) + (" …" if len(held) > 30 else ""))
             if outs:
                 self.refresh_cad(force=True)
                 ok = sum(1 for o in outs for x in o.lines if x["status"] == "ready")

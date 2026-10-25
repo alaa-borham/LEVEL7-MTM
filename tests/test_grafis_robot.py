@@ -38,8 +38,12 @@ class FakeGrafis:
 
     def _save(self):
         if self.saves and self.ran:
-            with open(self.opened, "ab") as fh:
-                fh.write(b"\0" * 8)
+            try:                                       # a real model: Test Run All Parts recalculated every part
+                from test_mdl_intake import _saved_by_grafis
+                _saved_by_grafis(self.opened, recalculated=True)
+            except Exception:  # noqa: BLE001 - a stand-in file: only changed
+                with open(self.opened, "ab") as fh:
+                    fh.write(b"\0" * 8)
 
 
 def _setup(ws, tmp_path):
@@ -619,3 +623,30 @@ def test_cad_queue_in_the_owners_order(ws, tmp_path):
     assert robot.pending(ws, first=True)[0]["line_number"] == "L1"
     robot.move_in_cad(ws, ["L2"], "top")
     assert [j["line_number"] for j in robot.pending(ws)] == ["L2", "L1", "L4", "L3"]
+
+
+@needs_mdl
+def test_robot_checks_every_part_was_test_run(ws, tmp_path):
+    """Owner: "the orders were not test-run on all parts" — after saving, the robot checks every production part
+    was recalculated: some not → Test Run All Parts and save once more; still not → CAD's error (Needs attention)."""
+    from test_mdl_intake import _saved_by_grafis
+    _setup(ws, tmp_path)
+    ws.db.set_setting("robot.buttons", {"test_run": {"title": "GRAFIS", "cls": "Toolbar", "dx": 470, "dy": 60}})
+    ws.db.set_setting("robot.settle_s", 0)
+
+    class Partial(FakeGrafis):
+        def __init__(self, full_from):
+            super().__init__()
+            self.saves_n, self.full_from = 0, full_from
+
+        def _save(self):
+            if self.ran:
+                self.saves_n += 1
+                _saved_by_grafis(self.opened, recalculated=True, mark=self.saves_n,
+                                 only=None if self.saves_n >= self.full_from else 7)   # first: the active part only
+    g = Partial(full_from=2)
+    r = robot.run_one(ws, robot.pending(ws)[0], g, sleep=lambda s: None, clock=_clock())
+    assert r["status"] == "done" and g.saves_n == 2 and "did not reach" in r["message"], r
+    g = Partial(full_from=99)
+    r = robot.run_one(ws, robot.pending(ws)[0], g, sleep=lambda s: None, clock=_clock())
+    assert r["status"] == "failed" and "did not run on" in r["message"] and "008" in r["message"]

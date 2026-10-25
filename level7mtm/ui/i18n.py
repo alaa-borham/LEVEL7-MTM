@@ -681,6 +681,9 @@ AR = {
     "Extra gap across the fabric": "مسافة إضافية على عرض القماش",
     "Margin at the fabric edges": "هامش حافة القماش",
     "Sent to LEVEL7 Nesting with every marker of this customer (0 = none). A product without its own values takes its customer's.": "تُرسل إلى LEVEL7 Nesting مع كل ماركر لهذا العميل (0 = بدون). المنتج الذي ليس له قيم خاصة يأخذ قيم عميله.",
+    "Orders saved by CAD without Test Run All Parts on every part": "طلبات حفظها CAD بدون تنفيذ Test Run All Parts على كل القطع",
+    "They are back under Needs attention; their cutting files were moved into the folder NOT TEST-RUN (not deleted). Nest them again: the model is written again from the base pattern and CAD runs it anew.":
+        "أُعيدت إلى «يحتاج تدخل»، ونُقلت ملفات قصها إلى مجلد NOT TEST-RUN (لم تُحذف). أعد تعشيقها: يُكتب الموديل من جديد من البترون الأساسي ويُنفّذه CAD من جديد.",
     "Nestings at once": "عدد التعشيقات في وقت واحد",
     "How many models LEVEL7 Nesting nests at the same time (each uses one processor core and its own memory)":
         "كم موديلاً يعشّق LEVEL7 Nesting في نفس الوقت (كل تعشيق يستخدم نواة معالج وذاكرة خاصة به)",
@@ -806,6 +809,10 @@ MSG_AR = [
     (r"GRAFIS was not open", "لم يكن GRAFIS مفتوحاً"),
     (r"the robot is on (\S+): (.+) for (\d+) s", "AI TOOL يعمل على {0}: {1} منذ {2} ث"),
     (r"starting", "يبدأ"),
+    (r"waiting for GRAFIS to finish loading the model", "ينتظر حتى ينتهي GRAFIS من تحميل الموديل"),
+    (r"Test Run All Parts did not run on: (.+?) — the model was saved without them; run it in GRAFIS, then save",
+     "لم يُنفَّذ Test Run All Parts على: {0} — حُفظ الموديل بدونها؛ نفّذه في CAD ثم احفظ"),
+    (r"Test Run All Parts did not reach (\d+) parts — run again", "لم يصل Test Run All Parts إلى {0} قطعة — أُعيد تنفيذه"),
     (r"ending GRAFIS left running without a window", "ينهي نسخ GRAFIS المتبقية بدون نافذة"),
     (r"(\d+) GRAFIS left running without a window ended", "أُنهيت {0} نسخة GRAFIS كانت تعمل بدون نافذة"),
     (r"checking free memory and disk", "يفحص الذاكرة والقرص"),

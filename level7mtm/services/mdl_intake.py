@@ -38,6 +38,36 @@ def identity(path: str, content: str | None = None) -> str:
     return hashlib.sha256(f"{content}|{os.path.abspath(path).lower()}".encode()).hexdigest()
 
 
+def untested_parts(template: str, path: str, cont=None) -> list[str]:
+    """The production parts of a saved model still exactly as in the base pattern (Test Run did not reach them):
+    "007 front1", … — [] when every part was run (or the files cannot be compared)."""
+    try:
+        cont = cont or read_container(path)
+        base = read_container(template)
+        with open(template, "rb") as fh:
+            tdata = fh.read()
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except Exception:  # noqa: BLE001 - not comparable: nothing said
+        return []
+    left = []
+    for n, (name, spec) in sorted(production(cont).items()):
+        if not spec:
+            continue
+        blocks = [b for b in cont.find(3, 7) if b.bid[1] == n]
+        if not blocks:
+            continue
+        same = True
+        for b in blocks:
+            o = base.get(*b.bid)
+            if o is None or block_bytes(tdata, o)[4:] != block_bytes(data, b)[4:]:
+                same = False
+                break
+        if same:
+            left.append(f"{n:03d} {name.strip()}")
+    return left
+
+
 def check_mdl(ws, path: str) -> tuple[ScbCheck, dict | None]:
     content = _sha(path)
     chk = ScbCheck(path, identity(path, content))
@@ -88,25 +118,15 @@ def check_mdl(ws, path: str) -> tuple[ScbCheck, dict | None]:
         with ws.for_customer(ws.customer_of(row["revision_id"])):
             template = ws.grafis_mdl()                   # (models written before patterns existed)
     if template and os.path.isfile(template):
-        base = read_container(template)
-        with open(template, "rb") as fh:
-            tdata = fh.read()
-        with open(path, "rb") as fh:
-            data = fh.read()
-        changed = False
-        for n in prod:
-            for b in cont.find(3, 7):
-                if b.bid[1] != n:
-                    continue
-                o = base.get(*b.bid)
-                if o is None or block_bytes(tdata, o)[4:] != block_bytes(data, b)[4:]:
-                    changed = True
-                    break
-            if changed:
-                break
-        if not changed:
+        left = untested_parts(template, path, cont)
+        if left and len(left) == len(prod):
             chk.issues.append(("blocking", "the pieces are still those of the base model: run 'Test Run All Parts' "
                                            "in GRAFIS, then save"))
+        elif left:
+            # owner: "all the orders were not test-run on all parts" — a Test Run All Parts rewrites every
+            # production part (also the fixed ones); a part still as in the base pattern was not run
+            chk.issues.append(("blocking", "Test Run All Parts did not run on: " + ", ".join(left) +
+                               " — the model was saved without them; run it in GRAFIS, then save"))
     sizes = read_text(cont).sizes
     chk.info = {"sizes": [f"base:{sizes[0].name}"] if sizes else [], "parts": sorted(prod), "source": "mdl",
                 "width_mm": rev["normalized"].get("fabric_width_mm"), "bundles": rev["quantity"]}
@@ -410,3 +430,69 @@ def _take_back_distorted(ws, r, path: str, bad: list[str]) -> None:
     to_err(ws, path, bad)
     errors_folder.report(ws, os.path.splitext(os.path.basename(path))[0], [msg], "pattern check")
     move_failed(ws, [ln["revision_id"] for ln in lines], [msg], "pattern check")
+
+
+def hold_untested(ws) -> list[str]:
+    """Once (owner: "a disaster — the orders were not test-run on all parts", found opening a model approved for
+    cutting): every order through CAD — in the nesting queue, nested, ready to cut — whose saved model still has
+    parts exactly as in the base pattern goes back to Needs attention with the parts named; its cutting files are
+    moved into "NOT TEST-RUN" next to them (never cut by mistake, nothing deleted); its XML to error. Returns the
+    order lines held."""
+    import shutil
+
+    from . import errors_folder
+    from .done_folder import move_failed
+    from .grafis_orders import archive_folder
+    held = []
+    tpl_of = {}
+    for g in ws.db.q("SELECT revision_id, info FROM grafis_orders WHERE status='written' ORDER BY id"):
+        try:
+            t = json.loads(g["info"] or "{}").get("template")
+        except (TypeError, ValueError):
+            t = None
+        if t:
+            tpl_of[g["revision_id"]] = t
+    for r in ws.db.q("SELECT id, sha256, path, lines, issues FROM grafis_results WHERE archived=0 AND "
+                     "status='handed_over'"):
+        try:
+            lines = json.loads(r["lines"] or "[]")
+        except (TypeError, ValueError):
+            continue
+        rids = [ln.get("revision_id") for ln in lines if ln.get("revision_id") is not None]
+        template = next((tpl_of[x] for x in rids if x in tpl_of), None)
+        path = r["path"]
+        if path and not os.path.isfile(path):
+            arch = os.path.join(archive_folder(ws), os.path.basename(path))
+            path = arch if os.path.isfile(arch) else None
+        if not template or not os.path.isfile(template) or not path:
+            continue
+        left = untested_parts(template, path)
+        if not left:
+            continue
+        msg = ("Test Run All Parts did not run on: " + ", ".join(left) + " — the model was saved without them; "
+               "run it in GRAFIS, then save")
+        moved = []
+        for j in ws.db.q("SELECT id, outputs FROM cutting_jobs WHERE sha256=?", (r["sha256"],)):
+            for f in json.loads(j["outputs"] or "[]"):
+                if f and os.path.isfile(f):
+                    d = os.path.join(os.path.dirname(f), "NOT TEST-RUN")
+                    try:
+                        os.makedirs(d, exist_ok=True)
+                        shutil.move(f, os.path.join(d, os.path.basename(f)))
+                        moved.append(os.path.join(d, os.path.basename(f)))
+                    except OSError:
+                        pass
+        with ws.db.tx() as c:
+            c.execute("UPDATE grafis_results SET status='needs_review', handed_over=0, issues=? WHERE id=?",
+                      (json.dumps(json.loads(r["issues"] or "[]") + [["blocking", msg]], ensure_ascii=False), r["id"]))
+            c.execute("UPDATE cutting_jobs SET status='failed', info=json_set(info, '$.message', ?) WHERE sha256=?",
+                      (msg, r["sha256"]))
+            for x in rids:
+                c.execute("UPDATE revisions SET status='ready' WHERE id=? AND status IN ('sent_to_nesting', "
+                          "'completed', 'approved')", (x,))
+            ws.db.audit(c, ws.actor, "grafis.untested_held", "file", os.path.basename(r["path"] or ""),
+                        {"parts": left, "cutting_files_moved": moved})
+        errors_folder.report(ws, os.path.splitext(os.path.basename(r["path"] or "model"))[0], [msg], "CAD")
+        move_failed(ws, rids, [msg], "CAD")
+        held += [ln.get("line_number") for ln in lines if ln.get("line_number")]
+    return held

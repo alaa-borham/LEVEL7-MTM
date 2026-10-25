@@ -48,6 +48,8 @@ def settings(ws) -> dict:
             # GRAFIS keeps scratch files of every model it opened: after so many models it is closed and the next
             # model starts a new GRAFIS (owner: "lm4modl_z: Zu viele Scratch-Files!" after a few hundred)
             "restart_every": int(ws.db.get_setting("robot.restart_every", 20) or 0),
+            # GRAFIS answers for so many seconds in a row before Test Run (a model still loading ignores it)
+            "settle": int(ws.db.get_setting("robot.settle_s", 5) or 0),
             # GRAFIS - Memory Status ("nur noch 12 MB freier Speicher für die Auslagerungsdatei"): below this much
             # free memory (RAM + paging file) or free disk the robot starts GRAFIS anew, and waits while still short
             "min_memory_mb": float(ws.db.get_setting("robot.min_memory_mb", 1024) or 0),
@@ -826,6 +828,23 @@ def move_in_cad(ws, lines: list[str], how: str) -> list[str]:
     return q
 
 
+def _template_of(ws, path: str) -> str | None:
+    for r in ws.db.q("SELECT info FROM grafis_orders WHERE path=? ORDER BY id DESC LIMIT 1", (path,)):
+        try:
+            t = json.loads(r["info"] or "{}").get("template")
+        except (TypeError, ValueError):
+            t = None
+        return t if t and os.path.isfile(t) else None
+    return None
+
+
+def _untested(template: str | None, path: str) -> list[str]:
+    if not template:
+        return []
+    from .mdl_intake import untested_parts
+    return untested_parts(template, path)
+
+
 def pending(ws, first: bool = False) -> list[dict]:
     """Order models written by this program and still not saved by GRAFIS (and not tried by the robot), in the
     owner's order of the CAD queue (then the oldest first); ``first``: only the next one (the robot needs no more)."""
@@ -964,32 +983,53 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
         if behind:
             drv.send_back(main, prev)                 # the owner keeps working in front
         sleep(2)
-        _step("Test Run All Parts")
-        how = [_act(drv, st, main, "test_run", job["path"], True)]
-        sleep(st["run_wait"])
-        t0 = clock()
-        while clock() - t0 < st["run_timeout"]:
-            if drv.responsive(main):
-                break
+        # owner: "the orders were not test-run on all parts" — GRAFIS still loading the model ignored the
+        # command: wait until it has answered for a few seconds in a row
+        _step("waiting for GRAFIS to finish loading the model")
+        t0, calm = clock(), 0
+        while clock() - t0 < st["open_timeout"] and calm < st["settle"]:
+            calm = calm + 1 if drv.responsive(main) else 0
             _answer_dialogs(drv, st, notes)
             sleep(1)
-        else:
-            raise RobotError(f"GRAFIS not responding {st['run_timeout']:g} s after Test Run All Parts — "
-                             f"{_seen(drv, btn)}" + (f" — robot: {'; '.join(notes)}" if notes else ""))
-        _answer_dialogs(drv, st, notes)               # a box after the test run blocks the save
-        if behind:
-            drv.send_back(main, prev)
-        _step("saving")
-        how.append(_act(drv, st, main, "save", job["path"], True))
-        t0 = clock()
-        while clock() - t0 < st["save_timeout"]:
-            if _saved(job["path"], job["sha256"], sleep):
-                break
-            _answer_dialogs(drv, st, notes)
-            sleep(1)
-        else:
+        template = _template_of(ws, job["path"])
+        how: list = []
+
+        def run_and_save(old_sha):
+            _step("Test Run All Parts")
+            how.append(_act(drv, st, main, "test_run", job["path"], True))
+            sleep(st["run_wait"])
+            t1 = clock()
+            while clock() - t1 < st["run_timeout"]:
+                if drv.responsive(main):
+                    break
+                _answer_dialogs(drv, st, notes)
+                sleep(1)
+            else:
+                raise RobotError(f"GRAFIS not responding {st['run_timeout']:g} s after Test Run All Parts — "
+                                 f"{_seen(drv, btn)}" + (f" — robot: {'; '.join(notes)}" if notes else ""))
+            _answer_dialogs(drv, st, notes)           # a box after the test run blocks the save
+            if behind:
+                drv.send_back(main, prev)
+            _step("saving")
+            how.append(_act(drv, st, main, "save", job["path"], True))
+            t1 = clock()
+            while clock() - t1 < st["save_timeout"]:
+                if _saved(job["path"], old_sha, sleep):
+                    return
+                _answer_dialogs(drv, st, notes)
+                sleep(1)
             raise RobotError(f"GRAFIS did not save {stem} within {st['save_timeout']:g} s — {_seen(drv, btn)}"
                              + (f" — robot: {'; '.join(notes)}" if notes else ""))
+
+        run_and_save(job["sha256"])
+        left = _untested(template, job["path"])
+        if left:                                      # some parts not run: once more, then it is CAD's error
+            notes.append(f"Test Run All Parts did not reach {len(left)} parts — run again")
+            run_and_save(file_sha(job["path"]))
+            left = _untested(template, job["path"])
+            if left:
+                raise RobotError("Test Run All Parts did not run on: " + ", ".join(left) + " — the model was "
+                                 "saved without them; run it in GRAFIS, then save")
         try:
             how.append(_act(drv, st, main, "close", job["path"], False))
         except RobotError:
