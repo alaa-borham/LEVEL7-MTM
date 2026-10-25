@@ -206,3 +206,19 @@ def test_xml_folders_chosen_in_the_settings_come_first(ws, tmp_path):
     assert xml_dirs(str(erp), ws) == (str(tmp_path / "OK"), str(tmp_path / "BAD"))
     assert deleted_dir(str(erp), ws) == str(tmp_path / "GONE")
     assert sorted(p.name for p in erp.iterdir()) == []                   # nothing guessed inside
+
+
+def test_a_renamed_folder_does_not_read_its_files_again(ws, tmp_path):
+    """Owner renamed process → XML-process: the same files, only their place follows — never read again; a file
+    moved back from error is read again."""
+    from level7mtm.services.done_folder import moved_from_error
+    root = tmp_path / "ERP XML"
+    for n in ("XML-process", "XML-error", "XML-done"):
+        (root / n).mkdir(parents=True)
+    ws.db.set_setting("watch.folder", str(root / "XML-process"))
+    new = str(root / "XML-process" / "a.xml")
+    assert not moved_from_error(ws, str(root / "process" / "a.xml"), new)          # old folder gone: renamed
+    assert moved_from_error(ws, str(root / "XML-error" / "a.xml"), new)             # back from error
+    assert moved_from_error(ws, str(root / "XML-done" / "a.xml"), new)
+    (tmp_path / "Other").mkdir()
+    assert not moved_from_error(ws, str(tmp_path / "Other" / "a.xml"), new)         # another read folder

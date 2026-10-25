@@ -251,3 +251,21 @@ def where_is_xml(ws, rid: int) -> tuple[str | None, str]:
     said = f"{last['action']} {last['at']}" if last else ""
     return None, f"{name} is not at {path or '—'} any more (moved or deleted outside the program)" + \
         (f" — last: {said}" if said else "")
+
+
+def moved_from_error(ws, old: str, new: str) -> bool:
+    """The owner moved this XML back into the folder read from (from error, done or deleted) — read again. Its
+    folder renamed (process → XML-process) or moved between read folders is the same file: only its place
+    follows (owner: the files were read again after the folder was renamed)."""
+    if not old or _same(os.path.dirname(old), os.path.dirname(new)):
+        return False
+    old_dir = os.path.dirname(old)
+    if not os.path.isdir(old_dir):
+        return False                                    # its folder is gone (renamed): the same file
+    erp = ws.db.get_setting("watch.folder") or ""
+    if not erp or not os.path.isdir(erp):
+        return False
+    done, err = xml_dirs(erp, ws)
+    return any(_same(old_dir, d) for d in (err, done, deleted_dir(erp, ws))) or \
+        os.path.basename(old_dir).lower() in ("er", "error", "done", "deleted") or \
+        os.path.basename(old_dir).lower().endswith(("-error", "-done", "-deleted", "_error", "_done", "_deleted"))

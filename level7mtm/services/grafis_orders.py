@@ -484,6 +484,11 @@ def _moved_back(ws, path: str):
     if not f or not f["source_path"] or os.path.normcase(os.path.dirname(os.path.abspath(f["source_path"]))) == \
             os.path.normcase(os.path.dirname(os.path.abspath(path))):
         return None                                      # not moved: the same file read again where it was
+    from .done_folder import moved_from_error
+    if not moved_from_error(ws, f["source_path"], path):  # its folder renamed: the same file, only its place
+        with ws.db.tx() as c:
+            c.execute("UPDATE import_files SET source_path=? WHERE id=?", (path, f["id"]))
+        return None
     rids = [r["id"] for r in ws.db.q("SELECT id FROM revisions WHERE import_file=? AND status NOT IN "
                                      "('superseded','cancelled','completed') ORDER BY id", (f["id"],))]
     if not rids:

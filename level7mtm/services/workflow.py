@@ -307,7 +307,11 @@ class Workspace:
         f = self.db.one("SELECT id, status, source_path FROM import_files WHERE sha256=?", (sha,))
         if f and f["source_path"] and os.path.normcase(os.path.dirname(os.path.abspath(f["source_path"]))) != \
                 os.path.normcase(os.path.dirname(os.path.abspath(path))):
-            return False                               # moved back by the owner (e.g. from error): read again
+            from .done_folder import moved_from_error
+            if moved_from_error(self, f["source_path"], path):
+                return False                           # moved back by the owner (from error): read again
+            with self.db.tx() as c:                    # its folder renamed: the same file, only its place
+                c.execute("UPDATE import_files SET source_path=? WHERE id=?", (path, f["id"]))
         return bool(f) and f["status"] == "imported" and not self._all_removed(f["id"])
 
     def _all_removed(self, fid: int) -> bool:
