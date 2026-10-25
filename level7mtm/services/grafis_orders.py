@@ -48,6 +48,47 @@ def archive_folder(ws) -> str:
         os.path.join(ws.folder, "grafis", "archive")
 
 
+def done_mdl_folder(ws) -> str:
+    """MDL-done (owner): where a model goes once it passed CAD, the nesting and its cutting files — chosen in the
+    settings, else MDL-done next to the GRAFIS input folder (beside MDL-ERR and MDL-ARCHIVE)."""
+    chosen = ws.db.get_setting("grafis.mdl_done")
+    if chosen:
+        return chosen
+    inp = ws.db.get_setting("grafis.input")
+    return os.path.join(os.path.dirname(inp.rstrip("/\\")), "MDL-done") if inp else \
+        os.path.join(ws.folder, "grafis", "MDL-done")
+
+
+def to_done(ws, path: str) -> str | None:
+    """The model that passed everything out of the MDL folder into MDL-done; the program follows it there (its
+    marker, Nest again). Not while CAD has it open; None when it could not be moved (tried again next time)."""
+    import shutil
+    from .grafis_robot import current_model
+    cur = current_model()
+    if not path or not os.path.isfile(path) or (cur and os.path.normcase(os.path.abspath(cur)) ==
+                                                os.path.normcase(os.path.abspath(path))):
+        return None
+    d = done_mdl_folder(ws)
+    if os.path.normcase(os.path.abspath(os.path.dirname(path))) == os.path.normcase(os.path.abspath(d)):
+        return path                                    # there already
+    try:
+        os.makedirs(d, exist_ok=True)
+        target = os.path.join(d, os.path.basename(path))
+        if os.path.exists(target):
+            os.remove(target)
+        shutil.move(path, target)
+    except OSError:
+        return None
+    with ws.db.tx() as c:
+        c.execute("UPDATE grafis_orders SET path=? WHERE path=?", (target, path))
+        c.execute("UPDATE grafis_results SET path=? WHERE path=?", (target, path))
+        c.execute("UPDATE grafis_results SET nesting_path=? WHERE nesting_path=?", (target, path))
+        c.execute("UPDATE robot_jobs SET path=? WHERE path=?", (target, path))
+        c.execute("UPDATE cutting_jobs SET scb_path=? WHERE scb_path=?", (target, path))
+        ws.db.audit(c, ws.actor, "grafis.mdl_done", "file", os.path.basename(path), {"to": target})
+    return target
+
+
 def archive_mdl(ws, path: str) -> str | None:
     """Copy the order model into the archive folder (the newer copy replaces the older: as written, then as
     GRAFIS saved it). Returns the copy, None when it could not be made (never stops the chain)."""

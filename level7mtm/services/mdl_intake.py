@@ -260,6 +260,11 @@ def _register_mdl(ws, path: str, cut: bool | None = None) -> dict:
         out["cutting"] = auto_cut(ws, chk, path)
         out["status"] = "cutting_done" if out["cutting"]["status"] in ("done", "duplicate") else \
             "cutting_" + out["cutting"]["status"]
+    if out["status"] == "cutting_done":                 # owner: passed CAD, the nesting and the cutting files:
+        from .grafis_orders import to_done             # the model into MDL-done
+        moved_to = to_done(ws, path)
+        if moved_to:
+            out["done_path"] = moved_to
     if out["status"] not in ("handed_over", "cutting_done"):
         problems = [m for s, m in chk.issues if s != "info"] + \
             ([out["cutting"].get("message", "")] if out.get("cutting") else [])

@@ -450,3 +450,28 @@ def test_orders_that_need_attention_stay_there_after_a_parts_change(ws, tmp_path
     body["version"] = body.get("version", "1.0.0") + ".2"
     ws.set_active("catalog", ws.save_document("catalog", body, "parts changed"))
     assert outdated(ws) == []                                                # both wait for the owner
+
+
+def test_a_model_that_passed_everything_goes_to_mdl_done(ws, tmp_path):
+    """Owner: once the model passed CAD, the nesting and its cutting files it goes to MDL-done (beside MDL-ERR);
+    the program follows it there."""
+    import json
+
+    from level7mtm.services.grafis_orders import done_mdl_folder, to_done
+    ws.db.set_setting("grafis.input", str(tmp_path / "LEVEL7GRAFIS-IN" / "MDL"))
+    assert done_mdl_folder(ws) == str(tmp_path / "LEVEL7GRAFIS-IN" / "MDL-done")
+    m = tmp_path / "LEVEL7GRAFIS-IN" / "MDL" / "Order-1.mdl"
+    m.parent.mkdir(parents=True)
+    m.write_bytes(b"model")
+    rid = ws.import_file(XML_53).lines[0]["revision_id"]
+    with ws.db.tx() as c:
+        c.execute("INSERT INTO grafis_orders(revision_id, created_at, status, path, template_sha256, info) VALUES "
+                  "(?, '2026-10-25', 'written', ?, 't', '{}')", (rid, str(m)))
+        c.execute("INSERT INTO grafis_results(checked_at, info, pieces, lines, issues, status, handed_over, "
+                  "nesting_path, sha256, path) VALUES ('2026-10-25', '{}', '[]', ?, '[]', 'handed_over', 1, ?, 's', ?)",
+                  (json.dumps([{"revision_id": rid}]), str(m), str(m)))
+    got = to_done(ws, str(m))
+    assert got == str(tmp_path / "LEVEL7GRAFIS-IN" / "MDL-done" / "Order-1.mdl") and not m.exists()
+    assert ws.db.one("SELECT path FROM grafis_orders WHERE revision_id=?", (rid,))["path"] == got
+    assert ws.db.one("SELECT path FROM grafis_results")["path"] == got
+    assert to_done(ws, got) == got                                       # there already
