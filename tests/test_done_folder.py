@@ -153,3 +153,27 @@ def test_needs_review_goes_to_error_and_back_in_process_is_done_again(ws, tmp_pa
     other.write_bytes(open(XML_53, "rb").read().replace(b"9-53-", b"9-77-").replace(b"Collar Square", b"Collar X"))
     ws.import_file(str(other))
     assert sweep_held(ws) == [str(main / "error" / "Order-x.xml")] and not other.exists()
+
+
+def test_where_is_the_xml_of_an_order(ws, tmp_path):
+    import os
+    """Owner: "I do not see the XML files, I do not know where they went" — the file of an order is found where it is
+    now (moved by the program: its place is kept), else it is said it is gone."""
+    import shutil
+
+    from conftest import XML_53
+
+    from level7mtm.services.done_folder import where_is_xml
+    erp = tmp_path / "ERP XML" / "process"
+    erp.mkdir(parents=True)
+    src = erp / "Order-53.xml"
+    shutil.copy(XML_53, src)
+    ws.db.set_setting("watch.folder", str(erp))
+    rid = ws.import_file(str(src)).lines[0]["revision_id"]
+    assert where_is_xml(ws, rid) == (str(src), "")
+    dl = tmp_path / "ERP XML" / "deleted"
+    dl.mkdir()
+    shutil.move(str(src), str(dl / "Order-53.xml"))                       # gone to deleted: found there
+    os.remove(dl / "Order-53.xml")
+    path, why = where_is_xml(ws, rid)
+    assert path is None and "Order-53.xml" in why

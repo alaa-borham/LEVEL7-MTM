@@ -187,3 +187,26 @@ def move_finished(ws, revision_ids) -> list[str]:
                     pass
             moved.append(target)
     return moved
+
+
+def where_is_xml(ws, rid: int) -> tuple[str | None, str]:
+    """Where the XML of an order line is now (owner: "I do not see the XML files, I do not know where they went"):
+    (path or None, what happened to it last, from the log)."""
+    r = ws.db.one("SELECT import_file FROM revisions WHERE id=?", (rid,))
+    f = ws.db.one("SELECT source_path, file_name FROM import_files WHERE id=?", (r["import_file"],)) if r else None
+    if not f:
+        return None, "no XML file recorded for this order"
+    path = f["source_path"] or ""
+    if path and os.path.isfile(path):
+        return path, ""
+    name = os.path.basename(path) or f["file_name"]
+    last = ws.db.one("SELECT at, action, details FROM audit WHERE entity_id=? AND action IN ('xml.done', 'xml.error', "
+                     "'orders.removed') ORDER BY id DESC LIMIT 1", (name,)) if name else None
+    erp = ws.db.get_setting("watch.folder") or ""
+    for d in [erp] + (list(xml_dirs(erp)) if erp and os.path.isdir(erp) else []):
+        for cand in (os.path.join(d, name), os.path.join(d, "deleted", name)):
+            if d and os.path.isfile(cand):
+                return cand, ""
+    said = f"{last['action']} {last['at']}" if last else ""
+    return None, f"{name} is not at {path or '—'} any more (moved or deleted outside the program)" + \
+        (f" — last: {said}" if said else "")

@@ -4225,6 +4225,7 @@ class MainWindow(QMainWindow):
         self.browser.remove.connect(self.remove_orders)
         self.browser.reread.connect(self.reread_orders)
         self.browser.details.connect(self.open_details_of)
+        self.browser.show_xml.connect(self.show_xml_of)
         self.browser.nesting_toggle.connect(self.toggle_nesting)
         self.browser.queue_move.connect(self.move_in_queue)
         self.browser.cad_move.connect(self.move_in_cad)
@@ -5069,6 +5070,21 @@ class MainWindow(QMainWindow):
         if self.sel_row is not None:
             self.current_rid = self.sel_row["rid"]
         self.goto("Order details")
+
+    def show_xml_of(self, rid: int):
+        """Right click → Where is its XML file: the folder opens with the file chosen (else why it is not found)."""
+        from ..services.done_folder import where_is_xml
+        path, why = where_is_xml(self.ws, rid)
+        if not path:
+            QMessageBox.information(self, "XML", tr_msg(why) + "\n\n" + tr("Watched ERP folder") + ": " +
+                                    (self.ws.db.get_setting("watch.folder") or "—"))
+            return
+        if sys.platform == "win32":
+            import subprocess
+            subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+        else:
+            QMessageBox.information(self, "XML", path)
+        self.status(path)
 
     def open_details_of(self, rid: int):
         """Right click on an order → Order info: its details page."""

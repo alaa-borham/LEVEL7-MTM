@@ -684,6 +684,8 @@ AR = {
     "Orders saved by CAD without Test Run All Parts on every part": "طلبات حفظها CAD بدون تنفيذ Test Run All Parts على كل القطع",
     "They are back under Needs attention; their cutting files were moved into the folder NOT TEST-RUN (not deleted). Nest them again: the model is written again from the base pattern and CAD runs it anew.":
         "أُعيدت إلى «يحتاج تدخل»، ونُقلت ملفات قصها إلى مجلد NOT TEST-RUN (لم تُحذف). أعد تعشيقها: يُكتب الموديل من جديد من البترون الأساسي ويُنفّذه CAD من جديد.",
+    "Where is its XML file": "أين ملف XML",
+    "Watched ERP folder": "مجلد ERP المراقَب",
     "Nestings at once": "عدد التعشيقات في وقت واحد",
     "How many models LEVEL7 Nesting nests at the same time (each uses one processor core and its own memory)":
         "كم موديلاً يعشّق LEVEL7 Nesting في نفس الوقت (كل تعشيق يستخدم نواة معالج وذاكرة خاصة به)",
@@ -807,6 +809,9 @@ MSG_AR = [
     (r"GRAFIS short of memory \(answered OK, GRAFIS starts anew after this model\)",
      "ذاكرة GRAFIS ممتلئة (ضُغط موافق، ويُعاد تشغيل GRAFIS بعد هذا الموديل)"),
     (r"GRAFIS was not open", "لم يكن GRAFIS مفتوحاً"),
+    (r"(.+) is not at (.+) any more \(moved or deleted outside the program\)",
+     "{0} لم يعد في {1} (نُقل أو حُذف من خارج البرنامج)"),
+    (r"no XML file recorded for this order", "لا يوجد ملف XML مسجل لهذا الطلب"),
     (r"the robot is on (\S+): (.+) for (\d+) s", "AI TOOL يعمل على {0}: {1} منذ {2} ث"),
     (r"starting", "يبدأ"),
     (r"waiting for GRAFIS to finish loading the model", "ينتظر حتى ينتهي GRAFIS من تحميل الموديل"),
