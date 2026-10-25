@@ -15,11 +15,11 @@ def test_broken_xml_and_unconfigured_model_go_to_er(ws, tmp_path):
     bad.write_bytes(b"<OrderMaster><Orders><Order")
     out = import_and_prepare(ws, str(bad))
     assert out.status == "failed"
-    assert (er / "Order-broken.xml").exists() and bad.exists()            # copied, the ERP original stays
+    assert not (er / "Order-broken.xml").exists() and bad.exists()        # owner: no copy — the reason only
     assert "السبب" in (er / "Order-broken.txt").read_text(encoding="utf-8-sig")
     out = import_and_prepare(ws, XML_53)                                   # no GRAFIS model chosen yet
     assert {g["status"] for g in out.grafis} == {"not_configured"}
-    assert (er / "Order-9-53-1_2.xml").exists()
+    assert not (er / "Order-9-53-1_2.xml").exists()                       # (no copy of the XML)
     assert (er / "Order-9-53-1_2__9-53-1_2.txt").exists() and (er / "Order-9-53-1_2__9-53-2_2.txt").exists()
 
 

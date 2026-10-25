@@ -14,6 +14,7 @@ other.
 from __future__ import annotations
 
 import copy
+import os
 import re
 import threading
 
@@ -598,11 +599,45 @@ def _reread(ws, fid: int, rids: list[int] | None = None):
         return _reread_locked(ws, fid, rids)
 
 
+def xml_bytes(ws, fid: int) -> tuple[bytes | None, str]:
+    """The XML of an import read from its file where it is now — process, error or done (owner: "read from the
+    folders set, keep no copies"); the copy kept in the database only when there is one (older imports, or the
+    setting import.keep_xml). (None, why) when the file is not found."""
+    from .done_folder import xml_dirs
+    f = ws.db.one("SELECT file_name, source_path, raw FROM import_files WHERE id=?", (fid,))
+    if not f:
+        return None, "import not found"
+    erp = ws.db.get_setting("watch.folder") or ""
+    name = os.path.basename(f["source_path"] or "") or f["file_name"]
+    places = [f["source_path"] or ""]
+    if erp and os.path.isdir(erp):
+        places += [os.path.join(d, name) for d in [erp, *xml_dirs(erp)]]
+    for p in places:
+        if p and os.path.isfile(p):
+            try:
+                with open(p, "rb") as fh:
+                    data = fh.read()
+            except OSError:
+                continue
+            if p != f["source_path"]:
+                with ws.db.tx() as c:
+                    c.execute("UPDATE import_files SET source_path=? WHERE id=?", (p, fid))
+            return data, p
+    if f["raw"]:
+        return bytes(f["raw"]), f["source_path"] or ""
+    return None, (f"{name}: the XML file is not in process, error or done any more — put it back in process "
+                  f"to read it again")
+
+
 def _reread_locked(ws, fid: int, rids: list[int] | None = None):
     from .grafis_orders import order_mdl, settings
-    f = ws.db.one("SELECT file_name, source_path, raw FROM import_files WHERE id=?", (fid,))
+    from .workflow import FileOutcome
+    f = ws.db.one("SELECT file_name, source_path FROM import_files WHERE id=?", (fid,))
+    data, where = xml_bytes(ws, fid)
+    if data is None:                                  # never from an old copy: the file itself, or said why
+        return FileOutcome(f["file_name"], "failed", where)
     lines = _take_back(ws, fid, f["file_name"], rids)
-    out = ws.import_data(bytes(f["raw"]), f["file_name"], f["source_path"] or "", only_lines=lines)
+    out = ws.import_data(data, f["file_name"], where or f["source_path"] or "", only_lines=lines)
     if settings(ws)["enabled"] and out.status == "imported":
         for ln in out.lines:
             if ln["action"] in ("new", "new_revision"):

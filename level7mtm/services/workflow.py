@@ -220,8 +220,8 @@ class Workspace:
                     fid = c.execute("INSERT INTO import_files(sha256, file_name, source_path, received_at, size, "
                                     "encoding, mapping_doc, status, message, raw, structure) "
                                     "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                                    (sha, name, source_path, now(), len(data), "", None, status, msg, data,
-                                     "{}")).lastrowid
+                                    (sha, name, source_path, now(), len(data), "", None, status, msg,
+                                     self._kept(data), "{}")).lastrowid
                 self.db.audit(c, self.actor, "import.failed", "import_file", fid, {"file": name, "message": msg})
             return FileOutcome(name, status, msg)
         if isinstance(cid, dict):          # lines of several products: each read with its own product's settings
@@ -282,14 +282,19 @@ class Workspace:
             else:
                 fid = c.execute("INSERT INTO import_files(sha256, file_name, source_path, received_at, size, encoding, "
                                 "mapping_doc, status, message, raw, structure) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                                (sha, name, source_path, now(), len(data), res.encoding, map_pk, status, msg, data,
-                                 json.dumps(res.structure, ensure_ascii=False))).lastrowid
+                                (sha, name, source_path, now(), len(data), res.encoding, map_pk, status, msg,
+                                 self._kept(data), json.dumps(res.structure, ensure_ascii=False))).lastrowid
             self.db.audit(c, self.actor, f"import.{status}", "import_file", fid, {"file": name, "message": msg})
             if not res.ok:
                 return out
             for ln in res.lines:
                 out.lines.append(self._store_line(c, fid, map_pk, res, ln))
         return out
+
+    def _kept(self, data: bytes) -> bytes:
+        """Owner: "better the program keeps no files — it reads from the folders set and writes to them": the XML is
+        not kept in the database (read again from its file); only with the setting import.keep_xml on."""
+        return data if self.db.get_setting("import.keep_xml", False) else b""
 
     def already_read(self, path: str) -> bool:
         """This XML was imported before and its orders are still on the list (reading it again would only say

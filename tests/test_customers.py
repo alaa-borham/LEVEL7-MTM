@@ -451,8 +451,13 @@ def test_every_order_model_is_kept_in_the_archive(ws, tmp_path):
     from level7mtm.services.grafis_orders import archive_folder, archive_mdl
     ws.db.set_setting("grafis.input", str(tmp_path / "A" / "MDL"))
     assert archive_folder(ws) == str(tmp_path / "A" / "MDL-ARCHIVE")      # next to the GRAFIS input folder
+    p0 = tmp_path / "A" / "MDL" / "X.mdl"
+    p0.parent.mkdir(parents=True, exist_ok=True)
+    p0.write_bytes(b"m")
+    assert archive_mdl(ws, str(p0)) is None                             # owner: no copies unless asked
+    ws.db.set_setting("grafis.keep_archive", True)
+    p0.unlink()
     m = tmp_path / "A" / "MDL" / "Order-1.mdl"
-    m.parent.mkdir(parents=True)
     m.write_bytes(b"written")
     assert archive_mdl(ws, str(m)) == str(tmp_path / "A" / "MDL-ARCHIVE" / "Order-1.mdl")
     m.write_bytes(b"saved by GRAFIS")
@@ -792,3 +797,32 @@ def test_nesting_gaps_per_customer(ws, monkeypatch):
     monkeypatch.setattr(auto_cut, "_nest_flags", lambda cmd, env: "--spacing")
     log = []
     assert auto_cut.gap_args(ws, a, ["cli"], {}, log) == ["--spacing", "3"] and "--margin" in log[0]
+
+
+def test_orders_read_again_from_their_xml_file_not_a_copy(ws, tmp_path, xml53):
+    """Owner: "better the program keeps no files — it reads from the folders set and writes to them": the XML is not
+    kept in the database; read again from its file wherever it is now (process / error / done) — an edited file is
+    read as it is; a file gone is said, never read from an old copy."""
+    from level7mtm.services.customers import reread_lines, xml_bytes
+    ws.db.set_setting("import.keep_xml", False)
+    customers.add_customer(ws, "Richy", "From Richy")
+    erp = tmp_path / "ERP XML" / "process"
+    erp.mkdir(parents=True)
+    ws.db.set_setting("watch.folder", str(erp))
+    src = erp / "Order-1.xml"
+    src.write_bytes(_xml(xml53, "From Richy"))
+    out = ws.import_file(str(src))
+    rid = out.lines[0]["revision_id"]
+    fid = ws.db.one("SELECT import_file FROM revisions WHERE id=?", (rid,))["import_file"]
+    assert bytes(ws.db.one("SELECT raw FROM import_files WHERE id=?", (fid,))["raw"]) == b""   # no copy kept
+    err = tmp_path / "ERP XML" / "error"
+    err.mkdir()
+    os.replace(src, err / "Order-1.xml")                                   # the owner moved it to error
+    data, where = xml_bytes(ws, fid)
+    assert data and where == str(err / "Order-1.xml")
+    outs, _ = reread_lines(ws, [rid])
+    assert outs[0].status == "imported"
+    os.remove(err / "Order-1.xml")                                       # gone: said, not read from a copy
+    rid2 = outs[0].lines[0]["revision_id"]
+    outs, _ = reread_lines(ws, [rid2])
+    assert outs[0].status == "failed" and "not in process, error or done" in outs[0].message

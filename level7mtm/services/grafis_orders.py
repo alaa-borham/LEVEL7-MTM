@@ -52,8 +52,8 @@ def archive_mdl(ws, path: str) -> str | None:
     """Copy the order model into the archive folder (the newer copy replaces the older: as written, then as
     GRAFIS saved it). Returns the copy, None when it could not be made (never stops the chain)."""
     import shutil
-    if not path or not os.path.isfile(path):
-        return None
+    if not path or not os.path.isfile(path) or not ws.db.get_setting("grafis.keep_archive", False):
+        return None                                    # owner: no copies kept unless asked (setting)
     dest_dir = archive_folder(ws)
     try:
         os.makedirs(dest_dir, exist_ok=True)
@@ -85,10 +85,13 @@ def _in_xml(ws, rev, code: str) -> str:
     """Why a measurement is not in the order: the line's XML read again with today's settings of its customer."""
     from ..erp.importer import import_bytes
     try:
-        f = ws.db.one("SELECT raw FROM import_files WHERE id=?", (rev["import_file"],))
+        from .customers import xml_bytes
+        data, _ = xml_bytes(ws, rev["import_file"])
+        if data is None:
+            return ""
         with ws.for_customer(rev["normalized"].get("customer")):
             _, prof = ws.active("mapping")
-        ln = next((x for x in import_bytes(bytes(f["raw"]), prof).lines if x.number == rev["line_number"]), None)
+        ln = next((x for x in import_bytes(data, prof).lines if x.number == rev["line_number"]), None)
     except Exception:  # noqa: BLE001 - only a hint
         return ""
     if ln is None:
@@ -361,9 +364,15 @@ def _retire(ws, path: str) -> None:
     cur = current_model()
     if cur and os.path.normcase(os.path.abspath(cur)) == os.path.normcase(os.path.abspath(path)):
         return
-    try:
-        archive_mdl(ws, path)
-        os.remove(path)
+    try:                                           # moved (not copied) into the archive: one file, never lost
+        import shutil
+        if os.path.isfile(path):
+            dest_dir = archive_folder(ws)
+            os.makedirs(dest_dir, exist_ok=True)
+            dest = os.path.join(dest_dir, os.path.basename(path))
+            if os.path.exists(dest):
+                os.remove(dest)
+            shutil.move(path, dest)
     except OSError:
         pass
     with ws.db.tx() as c:                          # its older writings are over (the robot leaves them)
@@ -388,7 +397,8 @@ def import_and_prepare(ws, path: str):
     out = ws.import_file(path)
     stem = os.path.splitext(os.path.basename(path))[0]
     if out.status == "failed":
-        errors_folder.report(ws, stem, [out.message], "XML import failed", copy_file=path)
+        errors_folder.report(ws, stem, [out.message], "XML import failed")   # the reason only: the file itself
+        #                                                                         goes to error (no copy)
         from .done_folder import move_xml_to_er
         move_xml_to_er(ws, path, [out.message], "XML import failed")
     if settings(ws)["enabled"] and out.status == "imported":
@@ -411,10 +421,9 @@ def import_and_prepare(ws, path: str):
                for p in ws.revision(r)["normalized"].get("problems", []) if p.get("severity") in ("review", "error")]
     if settings(ws)["enabled"]:
         bad = [g for g in out.grafis if g["status"] in ("blocked", "not_configured")]
-        for k, g in enumerate(bad):
+        for g in bad:
             errors_folder.report(ws, f"{stem}__{g['line_number']}", g["problems"],
-                                 f"order line {g['line_number']}: no GRAFIS model written",
-                                 copy_file=path if k == 0 else None)
+                                 f"order line {g['line_number']}: no GRAFIS model written")   # no copy
         held += [g["revision_id"] for g in bad]
         why += [f"{g['line_number']}: {p}" for g in bad for p in g["problems"]]
     if held:                                             # one move, every reason in its .txt
