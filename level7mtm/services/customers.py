@@ -600,33 +600,37 @@ def _reread(ws, fid: int, rids: list[int] | None = None):
 
 
 def xml_bytes(ws, fid: int) -> tuple[bytes | None, str]:
-    """The XML of an import read from its file where it is now — process, error or done (owner: "read from the
-    folders set, keep no copies"); the copy kept in the database only when there is one (older imports, or the
-    setting import.keep_xml). (None, why) when the file is not found."""
+    """The XML of an import read from its file in the ERP process folder — and only there (owner: "no file is read
+    except from process; done is for the files that passed CAD, the nesting and the cutting; error is for an XML
+    with data missing"). (None, why) when it is not in process — where it is now, so the owner can move it back."""
     from .done_folder import xml_dirs
     f = ws.db.one("SELECT file_name, source_path, raw FROM import_files WHERE id=?", (fid,))
     if not f:
         return None, "import not found"
     erp = ws.db.get_setting("watch.folder") or ""
     name = os.path.basename(f["source_path"] or "") or f["file_name"]
-    places = [f["source_path"] or ""]
-    if erp and os.path.isdir(erp):
-        places += [os.path.join(d, name) for d in [erp, *xml_dirs(erp)]]
-    for p in places:
-        if p and os.path.isfile(p):
-            try:
-                with open(p, "rb") as fh:
-                    data = fh.read()
-            except OSError:
-                continue
-            if p != f["source_path"]:
-                with ws.db.tx() as c:
-                    c.execute("UPDATE import_files SET source_path=? WHERE id=?", (p, fid))
-            return data, p
-    if f["raw"]:
-        return bytes(f["raw"]), f["source_path"] or ""
-    return None, (f"{name}: the XML file is not in process, error or done any more — put it back in process "
-                  f"to read it again")
+    kept = bytes(f["raw"]) if ws.db.get_setting("import.keep_xml", False) and f["raw"] else None
+    if not erp or not os.path.isdir(erp):              # (a copy only when the owner keeps copies: setting)
+        return (kept, f["source_path"] or "") if kept else \
+            (None, f"{name}: the ERP process folder is not set or not reachable")
+    p = os.path.join(erp, name)
+    if os.path.isfile(p):
+        try:
+            with open(p, "rb") as fh:
+                data = fh.read()
+        except OSError as e:
+            return None, f"{name}: {e}"
+        if p != f["source_path"]:
+            with ws.db.tx() as c:
+                c.execute("UPDATE import_files SET source_path=? WHERE id=?", (p, fid))
+        return data, p
+    if kept:
+        return kept, f["source_path"] or ""
+    done, err = xml_dirs(erp)
+    for label, d in (("error", err), ("done", done), ("deleted", os.path.join(os.path.dirname(err), "deleted"))):
+        if os.path.isfile(os.path.join(d, name)):
+            return None, f"{name} is in {label} — move it to process to read it again"
+    return None, f"{name}: the XML file is not in process — put it in process to read it again"
 
 
 def _reread_locked(ws, fid: int, rids: list[int] | None = None):

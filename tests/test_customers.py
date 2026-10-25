@@ -800,9 +800,9 @@ def test_nesting_gaps_per_customer(ws, monkeypatch):
 
 
 def test_orders_read_again_from_their_xml_file_not_a_copy(ws, tmp_path, xml53):
-    """Owner: "better the program keeps no files — it reads from the folders set and writes to them": the XML is not
-    kept in the database; read again from its file wherever it is now (process / error / done) — an edited file is
-    read as it is; a file gone is said, never read from an old copy."""
+    """Owner: "no file is read except from process; done: passed CAD, nesting and cutting; error: an XML with data
+    missing" — an order is read again only from its XML in process (as it is now: an edited file as edited); in
+    error / done it is not read, and it is said where it is (move it to process); never from a copy."""
     from level7mtm.services.customers import reread_lines, xml_bytes
     ws.db.set_setting("import.keep_xml", False)
     customers.add_customer(ws, "Richy", "From Richy")
@@ -815,14 +815,16 @@ def test_orders_read_again_from_their_xml_file_not_a_copy(ws, tmp_path, xml53):
     rid = out.lines[0]["revision_id"]
     fid = ws.db.one("SELECT import_file FROM revisions WHERE id=?", (rid,))["import_file"]
     assert bytes(ws.db.one("SELECT raw FROM import_files WHERE id=?", (fid,))["raw"]) == b""   # no copy kept
-    err = tmp_path / "ERP XML" / "error"
-    err.mkdir()
-    os.replace(src, err / "Order-1.xml")                                   # the owner moved it to error
-    data, where = xml_bytes(ws, fid)
-    assert data and where == str(err / "Order-1.xml")
+    assert xml_bytes(ws, fid)[1] == str(src)
     outs, _ = reread_lines(ws, [rid])
     assert outs[0].status == "imported"
-    os.remove(err / "Order-1.xml")                                       # gone: said, not read from a copy
-    rid2 = outs[0].lines[0]["revision_id"]
-    outs, _ = reread_lines(ws, [rid2])
-    assert outs[0].status == "failed" and "not in process, error or done" in outs[0].message
+    rid = outs[0].lines[0]["revision_id"]
+    err = tmp_path / "ERP XML" / "error"
+    err.mkdir()
+    os.replace(src, err / "Order-1.xml")                                   # in error: not read from there
+    data, why = xml_bytes(ws, fid)
+    assert data is None and "is in error" in why
+    outs, _ = reread_lines(ws, [rid])
+    assert outs[0].status == "failed" and "move it to process" in outs[0].message
+    os.replace(err / "Order-1.xml", src)                                   # the owner moved it back: read
+    assert xml_bytes(ws, fid)[0]
