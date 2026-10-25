@@ -686,6 +686,10 @@ AR = {
         "أُعيدت إلى «يحتاج تدخل»، ونُقلت ملفات قصها إلى مجلد NOT TEST-RUN (لم تُحذف). أعد تعشيقها: يُكتب الموديل من جديد من البترون الأساسي ويُنفّذه CAD من جديد.",
     "Where is its XML file": "أين ملف XML",
     "Watched ERP folder": "مجلد ERP المراقَب",
+    "Done folder…": "مجلد done…",
+    "Error folder…": "مجلد error…",
+    "Deleted folder…": "مجلد deleted…",
+    "Choose another folder than the one the XML are read from": "اختر مجلداً غير المجلد الذي تُقرأ منه ملفات XML",
     "Nestings at once": "عدد التعشيقات في وقت واحد",
     "How many models LEVEL7 Nesting nests at the same time (each uses one processor core and its own memory)":
         "كم موديلاً يعشّق LEVEL7 Nesting في نفس الوقت (كل تعشيق يستخدم نواة معالج وذاكرة خاصة به)",

@@ -46,29 +46,45 @@ def _sibling(parent: str, names: list[str]) -> str:
     return d
 
 
-def xml_dirs(erp: str) -> tuple[str, str]:
+def _chosen(ws, key: str) -> str | None:
+    """A folder the owner chose in the settings (owner: "read from — and move to — the folders I set")."""
+    d = ws.db.get_setting(key) if ws is not None else None
+    if d:
+        os.makedirs(d, exist_ok=True)
+        return d
+    return None
+
+
+def xml_dirs(erp: str, ws=None) -> tuple[str, str]:
     """(done, error) folders of the ERP XML files. The owner's layout: process (read from) / done / error side by
     side, with the same prefix (XML-process / XML-done / XML-error); else (older layout) done and ER inside the
-    watched folder."""
+    watched folder. A folder chosen in the settings (watch.done / watch.error) always comes first."""
+    done, err = _chosen(ws, "watch.done"), _chosen(ws, "watch.error")
+    if done and err:
+        return done, err
     if _is_process(erp):
         parent, pre = os.path.dirname(os.path.normpath(erp)), _prefix(erp)
-        return _sibling(parent, [pre + "done"]), _sibling(parent, [pre + "error", pre + "ER"])
-    return _sub(erp, "done"), _sub(erp, "ER")
+        return done or _sibling(parent, [pre + "done"]), err or _sibling(parent, [pre + "error", pre + "ER"])
+    return done or _sub(erp, "done"), err or _sub(erp, "ER")
 
 
-def deleted_dir(erp: str) -> str:
-    """Where the XML of deleted orders goes: beside process with the same prefix (XML-deleted)."""
+def deleted_dir(erp: str, ws=None) -> str:
+    """Where the XML of deleted orders goes: the folder chosen (watch.deleted), else beside process with the same
+    prefix (XML-deleted)."""
+    chosen = _chosen(ws, "watch.deleted")
+    if chosen:
+        return chosen
     if _is_process(erp):
         parent, pre = os.path.dirname(os.path.normpath(erp)), _prefix(erp)
         return _sibling(parent, [pre + "deleted"])
     return _sub(erp, "deleted")
 
 
-def _in_erp(src: str, erp: str) -> bool:
+def _in_erp(src: str, erp: str, ws=None) -> bool:
     d = os.path.dirname(src)
     if _same(d, erp):
         return True
-    return _same(d, xml_dirs(erp)[1])
+    return _same(d, xml_dirs(erp, ws)[1])
 
 
 def _move(ws, fid, src: str, folder: str, action: str) -> str | None:
@@ -92,9 +108,9 @@ def move_xml_to_er(ws, src: str, problems: list[str], kind: str, fid=None) -> st
     from ..storage.db import now
     erp = ws.db.get_setting("watch.folder")
     if not ws.db.get_setting("watch.move_done", True) or not erp or not src or not os.path.isfile(src) \
-            or not _in_erp(src, erp):
+            or not _in_erp(src, erp, ws):
         return None
-    er = xml_dirs(erp)[1]
+    er = xml_dirs(erp, ws)[1]
     stem = os.path.splitext(os.path.basename(src))[0]
     try:
         with open(os.path.join(er, stem + ".txt"), "w", encoding="utf-8-sig") as fh:
@@ -116,10 +132,10 @@ def _locate(ws, fid, erp: str | None) -> str | None:
     if not f or not erp or not os.path.isdir(erp):
         return None
     src = f["source_path"] or ""
-    if src and os.path.isfile(src) and _in_erp(src, erp):
+    if src and os.path.isfile(src) and _in_erp(src, erp, ws):
         return src
     name = os.path.basename(src) or f["file_name"]
-    for cand in (os.path.join(erp, name), os.path.join(xml_dirs(erp)[1], name)):
+    for cand in (os.path.join(erp, name), os.path.join(xml_dirs(erp, ws)[1], name)):
         try:
             if os.path.isfile(cand):
                 with open(cand, "rb") as fh:
@@ -140,7 +156,7 @@ def sweep_finished(ws) -> list[str]:
     if not ws.db.get_setting("watch.move_done", True) or not erp or not os.path.isdir(erp):
         return []
     fids = []
-    for d in (erp, xml_dirs(erp)[1]):
+    for d in (erp, xml_dirs(erp, ws)[1]):
         for n in os.listdir(d):
             p = os.path.join(d, n)
             if not n.lower().endswith(".xml") or not os.path.isfile(p):
@@ -201,7 +217,7 @@ def move_finished(ws, revision_ids) -> list[str]:
         lines = ws.db.q("SELECT status FROM revisions WHERE import_file=? AND status NOT IN (?,?)", (fid,) + OPEN)
         if not lines or any(ln["status"] != "completed" for ln in lines):
             continue                                       # a line still on its way or with an error: stays
-        target = _move(ws, fid, src, xml_dirs(erp)[0], "xml.done")
+        target = _move(ws, fid, src, xml_dirs(erp, ws)[0], "xml.done")
         if target:
             reason = os.path.join(os.path.dirname(src), os.path.splitext(os.path.basename(src))[0] + ".txt")
             if os.path.basename(os.path.dirname(src)).lower() in ("er", "error") and os.path.isfile(reason):
@@ -227,7 +243,7 @@ def where_is_xml(ws, rid: int) -> tuple[str | None, str]:
     last = ws.db.one("SELECT at, action, details FROM audit WHERE entity_id=? AND action IN ('xml.done', 'xml.error', "
                      "'orders.removed') ORDER BY id DESC LIMIT 1", (name,)) if name else None
     erp = ws.db.get_setting("watch.folder") or ""
-    dirs = [erp] + (list(xml_dirs(erp)) + [deleted_dir(erp)] if erp and os.path.isdir(erp) else [])
+    dirs = [erp] + (list(xml_dirs(erp, ws)) + [deleted_dir(erp, ws)] if erp and os.path.isdir(erp) else [])
     for d in dirs:
         for cand in (os.path.join(d, name), os.path.join(d, "deleted", name)):
             if d and os.path.isfile(cand):

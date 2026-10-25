@@ -1534,7 +1534,10 @@ class GrafisPage(Page):
              (("Watch GRAFIS output folder", self.toggle),), extra=auto_box)
         step("erp", 6, "New orders from ERP", "The folder where the ERP puts the XML orders: checked on this timer, "
                                                "every new order goes through the whole chain by itself.",
-             (("ERP XML folder…", self.choose_erp), ("Check now", lambda: self.win.poll_watch())), extra=erp_box)
+             (("ERP XML folder…", self.choose_erp), ("Done folder…", lambda: self.choose_xml_dir("watch.done")),
+              ("Error folder…", lambda: self.choose_xml_dir("watch.error")),
+              ("Deleted folder…", lambda: self.choose_xml_dir("watch.deleted")),
+              ("Check now", lambda: self.win.poll_watch())), extra=erp_box)
         adv = QHBoxLayout()
         for text, fn in (("Nesting folder…", self.choose_nesting), ("Register GRAFIS marker (SCB)…", self.register)):
             b = QPushButton(tr(text))
@@ -1677,7 +1680,8 @@ class GrafisPage(Page):
                 "erp": (self.win.watcher is not None if hasattr(self.win, "watcher") else False,
                         f"{self.ws.db.get_setting('watch.folder') or tr('not set')} — {tr('Check every')} "
                         f"{self.win.watch_interval_s()} {tr('s')} — {tr('last check')}: "
-                        f"{(self.ws.db.get_setting('watch.last_check') or '—').replace('T', ' ')[:19]}"),
+                        f"{(self.ws.db.get_setting('watch.last_check') or '—').replace('T', ' ')[:19]}"
+                        + self._xml_dirs_text()),
                 "auto": (robot_on and self.running(),
                          f"{tr('watching') if self.running() else tr('not watching')} — "
                          f"{', '.join(st['formats']).upper()}, {st['time']:g} s")}
@@ -1765,6 +1769,37 @@ class GrafisPage(Page):
         if (rb.get(key) or {}).get("child"):
             return "✓ " + tr("background")
         return "✓ " + tr("mouse") if key in rb else "—"
+
+    def _xml_dirs_text(self) -> str:
+        from ..services.done_folder import deleted_dir, xml_dirs
+        erp = self.ws.db.get_setting("watch.folder") or ""
+        if not erp or not os.path.isdir(erp):
+            return ""
+        try:
+            done, err = xml_dirs(erp, self.ws)
+            dl = deleted_dir(erp, self.ws)
+        except OSError:
+            return ""
+        return f"\ndone: {done}   error: {err}   deleted: {dl}"
+
+    def choose_xml_dir(self, key: str):
+        """Owner: the folders the XML files move to, chosen here — done (passed CAD, the nesting and the cutting),
+        error (data missing in the XML), deleted (orders deleted); the program never guesses them then."""
+        from ..services.done_folder import deleted_dir, xml_dirs
+        erp = self.ws.db.get_setting("watch.folder") or ""
+        now_ = self.ws.db.get_setting(key) or ""
+        if not now_ and erp and os.path.isdir(erp):
+            now_ = {"watch.done": lambda: xml_dirs(erp, self.ws)[0], "watch.error": lambda: xml_dirs(erp, self.ws)[1],
+                    "watch.deleted": lambda: deleted_dir(erp, self.ws)}[key]()
+        title = {"watch.done": "Done folder…", "watch.error": "Error folder…", "watch.deleted": "Deleted folder…"}[key]
+        d = QFileDialog.getExistingDirectory(self, tr(title), now_ or erp)
+        if d:
+            if erp and os.path.normcase(os.path.abspath(d)) == os.path.normcase(os.path.abspath(erp)):
+                QMessageBox.warning(self, tr(title), tr("Choose another folder than the one the XML are read from"))
+                return
+            self.ws.db.set_setting(key, d)
+            self.win.status(f"{tr(title).rstrip('…')}: {d}")
+            self.refresh()
 
     def choose_erp(self):
         d = QFileDialog.getExistingDirectory(self, tr("ERP XML folder…"), self.ws.db.get_setting("watch.folder", ""))
@@ -4469,7 +4504,7 @@ class MainWindow(QMainWindow):
         d = None
         if erp and os.path.isdir(erp):
             from ..services.done_folder import xml_dirs
-            d = xml_dirs(erp)[0]
+            d = xml_dirs(erp, self.ws)[0]
         self._open_folder(d, tr("Finished XML (done)"))
 
     def _show_chain(self):

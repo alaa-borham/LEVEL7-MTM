@@ -627,8 +627,8 @@ def xml_bytes(ws, fid: int) -> tuple[bytes | None, str]:
     if kept:
         return kept, f["source_path"] or ""
     from .done_folder import deleted_dir
-    done, err = xml_dirs(erp)
-    for label, d in (("error", err), ("done", done), ("deleted", deleted_dir(erp))):
+    done, err = xml_dirs(erp, ws)
+    for label, d in (("error", err), ("done", done), ("deleted", deleted_dir(erp, ws))):
         if os.path.isfile(os.path.join(d, name)):
             return None, f"{name} is in {label} — move it to process to read it again"
     return None, f"{name}: the XML file is not in process — put it in process to read it again"

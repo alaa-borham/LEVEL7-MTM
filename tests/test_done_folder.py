@@ -194,3 +194,15 @@ def test_prefixed_folders_xml_process_done_error_deleted(tmp_path):
     plain = tmp_path / "B" / "process"
     plain.mkdir(parents=True)
     assert xml_dirs(str(plain)) == (str(tmp_path / "B" / "done"), str(tmp_path / "B" / "error"))
+
+
+def test_xml_folders_chosen_in_the_settings_come_first(ws, tmp_path):
+    """Owner: "the right thing is to read from — and move to — the folders I set in the settings window"."""
+    from level7mtm.services.done_folder import deleted_dir, xml_dirs
+    erp = tmp_path / "anything"
+    erp.mkdir()
+    for k, n in (("watch.done", "OK"), ("watch.error", "BAD"), ("watch.deleted", "GONE")):
+        ws.db.set_setting(k, str(tmp_path / n))
+    assert xml_dirs(str(erp), ws) == (str(tmp_path / "OK"), str(tmp_path / "BAD"))
+    assert deleted_dir(str(erp), ws) == str(tmp_path / "GONE")
+    assert sorted(p.name for p in erp.iterdir()) == []                   # nothing guessed inside

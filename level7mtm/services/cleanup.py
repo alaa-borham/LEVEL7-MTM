@@ -80,7 +80,7 @@ def remove_lines(ws, rids: list[int], delete_files: bool = False, reason: str | 
             erp = ws.db.get_setting("watch.folder") or ""
             if erp and os.path.isdir(erp):
                 from .done_folder import deleted_dir
-                dest_dir = deleted_dir(erp)               # (XML-process → XML-deleted)
+                dest_dir = deleted_dir(erp, ws)               # (XML-process → XML-deleted)
             else:
                 dest_dir = os.path.join(os.path.dirname(here) if os.path.basename(here).lower() in
                                         ("process", "error") else here, "deleted")
