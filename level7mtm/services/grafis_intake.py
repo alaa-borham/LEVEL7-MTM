@@ -273,9 +273,6 @@ def register_scb(ws, path: str, handover: bool = True, nesting_dir: str | None =
             ([out["cutting"].get("message", "")] if out.get("cutting") else [])
         moved = errors_folder.report(ws, os.path.splitext(os.path.basename(path))[0], problems,
                                      f"GRAFIS marker not processed ({out['status']})", move_file=path)
-        from .done_folder import move_failed
-        move_failed(ws, [ln["revision_id"] for ln in chk.lines], problems,
-                    f"GRAFIS marker not processed ({out['status']})")
         if moved:
             with ws.db.tx() as c:
                 c.execute("UPDATE grafis_results SET path=? WHERE sha256=?", (moved, chk.sha256))

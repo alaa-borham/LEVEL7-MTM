@@ -253,7 +253,6 @@ def _register_mdl(ws, path: str, cut: bool | None = None) -> dict:
         from .grafis_orders import archive_mdl
         archive_mdl(ws, path)
     if moved:                                            # the distorted model into MDL-ERR, with the reason
-        from .pattern_check import to_err
         to_err(ws, path, moved)
     if cut is None:
         cut = settings(ws)["enabled"]
@@ -266,9 +265,9 @@ def _register_mdl(ws, path: str, cut: bool | None = None) -> dict:
             ([out["cutting"].get("message", "")] if out.get("cutting") else [])
         errors_folder.report(ws, os.path.splitext(os.path.basename(path))[0], problems,
                              f"order model saved by GRAFIS not processed ({out['status']})")
-        from .done_folder import move_failed
-        move_failed(ws, [ln["revision_id"] for ln in chk.lines], problems,
-                    f"order model saved by GRAFIS not processed ({out['status']})")
+        if os.path.isfile(path) and chk.lines:           # owner: an error after the XML — the model to MDL-ERR
+            from .pattern_check import to_err             # with its reason; the XML stays in process
+            to_err(ws, path, problems)
     return out
 
 
@@ -415,7 +414,6 @@ def precheck_queue(ws, limit: int = 1) -> list[str]:
 
 def _take_back_distorted(ws, r, path: str, bad: list[str]) -> None:
     from . import errors_folder
-    from .done_folder import move_failed
     from .pattern_check import to_err
     msg = "pattern distorted in CAD, not nested: " + "; ".join(bad)
     lines = json.loads(r["lines"])
@@ -427,9 +425,8 @@ def _take_back_distorted(ws, r, path: str, bad: list[str]) -> None:
             c.execute("UPDATE revisions SET status='ready' WHERE id=? AND status='sent_to_nesting'",
                       (ln["revision_id"],))
         ws.db.audit(c, ws.actor, "grafis.mdl_saved.distorted", "file", os.path.basename(path), {"issues": bad})
-    to_err(ws, path, bad)
+    to_err(ws, path, bad)                             # the model to MDL-ERR; the XML stays in process
     errors_folder.report(ws, os.path.splitext(os.path.basename(path))[0], [msg], "pattern check")
-    move_failed(ws, [ln["revision_id"] for ln in lines], [msg], "pattern check")
 
 
 def hold_untested(ws) -> list[str]:
@@ -441,7 +438,6 @@ def hold_untested(ws) -> list[str]:
     import shutil
 
     from . import errors_folder
-    from .done_folder import move_failed
     from .grafis_orders import archive_folder
     held = []
     tpl_of = {}
@@ -493,6 +489,8 @@ def hold_untested(ws) -> list[str]:
             ws.db.audit(c, ws.actor, "grafis.untested_held", "file", os.path.basename(r["path"] or ""),
                         {"parts": left, "cutting_files_moved": moved})
         errors_folder.report(ws, os.path.splitext(os.path.basename(r["path"] or "model"))[0], [msg], "CAD")
-        move_failed(ws, rids, [msg], "CAD")
+        if r["path"] and os.path.isfile(r["path"]):     # the model to MDL-ERR; the XML stays in process
+            from .pattern_check import to_err
+            to_err(ws, r["path"], [msg])
         held += [ln.get("line_number") for ln in lines if ln.get("line_number")]
     return held

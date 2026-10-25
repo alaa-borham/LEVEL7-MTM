@@ -45,6 +45,10 @@ def test_saved_model_states(ws, tmp_path):
     r = register_mdl(ws, p1, cut=False)
     assert r["status"] == "needs_review" and any("Test Run All Parts" in m for _, m in r["check"].issues)
     assert (tmp_path / "ER" / "Order-9-53-1_2__9-53-1_2.txt").exists()
+    err = tmp_path / "MDL-ERR" / os.path.basename(p1)                    # owner: the model to MDL-ERR …
+    assert err.exists() and not os.path.exists(p1)
+    assert (tmp_path / "MDL-ERR" / (os.path.splitext(os.path.basename(p1))[0] + ".txt")).exists()   # … with why
+    os.replace(err, p1)                                                  # corrected in CAD, put back
     _saved_by_grafis(p1, recalculated=True)
     r = register_mdl(ws, p1, cut=False)
     assert r["status"] == "handed_over", r["check"].issues

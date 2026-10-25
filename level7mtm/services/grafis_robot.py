@@ -1075,9 +1075,10 @@ def _run_one(ws, job: dict, drv=None, sleep=time.sleep, clock=time.monotonic) ->
         try:                                          # the report must never make the job run again
             errors_folder.report(ws, os.path.splitext(os.path.basename(job["path"]))[0], [res["message"]],
                                  "GRAFIS robot")
-            from .done_folder import move_failed
-            move_failed(ws, [r["revision_id"] for r in ws.db.q("SELECT revision_id FROM grafis_orders WHERE path=?",
-                                                               (job["path"],))], [res["message"]], "GRAFIS robot")
+            # owner: an error after the XML — the model goes to MDL-ERR with its reason, the XML stays in process
+            if os.path.isfile(job["path"]):
+                from .pattern_check import to_err
+                to_err(ws, job["path"], [res["message"]])
         except Exception as e2:  # noqa: BLE001
             res["message"] += f" (error report not written: {e2 or type(e2).__name__})"
     with ws.db.tx() as c:
