@@ -177,3 +177,20 @@ def test_where_is_the_xml_of_an_order(ws, tmp_path):
     os.remove(dl / "Order-53.xml")
     path, why = where_is_xml(ws, rid)
     assert path is None and "Order-53.xml" in why
+
+
+def test_prefixed_folders_xml_process_done_error_deleted(tmp_path):
+    """Owner renamed the folders XML-process / XML-done / XML-error / XML-deleted: they are used as they are — no
+    done / ER made inside XML-process."""
+    from level7mtm.services.done_folder import _in_erp, deleted_dir, xml_dirs
+    root = tmp_path / "ERP XML"
+    for n in ("XML-process", "XML-done", "XML-error", "XML-deleted"):
+        (root / n).mkdir(parents=True)
+    erp = str(root / "XML-process")
+    assert xml_dirs(erp) == (str(root / "XML-done"), str(root / "XML-error"))
+    assert deleted_dir(erp) == str(root / "XML-deleted")
+    assert sorted(p.name for p in (root / "XML-process").iterdir()) == []     # nothing made inside
+    assert _in_erp(str(root / "XML-error" / "a.xml"), erp) and not _in_erp(str(root / "XML-done" / "a.xml"), erp)
+    plain = tmp_path / "B" / "process"
+    plain.mkdir(parents=True)
+    assert xml_dirs(str(plain)) == (str(tmp_path / "B" / "done"), str(tmp_path / "B" / "error"))

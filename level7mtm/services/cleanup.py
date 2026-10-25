@@ -77,8 +77,13 @@ def remove_lines(ws, rids: list[int], delete_files: bool = False, reason: str | 
         src = f["source_path"] if f else None
         if src and os.path.isfile(src) and ws._all_removed(fid):
             here = os.path.dirname(src)                   # process / done / error layout: deleted beside them
-            dest_dir = os.path.join(os.path.dirname(here) if os.path.basename(here).lower() in ("process", "error")
-                                    else here, "deleted")
+            erp = ws.db.get_setting("watch.folder") or ""
+            if erp and os.path.isdir(erp):
+                from .done_folder import deleted_dir
+                dest_dir = deleted_dir(erp)               # (XML-process → XML-deleted)
+            else:
+                dest_dir = os.path.join(os.path.dirname(here) if os.path.basename(here).lower() in
+                                        ("process", "error") else here, "deleted")
             try:
                 os.makedirs(dest_dir, exist_ok=True)
                 dest = os.path.join(dest_dir, os.path.basename(src))

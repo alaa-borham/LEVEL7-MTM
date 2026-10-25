@@ -25,26 +25,50 @@ def _sub(erp: str, name: str) -> str:
 
 
 def _is_process(erp: str) -> bool:
-    return os.path.basename(os.path.normpath(erp)).lower() == "process"
+    """The owner's layout: the folder read from is called "process" — also with a prefix ("XML-process")."""
+    return os.path.basename(os.path.normpath(erp)).lower().endswith("process")
+
+
+def _prefix(erp: str) -> str:
+    base = os.path.basename(os.path.normpath(erp))
+    return base[:len(base) - len("process")]
+
+
+def _sibling(parent: str, names: list[str]) -> str:
+    """The first of these folders beside process that exists (any case), else the first one (created)."""
+    have = {e.lower(): e for e in os.listdir(parent) if os.path.isdir(os.path.join(parent, e))} \
+        if os.path.isdir(parent) else {}
+    for n in names:
+        if n.lower() in have:
+            return os.path.join(parent, have[n.lower()])
+    d = os.path.join(parent, names[0])
+    os.makedirs(d, exist_ok=True)
+    return d
 
 
 def xml_dirs(erp: str) -> tuple[str, str]:
     """(done, error) folders of the ERP XML files. The owner's layout: process (read from) / done / error side by
-    side; else (older layout) done and ER inside the watched folder."""
+    side, with the same prefix (XML-process / XML-done / XML-error); else (older layout) done and ER inside the
+    watched folder."""
     if _is_process(erp):
-        parent = os.path.dirname(os.path.normpath(erp))
-        return _sub(parent, "done"), _sub(parent, "error")
+        parent, pre = os.path.dirname(os.path.normpath(erp)), _prefix(erp)
+        return _sibling(parent, [pre + "done"]), _sibling(parent, [pre + "error", pre + "ER"])
     return _sub(erp, "done"), _sub(erp, "ER")
+
+
+def deleted_dir(erp: str) -> str:
+    """Where the XML of deleted orders goes: beside process with the same prefix (XML-deleted)."""
+    if _is_process(erp):
+        parent, pre = os.path.dirname(os.path.normpath(erp)), _prefix(erp)
+        return _sibling(parent, [pre + "deleted"])
+    return _sub(erp, "deleted")
 
 
 def _in_erp(src: str, erp: str) -> bool:
     d = os.path.dirname(src)
     if _same(d, erp):
         return True
-    if _is_process(erp):
-        return os.path.basename(d).lower() == "error" and _same(os.path.dirname(d),
-                                                                 os.path.dirname(os.path.normpath(erp)))
-    return os.path.basename(d).lower() == "er" and _same(os.path.dirname(d), erp)
+    return _same(d, xml_dirs(erp)[1])
 
 
 def _move(ws, fid, src: str, folder: str, action: str) -> str | None:
@@ -203,7 +227,8 @@ def where_is_xml(ws, rid: int) -> tuple[str | None, str]:
     last = ws.db.one("SELECT at, action, details FROM audit WHERE entity_id=? AND action IN ('xml.done', 'xml.error', "
                      "'orders.removed') ORDER BY id DESC LIMIT 1", (name,)) if name else None
     erp = ws.db.get_setting("watch.folder") or ""
-    for d in [erp] + (list(xml_dirs(erp)) if erp and os.path.isdir(erp) else []):
+    dirs = [erp] + (list(xml_dirs(erp)) + [deleted_dir(erp)] if erp and os.path.isdir(erp) else [])
+    for d in dirs:
         for cand in (os.path.join(d, name), os.path.join(d, "deleted", name)):
             if d and os.path.isfile(cand):
                 return cand, ""
