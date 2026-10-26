@@ -12,7 +12,7 @@ import threading
 
 from PySide6.QtCore import QObject, QRunnable, QSize, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QColor
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFrame,
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFrame,
                                QGridLayout, QSizePolicy, QToolButton,
                                QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
                                QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QSplitter,
@@ -1534,6 +1534,7 @@ class GrafisPage(Page):
         r1.addWidget(self.par)
         r1.addStretch()
         al.addLayout(r1)
+        al.addLayout(self._alerts_row())
         frow = QHBoxLayout()
         frow.addWidget(QLabel(tr("Formats") + ":"))
         fmts = self.ws.db.get_setting("cutting.formats", ["plt", "iso"])
@@ -1986,6 +1987,48 @@ class GrafisPage(Page):
         if p:
             self.ws.db.set_setting("nesting.cli", p)
             self.refresh()
+
+    def _alerts_row(self):
+        """When a stop of the line is said (owner: no new XML for hours, AI TOOL or the nesting not moving), and
+        when the day's report is written."""
+        from ..services.report import ALERT_DEFAULTS
+        db = self.ws.db
+        row = QHBoxLayout()
+        on = QCheckBox(tr("Alert when the line stops"))
+        on.setChecked(bool(db.get_setting("alert.on", True)))
+        on.toggled.connect(lambda v: db.set_setting("alert.on", v))
+        row.addWidget(on)
+        hours = QLineEdit(db.get_setting("alert.hours", ALERT_DEFAULTS["alert.hours"]))
+        hours.setPlaceholderText("08:00-20:00")
+        hours.setMaximumWidth(110)
+        hours.editingFinished.connect(lambda: db.set_setting("alert.hours", hours.text().strip()))
+        row.addWidget(QLabel(tr("Working hours") + ":"))
+        row.addWidget(hours)
+        for key, label_, lo, hi in (("alert.xml_hours", "No new XML for (hours)", 1, 24),
+                                    ("alert.robot_minutes", "AI TOOL stopped for (minutes)", 5, 240),
+                                    ("alert.nest_minutes", "Nesting stopped for (minutes)", 5, 240)):
+            sp = QSpinBox()
+            sp.setRange(lo, hi)
+            sp.setValue(int(float(db.get_setting(key, ALERT_DEFAULTS[key]))))
+            sp.valueChanged.connect(lambda v, k=key: db.set_setting(k, int(v)))
+            row.addWidget(QLabel(tr(label_) + ":"))
+            row.addWidget(sp)
+        at = QLineEdit(db.get_setting("report.at", "08:00"))
+        at.setMaximumWidth(70)
+        at.editingFinished.connect(lambda: db.set_setting("report.at", at.text().strip() or "08:00"))
+        row.addWidget(QLabel(tr("Daily report at") + ":"))
+        row.addWidget(at)
+        b = QPushButton(tr("Reports folder…"))
+
+        def choose():
+            from ..services.report import reports_folder
+            d = QFileDialog.getExistingDirectory(self, tr("Reports folder…"), reports_folder(self.ws))
+            if d:
+                db.set_setting("report.folder", d)
+        b.clicked.connect(choose)
+        row.addWidget(b)
+        row.addStretch()
+        return row
 
     def _save_formats(self):
         chosen = [c for c, cb in self.fmt_boxes.items() if cb.isChecked()]
@@ -4430,6 +4473,7 @@ class MainWindow(QMainWindow):
                               (tr("Order models (MDL, saved)"), self.open_mdl_archive),
                               (tr("Pattern errors (MDL-ERR)"), self.open_mdl_err),
                               (tr("Finished XML (done)"), self.open_done_xml),
+                              (tr("Daily report…"), self.daily_report),
                               (tr("Errors (ER)"), lambda: self.pages["Home"]._open_er())])]),
             ("system", tr("System"), [("setup", "setup", tr("Setup"), self.open_setup),
                             ("log", "log", tr("Log"), lambda: self.goto("Log & backups"))]),
@@ -4442,6 +4486,17 @@ class MainWindow(QMainWindow):
         self.ribbon.setContextMenuPolicy(Qt.CustomContextMenu)       # right click: arrange the icons
         self.ribbon.customContextMenuRequested.connect(self._ribbon_menu)
         lay.addWidget(self.ribbon)
+        self.alert_bar = QPushButton()                    # the line stopped: said at once, in red (owner)
+        self.alert_bar.setObjectName("alertBar")
+        self.alert_bar.setStyleSheet(f"QPushButton#alertBar {{ background: {themes.colour('bad').name()}; "
+                                     "color: white; font-weight: 800; padding: 6px 12px; border: none; "
+                                     "text-align: right; }")
+        self.alert_bar.setToolTip(tr("Click to hide it until something else stops"))
+        self.alert_bar.clicked.connect(self._snooze_alerts)
+        self.alert_bar.hide()
+        lay.addWidget(self.alert_bar)
+        if getattr(self, "_alerts_now", None):
+            self._show_alerts(self._alerts_now)
         split = QSplitter(Qt.Horizontal)
         split.setHandleWidth(1)
         split.setChildrenCollapsible(False)
@@ -4806,6 +4861,9 @@ class MainWindow(QMainWindow):
         a = QAction(tr("Arrange the icons…"), self)
         a.triggered.connect(self.customize_ribbon)
         v.addAction(a)
+        a = QAction(tr("Daily report…"), self)
+        a.triggered.connect(self.daily_report)
+        v.addAction(a)
         a = QAction(tr("Production screen"), self)
         a.setShortcut("F11")
         a.triggered.connect(self.production_screen)
@@ -4922,6 +4980,7 @@ class MainWindow(QMainWindow):
                 self._apply_rows(rows, False, sig)
             if getattr(self, "prod", None) is not None and self.prod.isVisible():
                 self.prod.show_rows(rows, eta)
+            self._watch_line(rows)
 
         def failed(msg):
             self._cad_busy = False
@@ -4935,6 +4994,134 @@ class MainWindow(QMainWindow):
         w.signals.done.connect(done)
         w.signals.failed.connect(failed)
         self.pool.start(w)
+
+    # ---- the line watched: a stop said at once, the day's report once a day
+    def _watch_line(self, rows):
+        from datetime import datetime
+
+        from ..services import report
+        now_ = datetime.now()
+        if getattr(self, "chain_on", False):
+            self._chain_since = getattr(self, "_chain_since", None) or now_
+        else:
+            self._chain_since = None
+        try:
+            found = report.alerts(self.ws, rows, at=now_, started=self._chain_since or now_,
+                                  erp_on=self.watcher is not None, chain_on=bool(getattr(self, "chain_on", False)))
+        except Exception:  # noqa: BLE001 - watching never stops the window
+            found = []
+        known = getattr(self, "_alert_keys", set())
+        new = [a for a in found if a["key"] not in known]
+        self._alert_keys = {a["key"] for a in found}
+        self._snoozed = getattr(self, "_snoozed", set()) & self._alert_keys   # a stop over: said again next time
+        if new:
+            try:
+                report.record(self.ws, new)
+            except Exception:  # noqa: BLE001
+                pass
+            QApplication.beep()
+            self.status(report.alert_text(new[0], tr))
+        self._alerts_now = found
+        self._show_alerts(found)
+        self._daily_report_due(rows, now_)
+
+    def _show_alerts(self, found):
+        from ..services.report import alert_text
+        shown = [a for a in found if a["key"] not in getattr(self, "_snoozed", set())]
+        bar = getattr(self, "alert_bar", None)
+        if bar is None:
+            return
+        bar.setVisible(bool(shown))
+        if shown:
+            bar.setText("⚠  " + tr("The line has stopped") + ":  " + "   ●   ".join(alert_text(a, tr) for a in shown))
+
+    def _snooze_alerts(self):
+        self._snoozed = set(getattr(self, "_alert_keys", set()))
+        self.alert_bar.hide()
+
+    def _daily_report_due(self, rows, now_):
+        from ..services import report
+        day = report.daily_due(self.ws, now_)
+        if day is None or getattr(self, "_report_busy", False):
+            return
+        self._report_busy = True
+
+        def done(path):
+            self._report_busy = False
+            report.mark_written(self.ws, day)
+            self.status(tr("The report of {day} is ready").format(day=day.isoformat()) + f" — {path}")
+
+        def failed(msg):
+            self._report_busy = False
+            self.status(f"{tr('Daily report')}: {msg[:200]}")
+        w = Worker(lambda: report.write_report(self.ws, day, rows, tr))
+        w.signals.done.connect(done)
+        w.signals.failed.connect(failed)
+        self.pool.start(w)
+
+    def daily_report(self):
+        """The report of a day: on the screen, saved as PDF, printed; the daily ones are in the reports folder."""
+        from datetime import date
+
+        from PySide6.QtCore import QDate
+        from PySide6.QtWidgets import QDateEdit, QTextBrowser
+
+        from ..services import report
+        d = QDialog(self)
+        d.setWindowTitle(tr("Daily report"))
+        d.resize(900, 760)
+        lay = QVBoxLayout(d)
+        top = QHBoxLayout()
+        top.addWidget(QLabel(tr("Day")))
+        day = QDateEdit(QDate.currentDate())
+        day.setCalendarPopup(True)
+        day.setDisplayFormat("yyyy-MM-dd")
+        top.addWidget(day)
+        top.addStretch()
+        view = QTextBrowser()
+        rows = getattr(self, "_rows", None) or []
+
+        def show():
+            q = day.date()
+            try:
+                page = report.report_html(report.day_report(self.ws, date(q.year(), q.month(), q.day()), rows), tr)
+            except Exception as e:  # noqa: BLE001
+                page = f"<p>{tr('Error')}: {e}</p>"
+            view.setHtml(page)
+
+        def pdf():
+            from PySide6.QtPrintSupport import QPrinter
+            os.makedirs(report.reports_folder(self.ws), exist_ok=True)
+            start = os.path.join(report.reports_folder(self.ws),
+                                 f"LEVEL7 report {day.date().toString('yyyy-MM-dd')}.pdf")
+            p, _ = QFileDialog.getSaveFileName(d, tr("Save as PDF…"), start, "PDF (*.pdf)")
+            if not p:
+                return
+            pr = QPrinter(QPrinter.HighResolution)
+            pr.setOutputFormat(QPrinter.PdfFormat)
+            pr.setOutputFileName(p)
+            view.document().print_(pr)
+            self.status(tr("Saved") + f": {p}")
+
+        def printing():
+            from PySide6.QtPrintSupport import QPrintDialog, QPrinter
+            pr = QPrinter(QPrinter.HighResolution)
+            if QPrintDialog(pr, d).exec():
+                view.document().print_(pr)
+
+        for text, fn in (("Save as PDF…", pdf), ("Print…", printing),
+                         ("Open the reports folder", lambda: (os.makedirs(report.reports_folder(self.ws),
+                                                                          exist_ok=True),
+                                                              hasattr(os, "startfile") and
+                                                              os.startfile(report.reports_folder(self.ws))))):
+            b = QPushButton(tr(text))
+            b.clicked.connect(fn)
+            top.addWidget(b)
+        lay.addLayout(top)
+        lay.addWidget(view, 1)
+        day.dateChanged.connect(lambda _q: show())
+        show()
+        d.exec()
 
     def refresh_cad(self, force: bool = False):
         from . import cad

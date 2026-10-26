@@ -257,3 +257,31 @@ def test_size_table_and_options_go_out_to_excel_and_back(ws, tmp_path, monkeypat
     assert "neck_button" in {g["group"] for g in option_table(ws)}
     win.close()
     app.processEvents()
+
+
+def test_a_stop_of_the_line_shows_in_red_and_the_report_opens(ws, monkeypatch):
+    from datetime import datetime, timedelta
+
+    from level7mtm.ui import main_window as mw
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    win = mw.MainWindow(ws)
+    win.show()
+    ws.db.set_setting("robot.enabled", True)
+    win.chain_on = True
+    win._chain_since = datetime.now() - timedelta(hours=1)
+    monkeypatch.setattr(mw.QApplication, "beep", lambda: None)
+    win._watch_line([{"stage": "grafis"}])
+    app.processEvents()
+    assert win.alert_bar.isVisible() and "AI TOOL" in win.alert_bar.text()
+    assert ws.db.one("SELECT COUNT(*) AS n FROM audit WHERE action='alert.raised'")["n"] == 1
+    win._watch_line([{"stage": "grafis"}])                        # the same stop: kept once
+    assert ws.db.one("SELECT COUNT(*) AS n FROM audit WHERE action='alert.raised'")["n"] == 1
+    win._snooze_alerts()
+    win._watch_line([{"stage": "grafis"}])
+    assert not win.alert_bar.isVisible()                          # hidden by the owner until something else
+    win._watch_line([])
+    assert not win.alert_bar.isVisible()
+    monkeypatch.setattr(mw.QDialog, "exec", lambda self: 0)
+    win.daily_report()
+    win.close()
+    app.processEvents()
