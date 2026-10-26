@@ -209,3 +209,51 @@ def test_a_message_row_opens_its_text_with_a_click(ws, monkeypatch):
     assert shown == ["design code 'Small Size Fit' is not mapped to a model option"]
     win.close()
     app.processEvents()
+
+
+def test_size_table_and_options_go_out_to_excel_and_back(ws, tmp_path, monkeypatch):
+    """Export to Excel, change the sheet, import it: the tables are filled (saved on Save and close)."""
+    from conftest import MDL
+    if not os.path.exists(MDL):
+        pytest.skip("customer MDL not in the checkout")
+    from PySide6.QtCore import Qt
+    from level7mtm.services.sheets import read_rows, write_xlsx
+    from level7mtm.ui import main_window as mw
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    monkeypatch.setattr(mw.QMessageBox, "information", lambda *a, **k: None)
+    ws.db.set_setting("grafis.mdl", MDL)
+    win = mw.MainWindow(ws)
+    page = win.pages["X values for GRAFIS"]
+    page.refresh()
+    page.part.setCurrentIndex(page.part.findData(2))
+    out = str(tmp_path / "x.xlsx")
+    monkeypatch.setattr(mw.QFileDialog, "getSaveFileName", lambda *a, **k: (out, ""))
+    page.export_excel()
+    rows = read_rows(out)
+    i = next(n for n, r in enumerate(rows) if r[1] == "10")
+    rows[i][4] = "FW"
+    write_xlsx(out, rows[0], rows[1:])
+    monkeypatch.setattr(mw.QFileDialog, "getOpenFileName", lambda *a, **k: (out, ""))
+    page.import_excel()
+    row = next(n for n in range(page.t.rowCount()) if page.t.item(n, 0).text() == "X10")
+    assert page.t.item(row, 3).text() == "FW" and page.t.item(row, 5).checkState() == Qt.Checked
+    opts = win.pages["Design options"]
+    opts.refresh()
+    o = str(tmp_path / "o.xlsx")
+    monkeypatch.setattr(mw.QFileDialog, "getSaveFileName", lambda *a, **k: (o, ""))
+    opts.export_excel()
+    rows = read_rows(o)
+    rows.append(["neck_button", "زر الرقبة", "Neck button", "0", "", "hidden", "مخفي", "Hidden",
+                 "Neck Button Hidden", "", "", ""])
+    write_xlsx(o, rows[0], rows[1:])
+    monkeypatch.setattr(mw.QFileDialog, "getOpenFileName", lambda *a, **k: (o, ""))
+    n = len(opts.groups)
+    opts.import_excel()
+    assert len(opts.groups) == n + 1 and opts.groups[-1]["values"][0]["erp_names"] == ["Neck Button Hidden"]
+    monkeypatch.setattr(mw, "reread_held_question", lambda *a, **k: None)
+    monkeypatch.setattr(mw.QMessageBox, "warning", lambda *a, **k: pytest.fail(str(a[2])))
+    assert opts.save() is True
+    from level7mtm.services.options import option_table
+    assert "neck_button" in {g["group"] for g in option_table(ws)}
+    win.close()
+    app.processEvents()

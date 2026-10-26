@@ -26,6 +26,19 @@ AR = {
     "Customers": "العملاء",
     "Patterns": "البترونات",
     "Save and close": "حفظ وإغلاق",
+    "{n} products — click to show or hide them": "{n} منتجات — اضغط لإظهارها أو إخفائها",
+    "Export to Excel": "تصدير إلى Excel",
+    "Import from Excel": "استيراد من Excel",
+    "Export the table, fill it in Excel, then import it: the table is filled, check it and press Save and close":
+        "صدّر الجدول، واملأه في Excel، ثم استورده: يمتلئ الجدول، راجعه واضغط «حفظ وإغلاق»",
+    "Group name (ar)": "اسم المجموعة (عربي)",
+    "Group name (en)": "اسم المجموعة (إنجليزي)",
+    "No option rows in the sheet": "لا توجد صفوف خيارات في الملف",
+    "{g} groups and {v} values read — check them, then press Save and close":
+        "تمت قراءة {g} مجموعة و{v} قيمة — راجعها ثم اضغط «حفظ وإغلاق»",
+    "{n} X filled from the sheet — check them, then press Save and close":
+        "تم ملء {n} X من الملف — راجعها ثم اضغط «حفظ وإغلاق»",
+    "Not in this table": "غير موجود في هذا الجدول",
     "reference for the tables": "مرجع للجداول فقط — الطلبات من البترونات",
     "Delete order…": "حذف الطلب…",
     "Delete orders…": "حذف الطلبات…",
@@ -784,6 +797,7 @@ def label(d: dict | str | None) -> str:
 # Messages made by the services carry names and numbers ("measurement DSR not in the order"): they are
 # translated when shown, piece by piece ("A — B", "R003: A"), with these patterns.
 MSG_AR = [
+    (r"The sheet has no header row with the columns: (.+)", "لا يوجد في الملف صف عناوين فيه الأعمدة: {0}"),
     (r"order line needs review \(import problems\)", "سطر الطلب يحتاج مراجعة (مشاكل في الاستيراد)"),
     (r"no customer has the XML name Reference='(.+)' — add the customer in Customers \(known: (.+)\)",
      "لا يوجد عميل اسمه في XML هو '{0}' — أضِف العميل في «العملاء» (الموجود: {1})"),

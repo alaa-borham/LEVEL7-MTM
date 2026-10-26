@@ -319,6 +319,14 @@ def test_customers_page_lists_products_under_their_customer(ws):
     col0 = [t.item(i, 0).text().strip() for i in range(t.rowCount())]
     assert col0[1].endswith("Richy") and "Thobe men" in col0[2] and col0[2].startswith("↳")   # under Richy
     assert t.item(2, 4).text() == "1001001001" and col0[3].endswith("Other")
+    cp0 = win.pages["Customers"]
+    assert t.isRowHidden(2) and not t.isRowHidden(1) and col0[1].startswith("◂")   # one line, closed
+    assert t.item(1, 0).font().bold() and not t.item(2, 0).font().bold()           # the customer shaded
+    cp0._toggle(1, 0)
+    assert not t.isRowHidden(2) and t.item(1, 0).text().startswith("▾")            # opened: his products
+    cp0._toggle(1, 0)
+    assert t.isRowHidden(2)
+    cp0._toggle(1, 0)
     assert "Richy / Thobe men" in [win.customer_box.itemText(i) for i in range(win.customer_box.count())]
     cp = win.pages["Customers"]
     from level7mtm.ui.i18n import tr
@@ -682,7 +690,7 @@ def test_each_customer_chooses_his_cutting_files_folder(ws, tmp_path):
     win.goto("Customers")
     app.processEvents()
     t = win.pages["Customers"].t
-    row = next(i for i in range(t.rowCount()) if t.item(i, 0).text().strip() == "Dubai")
+    row = next(i for i in range(t.rowCount()) if t.item(i, 0).text().strip().endswith(" Dubai"))
     assert "Dubai cutter" in t.cellWidget(row, 1).findChildren(QtWidgets.QToolButton)[0].text()
     win.close()
     app.processEvents()

@@ -473,6 +473,38 @@ def _same_path(a, b) -> bool:
     return bool(a and b) and os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 
 
+def _excel_out(page, name: str) -> str:
+    """Where to write a sheet for the owner to fill in (Desktop by default)."""
+    start = os.path.join(os.path.expanduser("~"), "Desktop", name)
+    p, _ = QFileDialog.getSaveFileName(page, tr("Export to Excel"), start, "Excel (*.xlsx)")
+    if p and not p.lower().endswith(".xlsx"):
+        p += ".xlsx"
+    return p
+
+
+def _excel_in(page) -> list[list[str]] | None:
+    """The rows of a sheet the owner chooses (.xlsx or .csv); None when cancelled or unreadable."""
+    from ..services.sheets import read_rows
+    p, _ = QFileDialog.getOpenFileName(page, tr("Import from Excel"), os.path.join(os.path.expanduser("~"), "Desktop"),
+                                       "Excel (*.xlsx *.csv)")
+    if not p:
+        return None
+    try:
+        return read_rows(p)
+    except Exception as e:  # noqa: BLE001
+        QMessageBox.warning(page, tr("Import from Excel"), f"{tr('Error')}: {tr_msg(str(e))}")
+        return None
+
+
+def _excel_buttons(page, layout, export, import_):
+    for text, fn in (("Import from Excel", import_), ("Export to Excel", export)):
+        b = QPushButton(tr(text))
+        b.setToolTip(tr("Export the table, fill it in Excel, then import it: the table is filled, check it and "
+                        "press Save and close"))
+        b.clicked.connect(fn)
+        layout.addWidget(b)
+
+
 def _mdl_or_none(ws):
     m = ws.grafis_mdl()
     return m if m and os.path.isfile(m) else None
@@ -2331,6 +2363,7 @@ class OptionsPage(Page):
             b.clicked.connect(fn)
             bg.addWidget(b)
         bg.addStretch()
+        _excel_buttons(self, bg, self.export_excel, self.import_excel)
         lay.addLayout(bg)
         # the window of one group: its names, required / default, its values and their Variation names
         self.gd = QDialog(self)
@@ -2576,6 +2609,61 @@ class OptionsPage(Page):
             self._fill_groups()
             self._switch(-1, min(r, len(self.groups) - 1))
 
+    def export_excel(self):
+        from ..services.sheets import OPT_HEADER, options_sheet, write_xlsx
+        p = _excel_out(self, f"options {self.ws.customer()}.xlsx")
+        if not p:
+            return
+        self._read_values()
+        for i in range(len(self.groups)):
+            self._read_group_row(i)
+        parts = self._parts_of_values()
+        counts = getattr(self, "_counts", {})
+        groups = []
+        for g in self.groups:
+            vals = []
+            for v in g.get("values", []):
+                key = f"{g['group']}={v['value']}"
+                made = v.get("parts_text", parts.get(key, ""))
+                cp, mi = counts.get(key, (1, 0)) if made else ("", "")
+                vals.append({**v, "parts_text": made, "copies_text": v.get("copies_text", str(cp)),
+                             "mirrored_text": v.get("mirrored_text", str(mi))})
+            groups.append({**g, "values": vals})
+        try:
+            write_xlsx(p, [tr(h) for h in OPT_HEADER], options_sheet(groups))
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(self, tr("Export to Excel"), f"{tr('Error')}: {e}")
+            return
+        QMessageBox.information(self, tr("Export to Excel"), tr("Saved") + f": {p}")
+
+    def import_excel(self):
+        """The groups of the sheet replace the groups of the same code (the others stay); saved on Save and close."""
+        from ..services.sheets import options_from_sheet
+        rows = _excel_in(self)
+        if rows is None:
+            return
+        try:
+            read = options_from_sheet(rows)
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(self, tr("Import from Excel"), f"{tr('Error')}: {tr_msg(str(e))}")
+            return
+        if not read:
+            QMessageBox.warning(self, tr("Import from Excel"), tr("No option rows in the sheet"))
+            return
+        self._read_values()
+        for i in range(len(self.groups)):
+            self._read_group_row(i)
+        by_code = {g["group"]: g for g in read}
+        merged = [by_code.pop(g["group"], g) for g in self.groups]
+        self.groups = merged + list(by_code.values())
+        self.cur = -1
+        self._fill_groups()
+        self.g.setCurrentCell(0, 0)
+        self._switch(-1, 0)
+        QMessageBox.information(self, tr("Import from Excel"), tr(
+            "{g} groups and {v} values read — check them, then press Save and close").format(
+            g=len(read), v=sum(len(g["values"]) for g in read)))
+
     def add_value(self):
         self.v.insertRow(self.v.rowCount())
 
@@ -2790,6 +2878,7 @@ class XValuesPage(Page):
         self.part = QComboBox()
         self.part.currentIndexChanged.connect(self.load)
         top.addWidget(self.part, 1)
+        _excel_buttons(self, top, self.export_excel, self.import_excel)
         b = QPushButton(tr("Save"))
         b.clicked.connect(self.save)
         top.addWidget(b)
@@ -2927,6 +3016,60 @@ class XValuesPage(Page):
             self._style_row(i, bool(r["codes"]), r["confirmed"])
         self._loading = False
         self.t.resizeColumnsToContents()
+
+    def export_excel(self):
+        from ..services.sheets import X_HEADER, write_xlsx, x_sheet
+        if not self.t.rowCount():
+            return
+        p = _excel_out(self, f"size table {self.ws.customer()}.xlsx")
+        if not p:
+            return
+        rows = []
+        for i, r in enumerate(self.rows()):
+            name = self.t.item(i, 1).text()
+            default = self.t.item(i, 2).text()
+            rows.append({**r, "name": name, "default": float(default) if re.match(r"^-?[\d.]+$", default) else None})
+        try:
+            write_xlsx(p, [tr(h) for h in X_HEADER], x_sheet(rows))
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(self, tr("Export to Excel"), f"{tr('Error')}: {e}")
+            return
+        QMessageBox.information(self, tr("Export to Excel"), tr("Saved") + f": {p}")
+
+    def import_excel(self):
+        """The XML codes, formula and confirmed of each X in the sheet go into the table; saved on Save and close."""
+        from ..services.sheets import x_from_sheet
+        if not self.t.rowCount():
+            return
+        rows = _excel_in(self)
+        if rows is None:
+            return
+        try:
+            read = x_from_sheet(rows)
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(self, tr("Import from Excel"), f"{tr('Error')}: {tr_msg(str(e))}")
+            return
+        at, by_x = {}, {}
+        for i in range(self.t.rowCount()):
+            part, x = self.t.item(i, 0).data(Qt.UserRole)
+            at[(part, x)] = i
+            by_x.setdefault(x, []).append(i)
+        done, missing = 0, []
+        for r in read:
+            i = at.get((r["part"], r["x"])) if r["part"] is not None else \
+                (by_x[r["x"]][0] if len(by_x.get(r["x"], [])) == 1 else None)
+            if i is None:
+                missing.append(f"{r['part']:03d}/X{r['x']}" if r["part"] is not None else f"X{r['x']}")
+                continue
+            self.t.item(i, 3).setText(",".join(r["codes"]))   # styles the row (active / inactive)
+            self.t.item(i, 4).setText(r["formula"])
+            if r["codes"]:
+                self.t.item(i, 5).setCheckState(Qt.Checked if r["confirmed"] else Qt.Unchecked)
+            done += 1
+        msg = tr("{n} X filled from the sheet — check them, then press Save and close").format(n=done)
+        if missing:
+            msg += "\n" + tr("Not in this table") + ": " + ", ".join(missing[:30])
+        QMessageBox.information(self, tr("Import from Excel"), msg)
 
     def _style_row(self, i, active: bool, confirmed: bool = True):
         """Green with a confirm box when the X has an XML code; grey "inactive" without (owner decision #21)."""
@@ -3249,6 +3392,9 @@ class CustomersPage(Page):
                         "Item Number", "Measurement table (XML)", "Basic-Size in the XML", "Cutting file",
                         "Patterns"])
         self.t.itemSelectionChanged.connect(self._picked)
+        self.t.cellClicked.connect(self._toggle)          # a customer opens / closes his products
+        self._open: set[str] | None = None                # the customers whose products are shown
+        self._tree: list[tuple[str, str | None, str]] = []   # each row: id, his customer, name
         left.addWidget(self.t, 1)
         bar = QHBoxLayout()
         for text, fn in (("Add customer…", self.add), ("Add product…", self.add_product), ("Edit…", self.edit),
@@ -3360,8 +3506,7 @@ class CustomersPage(Page):
             # a customer with products: his XML lines are read with the product of their Item Number, so the
             # patterns are the products' — none in front of the customer
             pats = [] if c["id"] in with_products else patterns(self.ws, c["id"])
-            mark = "● " if c["id"] == cur else ""
-            rows.append([(f"      ↳ {mark}" if c.get("parent") else mark) + c["name"], "", c["reference"],
+            rows.append([c["name"], "", c["reference"],
                          c.get("reseller") or "—", c.get("item") or ("—" if not c.get("parent") else ""),
                          measurement_table(self.ws, c["id"]) or "—",
                          _few(basic_sizes_seen(self.ws, c["id"])),
@@ -3376,12 +3521,58 @@ class CustomersPage(Page):
         fill(self.t, rows, None, [c["id"] for c in cs])
         for i, c in enumerate(cs):                       # beside each customer: where his cutting files go
             self.t.setCellWidget(i, 1, self._folder_cell(c))
+        self._tree = [(c["id"], c.get("parent"), c["name"]) for c in cs]
+        if self._open is None:                           # at first: the products of the customer being edited
+            own = next((c.get("parent") or c["id"] for c in cs if c["id"] == cur), None)
+            self._open = {own} if own else set()
+        self._shade(with_products, cur)
+        self.t.resizeColumnToContents(0)
         self.t.resizeColumnToContents(1)
         k = next((i for i, c in enumerate(cs) if c["id"] == cur), 0)
         self.t.selectRow(k)
         self.t.blockSignals(False)
         from ..services.customers import names
         self.head.setText(f"{tr('Settings of')} {names(self.ws).get(cur, '')}")
+
+    def _shade(self, with_products: set, cur: str | None = None):
+        """One line a customer, always shaded (bold) to tell the customers apart; his products under him, shown
+        when he is opened (a faint shade of the same colour)."""
+        from . import themes as _th
+        cur = cur or self.ws.customer()
+        strong, faint = _th.colour("accent"), _th.colour("accent")
+        strong.setAlpha(70)
+        faint.setAlpha(22)
+        for i, (cid, parent, name) in enumerate(self._tree):
+            mark = "● " if cid == cur else ""
+            if parent:
+                text = f"      ↳ {mark}{name}"
+                self.t.setRowHidden(i, parent not in self._open)
+            else:
+                arrow = ("▾ " if cid in self._open else "◂ ") if cid in with_products else "   "
+                text = f"{arrow}{mark}{name}"
+                self.t.setRowHidden(i, False)
+            for j in range(self.t.columnCount()):
+                it = self.t.item(i, j)
+                if it is None:
+                    continue
+                it.setBackground(faint if parent else strong)
+                f = it.font()
+                f.setBold(not parent)
+                it.setFont(f)
+            self.t.item(i, 0).setText(text)
+            if cid in with_products:
+                n = sum(1 for _, p, _ in self._tree if p == cid)
+                self.t.item(i, 0).setToolTip(tr("{n} products — click to show or hide them").format(n=n))
+
+    def _toggle(self, row: int, col: int):
+        if not (0 <= row < len(self._tree)) or col == 1:
+            return
+        cid, parent, _ = self._tree[row]
+        with_products = {p for _, p, _ in self._tree if p}
+        if parent or cid not in with_products:
+            return
+        self._open ^= {cid}
+        self._shade(with_products)
 
     def _folder_cell(self, c) -> QWidget:
         from PySide6.QtWidgets import QToolButton
