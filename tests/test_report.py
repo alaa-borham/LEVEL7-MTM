@@ -10,14 +10,16 @@ from level7mtm.services import report
 def test_no_new_xml_for_two_hours_is_said_in_working_hours(ws):
     ws.import_data(read(XML_53), "Order-9-53-1_2.xml")
     last = datetime.fromisoformat(ws.db.one("SELECT MAX(received_at) AS t FROM import_files")["t"])
-    at = last.replace(hour=11, minute=0) if last.hour < 9 else last + timedelta(hours=3)
-    if not report.working_now("08:00-20:00", at):
-        ws.db.set_setting("alert.hours", "")                   # all day
+    ws.db.set_setting("alert.hours", "")                       # all day: the test never depends on the clock
     early = report.alerts(ws, [], at=last + timedelta(minutes=30), started=last - timedelta(hours=5))
     assert not early
     (a,) = report.alerts(ws, [], at=last + timedelta(hours=3), started=last - timedelta(hours=5))
     assert a["key"] == "xml" and "3 h" in a["text"]
     assert not report.alerts(ws, [], at=last + timedelta(hours=3), started=last - timedelta(hours=5), erp_on=False)
+    off = (last + timedelta(hours=3)).strftime("%H:%M")       # outside the working hours: nothing said
+    ws.db.set_setting("alert.hours", f"{off}-{off}")
+    assert not report.alerts(ws, [], at=last + timedelta(hours=3), started=last - timedelta(hours=5))
+    ws.db.set_setting("alert.hours", "")
     ws.db.set_setting("alert.on", False)
     assert not report.alerts(ws, [], at=last + timedelta(hours=3), started=last - timedelta(hours=5))
 

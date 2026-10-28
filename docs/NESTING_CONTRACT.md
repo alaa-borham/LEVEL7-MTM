@@ -73,3 +73,22 @@ Setting `cutting.remnant` (setup step 5, on by default): LEVEL7 MTM adds `--remn
 `info --json` lists `"remnant"` in `features` (newer LEVEL7 Nesting); with an older LEVEL7 Nesting the marker
 is nested as before and the log says so. LEVEL7 Nesting then packs the small pieces together so the fabric
 left over is one large piece; the marker length never grows and the result passes its own check.
+
+## Several orders in one marker (`--with`) — needed from LEVEL7 Nesting
+
+Owner: small orders of one customer on the same fabric are nested together. Switched on for each customer
+(setting `nesting.combine@<customer>` = `{"on": true, "most": 6}`, the customer's "Nesting settings" window;
+off unless switched on). LEVEL7 MTM groups the models waiting for nesting that have the same customer, the same
+`Fabric/@Number`, `Fabric/@Color` and `Fabric/@Width` of the XML and the same base pattern; an order without a
+fabric number is always nested alone. Each model is checked on its own first (pattern, Test Run All Parts).
+
+The call, sent only when `nest --help` shows `--with`:
+
+    level7-cli nest A.mdl --width 1450 --time 60 --sizes S1=1 --with B.mdl S1=2 --with C.mdl S1=1 -o "A +2.l7n"
+
+`--with FILE SIZE=QTY` (repeatable, two values): the pieces of FILE, size SIZE (a key of `info --json`
+`size_names` of that file), QTY garments, are nested in the same marker as the first file's. The pieces of each
+file stay apart (their names and labels say which file / order they come from, also in PLT / ISO). Everything
+else (gaps, `--remnant`, JSON printed, `UNPLACED:` lines, exit code) as for one file.
+
+With a LEVEL7 Nesting without `--with` every order is nested alone, as before.

@@ -3201,20 +3201,41 @@ class NestingGapsPanel(QWidget):
             b.setMinimumWidth(140)
             self.boxes[k] = b
             f.addRow(tr(label_) + ":", b)
+        # owner: small orders of this customer on the same fabric in one marker — on / off for each customer
+        self.combine = QCheckBox(tr("Orders on the same fabric in one marker"))
+        self.combine.setToolTip(tr("Orders of this customer waiting for nesting with the same fabric number, colour "
+                                   "and width (from the XML) and the same base pattern are nested together in one "
+                                   "marker. An order without a fabric number in the XML is always nested alone."))
+        f.addRow(self.combine)
+        self.most = QSpinBox()
+        self.most.setRange(2, 20)
+        f.addRow(tr("Most orders in one marker") + ":", self.most)
+        self.combine_note = QLabel()
+        self.combine_note.setWordWrap(True)
+        f.addRow(self.combine_note)
 
     def refresh(self):
-        from ..services.auto_cut import customer_gaps
+        from ..services.auto_cut import combine_settings, combine_supported, customer_gaps
         g = customer_gaps(self.ws, self.ws.customer())
         for k, b in self.boxes.items():
             b.setValue(g[k])
+        c = combine_settings(self.ws, self.ws.customer())
+        self.combine.setChecked(c["on"])
+        self.most.setValue(c["most"])
+        ok = combine_supported(self.ws)
+        self.combine_note.setText("" if ok else "⚠ " + tr("This LEVEL7 Nesting cannot nest several orders in one "
+                                                          "marker yet (update it): each order is nested alone until "
+                                                          "then"))
+        self.combine_note.setStyleSheet("" if ok else "color:#b26a00;font-weight:bold")
 
     def save(self):
-        from ..services.auto_cut import set_customer_gaps
+        from ..services.auto_cut import set_combine, set_customer_gaps
         try:
             set_customer_gaps(self.ws, self.ws.customer(), {k: b.value() for k, b in self.boxes.items()})
         except ValueError as e:
             QMessageBox.warning(self, tr("Nesting gaps"), tr_msg(str(e)))
             return False
+        set_combine(self.ws, self.ws.customer(), self.combine.isChecked(), self.most.value())
         return True
 
 

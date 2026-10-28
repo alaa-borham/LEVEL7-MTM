@@ -26,6 +26,12 @@ AR = {
     "Customers": "العملاء",
     "Patterns": "البترونات",
     "Save and close": "حفظ وإغلاق",
+    "Orders on the same fabric in one marker": "تجميع أوردرات نفس القماش في ماركر واحد",
+    "Orders of this customer waiting for nesting with the same fabric number, colour and width (from the XML) and the same base pattern are nested together in one marker. An order without a fabric number in the XML is always nested alone.":
+        "أوردرات هذا العميل التي تنتظر التعشيق ولها نفس رقم القماش ولونه وعرضه (من XML) ونفس البترون الأساسي تُعشَّق معًا في ماركر واحد. الأوردر الذي ليس له رقم قماش في XML يُعشَّق وحده دائمًا.",
+    "Most orders in one marker": "أقصى عدد أوردرات في الماركر",
+    "This LEVEL7 Nesting cannot nest several orders in one marker yet (update it): each order is nested alone until then":
+        "نسخة LEVEL7 Nesting الحالية لا تستطيع بعد تعشيق عدة أوردرات في ماركر واحد (تحتاج تحديث): كل أوردر يُعشَّق وحده حتى ذلك الحين",
     "No new XML file for {ago} (the last at {last}) — check that ERP still exports to the XML-process folder":
         "لم يصل أي ملف XML جديد منذ {ago} (آخر ملف {last}) — تأكد أن ERP ما زال يصدّر إلى مجلد XML-process",
     "AI TOOL has not finished a model for {ago} — {n} orders wait for CAD":
@@ -731,7 +737,7 @@ AR = {
     "All customers": "كل العملاء",
     "Production screen": "شاشة الإنتاج",
     "Esc: back to the program": "Esc: الرجوع إلى البرنامج",
-    "Nesting gaps": "مسافات التعشيق",
+    "Nesting gaps": "إعدادات التعشيق",
     "Gap between the pieces": "المسافة بين القطع",
     "Extra gap along the marker": "مسافة إضافية على طول الماركر",
     "Extra gap across the fabric": "مسافة إضافية على عرض القماش",

@@ -285,3 +285,19 @@ def test_a_stop_of_the_line_shows_in_red_and_the_report_opens(ws, monkeypatch):
     win.daily_report()
     win.close()
     app.processEvents()
+
+
+def test_combining_is_switched_on_for_one_customer(ws):
+    from level7mtm.services.auto_cut import combine_settings
+    from level7mtm.ui import main_window as mw
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    win = mw.MainWindow(ws)
+    p = mw.NestingGapsPanel(win.pages["Customers"])
+    p.refresh()
+    assert not p.combine.isChecked() and p.combine_note.text()        # off; this LEVEL7 Nesting cannot yet
+    p.combine.setChecked(True)
+    p.most.setValue(4)
+    assert p.save() is True
+    assert combine_settings(ws, ws.customer()) == {"on": True, "most": 4}
+    win.close()
+    app.processEvents()

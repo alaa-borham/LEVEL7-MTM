@@ -281,3 +281,116 @@ def test_orders_saved_without_test_run_on_all_parts_are_taken_back(ws, tmp_path)
     assert ok[0].exists() and not ok[1].exists() and (ok[1].parent / "NOT TEST-RUN" / ok[1].name).exists()
     assert ws.revision(g2["revision_id"])["status"] == "ready" and g2["revision_id"] in in_error(ws)
     assert ws.revision(g1["revision_id"])["status"] == "completed"
+
+
+_FAKE_CLI = r'''#!/usr/bin/env python3
+"""LEVEL7 Nesting stand-in that nests several models in one marker (nest … --with FILE SIZE=QTY)."""
+import json, sys
+a = sys.argv[1:]
+open(sys.argv[0] + ".calls", "a").write(json.dumps(a) + "\n")
+if a[:2] == ["nest", "--help"]:
+    print("--width --sizes --time --spacing --with FILE SIZE=QTY")
+    sys.exit(0)
+if a[0] == "info":
+    print(json.dumps({"size_names": ["S1"], "features": []}))
+    sys.exit(0)
+out = a[a.index("-o") + 1]
+open(out, "w").write("marker")
+if a[0] == "nest":
+    print(json.dumps({"length_mm": 2500.0, "efficiency_total_width_pct": 81.5, "placed": 40}))
+sys.exit(0)
+'''
+
+
+def _fake_nesting(ws, tmp_path):
+    cli = tmp_path / "level7-cli"
+    cli.write_text(_FAKE_CLI)
+    cli.chmod(0o755)
+    ws.db.set_setting("nesting.cli", str(cli))
+    ws.db.set_setting("cutting.output", str(tmp_path / "CUT"))
+    ws.db.set_setting("cutting.pattern_check", False)
+    from level7mtm.services import auto_cut
+    auto_cut._NEST_FLAGS.clear()
+    return str(cli) + ".calls"
+
+
+@needs_mdl
+def test_orders_of_the_same_fabric_in_one_marker_when_the_customer_has_it_on(ws, tmp_path):
+    """Owner: small orders of one customer on the same fabric nested together — on / off for each customer."""
+    import json
+
+    from level7mtm.services.auto_cut import combine_settings, set_combine
+    from level7mtm.services.mdl_intake import fabric_key, queue
+    ws.db.set_setting("grafis.mdl", MDL)
+    ws.db.set_setting("grafis.input", str(tmp_path / "MDL"))
+    calls = _fake_nesting(ws, tmp_path)
+    out = import_and_prepare(ws, XML_53)
+    p1, p2 = (g["path"] for g in out.grafis)
+    _saved_by_grafis(p1)
+    _saved_by_grafis(p2, mark=2)
+    os.utime(p1, (1, 1))
+    os.utime(p2, (1, 1))
+    assert fabric_key(ws, p1) == fabric_key(ws, p2) is not None          # same customer, fabric 100, colour, width
+    assert combine_settings(ws, "level7")["on"] is False                  # off unless switched on
+    set_combine(ws, "level7", True, 6)
+    assert set(queue(ws)) == {p1, p2}
+    r = register_mdl(ws, p1)
+    assert r["status"] == "cutting_done" and r["combined"] == [p2], r
+    nest = next(json.loads(ln) for ln in open(calls) if json.loads(ln)[0] == "nest" and "--width" in ln)
+    assert nest[nest.index("--with") + 1] == p2 and nest[nest.index("--with") + 2] == "S1=1"
+    assert nest[nest.index("--sizes") + 1] == "S1=1"
+    cut = r["cutting"]["outputs"]
+    assert cut and all(" +1." in os.path.basename(o) for o in cut)       # one marker, named for both
+    assert queue(ws) == []                                                # both out of the queue
+    done = {ws.revision(ln["revision_id"])["status"] for ln in out.lines}
+    assert done == {"completed"}
+    assert not os.path.exists(p2)                                         # the other model to MDL-done too
+
+
+@needs_mdl
+def test_no_combining_when_off_or_no_fabric_number(ws, tmp_path):
+    import json
+
+    from level7mtm.services.auto_cut import set_combine
+    ws.db.set_setting("grafis.mdl", MDL)
+    ws.db.set_setting("grafis.input", str(tmp_path / "MDL"))
+    calls = _fake_nesting(ws, tmp_path)
+    out = import_and_prepare(ws, XML_53)
+    p1, p2 = (g["path"] for g in out.grafis)
+    _saved_by_grafis(p1)
+    _saved_by_grafis(p2, mark=2)
+    os.utime(p1, (1, 1))
+    os.utime(p2, (1, 1))
+    set_combine(ws, "level7", False)
+    r = register_mdl(ws, p1)
+    assert r["status"] == "cutting_done" and "combined" not in r
+    from level7mtm.services.mdl_intake import queue
+    assert queue(ws) == [p2], queue(ws)                                   # the one nested is out of the queue
+    assert not any("--with" in json.loads(ln) for ln in open(calls) if json.loads(ln)[:2] != ["nest", "--help"])
+    set_combine(ws, "level7", True)
+    rid = next(ln["revision_id"] for ln in out.lines if ln["line_number"] == "9-53-2_2")
+    raw = json.loads(ws.db.one("SELECT raw_line FROM revisions WHERE id=?", (rid,))["raw_line"])
+    raw["fabric_number"] = ""
+    with ws.db.tx() as c:
+        c.execute("UPDATE revisions SET raw_line=? WHERE id=?", (json.dumps(raw), rid))
+    from level7mtm.services.mdl_intake import fabric_key
+    assert fabric_key(ws, p2) is None                                     # never guessed
+
+
+@needs_mdl
+def test_an_older_level7_nesting_nests_each_order_alone(ws, tmp_path, monkeypatch):
+    from level7mtm.services import auto_cut
+    from level7mtm.services.auto_cut import set_combine
+    ws.db.set_setting("grafis.mdl", MDL)
+    ws.db.set_setting("grafis.input", str(tmp_path / "MDL"))
+    _fake_nesting(ws, tmp_path)
+    monkeypatch.setattr(auto_cut, "_nest_flags", lambda cmd, env: "--width --sizes --time")   # no --with
+    out = import_and_prepare(ws, XML_53)
+    p1, p2 = (g["path"] for g in out.grafis)
+    _saved_by_grafis(p1)
+    _saved_by_grafis(p2, mark=2)
+    os.utime(p1, (1, 1))
+    os.utime(p2, (1, 1))
+    set_combine(ws, "level7", True)
+    r = register_mdl(ws, p1)
+    assert r["status"] == "cutting_done" and "combined" not in r and os.path.exists(p2)

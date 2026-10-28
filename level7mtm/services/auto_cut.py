@@ -121,6 +121,38 @@ def set_customer_gaps(ws, cid: str, values: dict) -> None:
     ws.db.set_setting(f"nesting.gaps@{cid}", clean)
 
 
+COMBINE_FLAG = "--with"                                  # nest FILE … --with OTHER SIZE=QTY (one marker)
+
+
+def combine_settings(ws, cid: str | None) -> dict:
+    """Owner: small orders of one customer on the same fabric nested in one marker — on / off for each customer
+    (a product without its own setting takes its customer's); off unless switched on."""
+    from .customers import get
+    out = {"on": False, "most": 6}
+    if not cid:
+        return out
+    c = get(ws, cid)
+    for one in [cid] + ([c["parent"]] if c and c.get("parent") else []):
+        got = ws.db.get_setting(f"nesting.combine@{one}")
+        if got is not None:
+            out.update(on=bool(got.get("on")), most=max(2, min(20, int(got.get("most") or 6))))
+            return out
+    return out
+
+
+def set_combine(ws, cid: str, on: bool, most: int = 6) -> None:
+    ws.db.set_setting(f"nesting.combine@{cid}", {"on": bool(on), "most": max(2, min(20, int(most)))})
+
+
+def combine_supported(ws) -> bool:
+    """This LEVEL7 Nesting nests several models in one marker (``nest … --with``)."""
+    try:
+        cmd, env = nesting_command(ws)
+    except NestingNotConfigured:
+        return False
+    return COMBINE_FLAG in _nest_flags(cmd, env)
+
+
 _NEST_FLAGS: dict = {}
 
 
@@ -357,6 +389,8 @@ def _auto_cut_inner(ws, chk, scb_path: str, force: bool = False) -> dict:
     result = {"status": "failed", "outputs": [], "log": log}
     widths = {ws.revision(ln["revision_id"])["normalized"].get("fabric_width_mm") for ln in chk.lines}
     qty = sum(int(ln["quantity"] or 0) for ln in chk.lines)
+    others = chk.info.get("with") or []                  # the orders nested in the same marker (same fabric)
+    own_qty = qty - sum(int(w["quantity"] or 0) for w in others)
     if len(widths) != 1 or None in widths:
         result["message"] = f"order lines have no single fabric width: {sorted(map(str, widths))}"
         return _save(ws, chk, scb_path, result)
@@ -369,7 +403,7 @@ def _auto_cut_inner(ws, chk, scb_path: str, force: bool = False) -> dict:
         return _save(ws, chk, scb_path, result)
     # owner: the cutting folder holds the cutting files only, each customer in his own folder; the marker (.l7n)
     # is kept in the program's data folder (it opens from the order list)
-    name = os.path.splitext(os.path.basename(scb_path))[0]
+    name = os.path.splitext(os.path.basename(scb_path))[0] + (f" +{len(others)}" if others else "")
     cut_dir = cut_folder(ws, custs_all, st["out"])
     l7n_dir = markers_folder(ws)
     os.makedirs(cut_dir, exist_ok=True)
@@ -382,7 +416,13 @@ def _auto_cut_inner(ws, chk, scb_path: str, force: bool = False) -> dict:
     finfo = _info(cmd, env, scb_path)
     if len(sizes) == 1:
         key = _size_key(cmd, env, scb_path, sizes[0], log, finfo)
-        nest += ["--sizes", f"{key}={qty}"]              # garments from the order, not from the GRAFIS marker
+        nest += ["--sizes", f"{key}={own_qty}"]          # garments from the order, not from the GRAFIS marker
+    for w in others:                                      # each other order: its own model and garments
+        nest += [COMBINE_FLAG, w["path"], f"{_size_key(cmd, env, w['path'], w['size'], log)}={w['quantity']}"]
+    if others:
+        log.append(f"one marker for {len(others) + 1} orders of the same fabric: "
+                   + ", ".join(os.path.basename(w["path"]) for w in others))
+        result["combined"] = [w["path"] for w in others]
     if st["remnant"]:
         if "remnant" in finfo.get("features", []):
             nest += ["--remnant"]                       # small pieces together: one large piece of fabric left
@@ -463,6 +503,12 @@ def _save(ws, chk, scb_path, result) -> dict:
                    json.dumps({k: v for k, v in result.items() if k not in ("log", "outputs")}, ensure_ascii=False),
                    "\n".join(result["log"])[-20000:]))
         if result["status"] == "done":
+            for w in chk.info.get("with") or []:          # the orders nested with it: done too (out of the queue)
+                c.execute("INSERT INTO cutting_jobs(sha256, scb_path, created_at, status, outputs, info, log) "
+                          "VALUES (?,?,?,?,?,?,?)",
+                          (w["sha256"], w["path"], now(), "done", json.dumps(result["outputs"]),
+                           json.dumps({**{k: v for k, v in result.items() if k not in ("log", "outputs")},
+                                       "combined_into": scb_path}, ensure_ascii=False), ""))
             for ln in chk.lines:
                 c.execute("UPDATE revisions SET status='completed' WHERE id=? AND status NOT IN "
                           "('superseded','cancelled')", (ln["revision_id"],))

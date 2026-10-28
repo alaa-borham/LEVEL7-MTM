@@ -257,7 +257,17 @@ def _register_mdl(ws, path: str, cut: bool | None = None) -> dict:
     if cut is None:
         cut = settings(ws)["enabled"]
     if ok and cut:
-        out["cutting"] = auto_cut(ws, chk, path)
+        combo, others = _combined(ws, chk, row, path)
+        out["cutting"] = auto_cut(ws, combo or chk, path)
+        if combo and out["cutting"]["status"] not in ("done", "duplicate") and \
+                not out["cutting"].get("pattern_errors") and os.path.isfile(path):
+            out["cutting"] = auto_cut(ws, chk, path, force=True)    # alone; the others stay in the queue
+            combo = None
+        if combo and out["cutting"]["status"] == "done":
+            from .grafis_orders import to_done
+            out["combined"] = [w["path"] for w in others]
+            for w in others:
+                to_done(ws, w["path"])
         out["status"] = "cutting_done" if out["cutting"]["status"] in ("done", "duplicate") else \
             "cutting_" + out["cutting"]["status"]
     if out["status"] == "cutting_done":                 # owner: passed CAD, the nesting and the cutting files:
@@ -274,6 +284,77 @@ def _register_mdl(ws, path: str, cut: bool | None = None) -> dict:
             from .pattern_check import to_err             # with its reason; the XML stays in process
             to_err(ws, path, problems)
     return out
+
+
+def fabric_key(ws, path: str) -> tuple | None:
+    """(customer, fabric number, colour, width, base pattern) of the order this model is for; None without a fabric
+    number (owner: never guessed — the same fabric only when ERP says so)."""
+    row = ws.db.one("SELECT revision_id, info FROM grafis_orders WHERE status='written' AND path=? ORDER BY id DESC "
+                    "LIMIT 1", (path,))
+    if row is None:
+        return None
+    rev = ws.db.one("SELECT raw_line, normalized, status FROM revisions WHERE id=?", (row["revision_id"],))
+    if rev is None or rev["status"] in ("superseded", "cancelled"):
+        return None
+    raw, norm = json.loads(rev["raw_line"]), json.loads(rev["normalized"])
+    number, width = (raw.get("fabric_number") or "").strip(), norm.get("fabric_width_mm")
+    if not number or not width:
+        return None
+    template = json.loads(row["info"] or "{}").get("template") or ""
+    return (ws.customer_of(row["revision_id"]), number.lower(), (raw.get("fabric_color") or "").strip().lower(),
+            round(float(width), 1), os.path.normcase(template))
+
+
+def _combined(ws, chk, row, path):
+    """Owner: the orders of the same customer on the same fabric (number, colour, width) and the same base pattern,
+    waiting in the nesting queue now, nested with this one in one marker — when the customer has it switched on and
+    LEVEL7 Nesting can. Each other order is checked as on its own (pattern, Test Run All Parts) first.
+    Returns (the check of all of them, the others) or (None, [])."""
+    import copy
+    import time as _t
+
+    from .auto_cut import combine_settings, combine_supported
+    if row is None or len(chk.info.get("sizes", [])) != 1:
+        return None, []
+    cid = ws.customer_of(row["revision_id"])
+    st = combine_settings(ws, cid)
+    if not st["on"]:
+        return None, []
+    key = fabric_key(ws, path)
+    if key is None or not combine_supported(ws):
+        return None, []
+    picked = []
+    for p in queue(ws):
+        if len(picked) >= st["most"] - 1:
+            break
+        if p == path or fabric_key(ws, p) != key:
+            continue
+        with _NOW_LOCK:
+            if p in _NOW:
+                continue                                  # another nesting has it
+            _NOW[p] = _t.monotonic()
+        picked.append(p)
+    others = []
+    try:
+        for p in picked:
+            r = _register_mdl(ws, p, cut=False)           # checked and handed over as on its own
+            c = r.get("check")
+            # handed over now, or before (waiting in the queue since): nested with this one
+            if r.get("status") in ("handed_over", "duplicate") and c is not None and c.ok and \
+                    len(c.info.get("sizes", [])) == 1:
+                others.append({"path": p, "sha256": c.sha256, "size": c.info["sizes"][0],
+                               "quantity": sum(int(ln["quantity"] or 0) for ln in c.lines), "lines": c.lines})
+    finally:
+        with _NOW_LOCK:
+            for p in picked:
+                _NOW.pop(p, None)
+    if not others:
+        return None, []
+    combo = copy.copy(chk)
+    combo.lines = list(chk.lines) + [ln for w in others for ln in w["lines"]]
+    combo.info = dict(chk.info, **{"with": [{k: w[k] for k in ("path", "sha256", "size", "quantity")}
+                                            for w in others]})
+    return combo, others
 
 
 def queue(ws) -> list[str]:
@@ -307,6 +388,11 @@ def queue(ws) -> list[str]:
             with ws.db.tx() as c:
                 c.executemany("UPDATE grafis_results SET handed_over=0, archived=1, status='replaced' WHERE id=?",
                               [(i,) for i in stale])
+    # a model nested already, followed into MDL-done: its file is new to the identity (content + file) but never
+    # nested again (it came back into the queue and was nested a second time)
+    cut_paths = {os.path.normcase(os.path.abspath(r["path"])) for r in ws.db.q(
+        "SELECT path FROM grafis_results WHERE path IS NOT NULL AND sha256 IN (SELECT sha256 FROM cutting_jobs WHERE "
+        "status='done')")}
     known = {r["sha256"] for r in ws.db.q("SELECT sha256 FROM grafis_results")}   # by content, not by name: a
     latest: dict[str, str] = {}                       # model saved again is new; per file its newest writing
     last_try = {j["path"]: j for j in ws.db.q("SELECT path, status, at FROM robot_jobs ORDER BY id")}
@@ -322,7 +408,7 @@ def queue(ws) -> list[str]:
     import time as _t
     busy = current_model()
     for p, written in latest.items():                # oldest first
-        if p in found or not os.path.isfile(p) or p == busy:
+        if p in found or not os.path.isfile(p) or p == busy or os.path.normcase(os.path.abspath(p)) in cut_paths:
             continue                                  # (open in CAD now: when it is saved)
         try:
             if _t.time() - os.path.getmtime(p) < 5:
