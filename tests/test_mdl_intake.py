@@ -162,7 +162,9 @@ def test_distorted_models_leave_the_nesting_queue_ahead_of_their_turn(ws, tmp_pa
     ws.db.set_setting("cutting.auto", True)
     p1, p2 = (g["path"] for g in import_and_prepare(ws, XML_53).grafis)
     _saved_by_grafis(p1, recalculated=True)
+    ws.db.set_setting("cutting.pattern_check", False)
     assert register_mdl(ws, p1, cut=False)["status"] == "handed_over"      # nested before the check existed
+    ws.db.set_setting("cutting.pattern_check", True)
     _saved_by_grafis(p2, recalculated=True)
     for p in (p1, p2):
         os.utime(p, (os.path.getatime(p), os.path.getmtime(p) - 60))

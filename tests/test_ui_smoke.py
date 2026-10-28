@@ -294,7 +294,9 @@ def test_combining_is_switched_on_for_one_customer(ws):
     win = mw.MainWindow(ws)
     p = mw.NestingGapsPanel(win.pages["Customers"])
     p.refresh()
-    assert not p.combine.isChecked() and p.combine_note.text()        # off; this LEVEL7 Nesting cannot yet
+    from level7mtm.services.auto_cut import combine_supported
+    assert not p.combine.isChecked()                                  # off unless switched on
+    assert bool(p.combine_note.text()) != combine_supported(ws)       # said only when LEVEL7 Nesting cannot
     p.combine.setChecked(True)
     p.most.setValue(4)
     assert p.save() is True
