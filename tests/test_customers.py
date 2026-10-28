@@ -836,3 +836,42 @@ def test_orders_read_again_from_their_xml_file_not_a_copy(ws, tmp_path, xml53):
     assert outs[0].status == "failed" and "move it to process" in outs[0].message
     os.replace(err / "Order-1.xml", src)                                   # the owner moved it back: read
     assert xml_bytes(ws, fid)[0]
+
+
+def test_copy_settings_to_an_existing_customer_keeps_who_he_is(ws):
+    """Owner: copy a customer's settings, then change the differences only — his XML name, Reseller,
+    Measurement-Table-Name and cutting folder stay his."""
+    from level7mtm.services.auto_cut import combine_settings, customer_gaps, set_combine, set_customer_gaps
+    from level7mtm.services.options import option_table, save_options
+    a = customers.add_customer(ws, "Richy", "From Richy", reseller="10040")
+    b = customers.add_customer(ws, "Dubai", "From Dubai", reseller="10041")
+    with ws.for_customer(a):
+        groups = option_table(ws)
+        groups.append({"group": "neck_button", "label": {"ar": "زر", "en": "Button"}, "required": False,
+                       "default": "", "values": [{"value": "hidden", "label": {"ar": "مخفي", "en": "Hidden"},
+                                                  "erp_names": ["Neck Button Hidden"]}]})
+        save_options(ws, groups)
+    set_customer_gaps(ws, a, {"spacing": 2, "buffer_x": 0, "buffer_y": 0, "margin": 5})
+    set_combine(ws, a, True, 4)
+    ws.db.set_setting(f"measure.checks@{a}", {"*": {"FL": {"mode": "range", "min": 100, "max": 200}}})
+    customers.set_measurement_table(ws, b, "Thobe_Measurments_Full")
+    ws.db.set_setting(f"cutting.folder@{b}", "D:/CUT/Dubai")
+    out = customers.copy_settings(ws, a, b)
+    assert set(out) == {"tables", "nesting", "checks", "model"}
+    with ws.for_customer(b):
+        assert "neck_button" in {g["group"] for g in option_table(ws)}           # the piece options
+        _, prof = ws.active("mapping")
+    assert prof["detect"]["attributes"]["Reference"] == "From Dubai"             # still himself
+    assert customers.measurement_table(ws, b) == "Thobe_Measurments_Full"
+    assert ws.db.get_setting(f"cutting.folder@{b}") == "D:/CUT/Dubai"
+    assert customer_gaps(ws, b)["margin"] == 5 and combine_settings(ws, b) == {"on": True, "most": 4}
+    assert ws.db.get_setting(f"measure.checks@{b}")["*"]["FL"]["max"] == 200
+    assert customers.get(ws, b)["reseller"] == "10041"
+    with ws.for_customer(a):                                                       # the one copied: unchanged
+        _, aprof = ws.active("mapping")
+    assert aprof["detect"]["attributes"]["Reference"] == "From Richy"
+    with pytest.raises(customers.WorkflowError):
+        customers.copy_settings(ws, a, a)
+    c = customers.add_customer(ws, "New", "From New", copy_from=a)                 # a new one: all of it at once
+    assert customer_gaps(ws, c)["margin"] == 5
+    assert ws.db.get_setting(f"measure.checks@{c}")["*"]["FL"]["min"] == 100

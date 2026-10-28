@@ -3461,7 +3461,7 @@ class CustomersPage(Page):
         left.addWidget(self.t, 1)
         bar = QHBoxLayout()
         for text, fn in (("Add customer…", self.add), ("Add product…", self.add_product), ("Edit…", self.edit),
-                         ("Learn from an XML file…", self.learn_xml)):
+                         ("Copy settings…", self.copy_settings), ("Learn from an XML file…", self.learn_xml)):
             b = QPushButton(tr(text))
             b.clicked.connect(fn)
             bar.addWidget(b)
@@ -3798,6 +3798,55 @@ class CustomersPage(Page):
             self.win.guard(lambda: update_customer(self.ws, cid, name=got[0], reference=got[1], reseller=got[3]))
             self.win.guard(lambda: set_measurement_table(self.ws, cid, got[4]))
             self.win.customer_changed()
+
+    def copy_settings(self, src: str | None = None, parts=None, confirm: bool = True):
+        """Owner: another customer's settings given to the chosen one (also an existing one), then only the
+        differences changed. His XML name, Reseller, Item Number, measurement table and cutting folder stay his."""
+        from ..services.customers import COPY_PARTS, copy_settings, list_customers, name_of
+        dst = self._cid() or self.ws.customer()
+        others = [c for c in list_customers(self.ws) if c["id"] != dst]
+        if not others:
+            return
+        if src is None:
+            d = QDialog(self)
+            d.setWindowTitle(tr("Copy settings…") + " — " + name_of(self.ws, dst))
+            f = QFormLayout(d)
+            box = QComboBox()
+            for c in others:
+                box.addItem(("   ↳ " if c.get("parent") else "") + c["name"], c["id"])
+            f.addRow(tr("Copy from") + ":", box)
+            checks = {}
+            for k, label_ in (("tables", "Size table, piece options and fixed pieces"),
+                              ("nesting", "Nesting gaps, combining and cutting file formats"),
+                              ("checks", "Measurement checks"), ("model", "GRAFIS model and patterns")):
+                checks[k] = QCheckBox(tr(label_))
+                checks[k].setChecked(k != "model")
+                f.addRow(checks[k])
+            note = QLabel(tr("His XML name, Reseller, Item Number, measurement table and cutting folder stay his. "
+                             "The settings before are kept in the library."))
+            note.setWordWrap(True)
+            f.addRow(note)
+            bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            bb.accepted.connect(d.accept)
+            bb.rejected.connect(d.reject)
+            f.addRow(bb)
+            if d.exec() != QDialog.Accepted:
+                return
+            src, parts = box.currentData(), [k for k, cb in checks.items() if cb.isChecked()]
+        parts = list(parts or COPY_PARTS)
+        if not parts:
+            return
+        if confirm and QMessageBox.question(self, tr("Copy settings…"), tr(
+                "Replace the settings of {dst} with those of {src}?").format(
+                dst=name_of(self.ws, dst), src=name_of(self.ws, src))) != QMessageBox.Yes:
+            return
+        try:
+            copy_settings(self.ws, src, dst, parts)
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(self, tr("Error"), tr_msg(str(e)))
+            return
+        self.refresh()
+        reread_held_question(self, tr("Saved") + f": {name_of(self.ws, src)} → {name_of(self.ws, dst)}", dst)
 
     def learn_xml(self):
         """Read one of the customer's XML files and make his XML mapping read them as they are; then read the file
@@ -4494,6 +4543,7 @@ class MainWindow(QMainWindow):
                               (tr("Pattern errors (MDL-ERR)"), self.open_mdl_err),
                               (tr("Finished XML (done)"), self.open_done_xml),
                               (tr("Daily report…"), self.daily_report),
+                              (tr("Distortion log…"), self.distortion_log),
                               (tr("Errors (ER)"), lambda: self.pages["Home"]._open_er())])]),
             ("system", tr("System"), [("setup", "setup", tr("Setup"), self.open_setup),
                             ("log", "log", tr("Log"), lambda: self.goto("Log & backups"))]),
@@ -4884,6 +4934,9 @@ class MainWindow(QMainWindow):
         a = QAction(tr("Daily report…"), self)
         a.triggered.connect(self.daily_report)
         v.addAction(a)
+        a = QAction(tr("Distortion log…"), self)
+        a.triggered.connect(self.distortion_log)
+        v.addAction(a)
         a = QAction(tr("Production screen"), self)
         a.setShortcut("F11")
         a.triggered.connect(self.production_screen)
@@ -5140,6 +5193,83 @@ class MainWindow(QMainWindow):
         lay.addLayout(top)
         lay.addWidget(view, 1)
         day.dateChanged.connect(lambda _q: show())
+        show()
+        d.exec()
+
+    def distortion_log(self):
+        """Owner: which piece, option and pattern is distorted most — fix the model once in GRAFIS."""
+        from ..services.customers import list_customers
+        from ..services.distortions import distortion_log
+        d = QDialog(self)
+        d.setWindowTitle(tr("Distortion log"))
+        d.resize(980, 720)
+        lay = QVBoxLayout(d)
+        top = QHBoxLayout()
+        period = QComboBox()
+        for days, label_ in ((7, "Last 7 days"), (30, "Last 30 days"), (90, "Last 90 days"), (None, "Everything")):
+            period.addItem(tr(label_), days)
+        period.setCurrentIndex(1)
+        who = QComboBox()
+        who.addItem(tr("All customers"), None)
+        for c in list_customers(self.ws):
+            who.addItem(("   ↳ " if c.get("parent") else "") + c["name"], c["id"])
+        top.addWidget(QLabel(tr("Period") + ":"))
+        top.addWidget(period)
+        top.addWidget(QLabel(tr("Customer") + ":"))
+        top.addWidget(who)
+        top.addStretch()
+        lay.addLayout(top)
+        summary = QLabel()
+        summary.setWordWrap(True)
+        summary.setStyleSheet("font-weight: bold;")
+        lay.addWidget(summary)
+        kinds = {"crosses": tr("crosses itself"), "needle": tr("needle tip"), "no_area": tr("no area"),
+                 "shape": tr("far from the base pattern")}
+        lay.addWidget(QLabel(tr("By piece") + " — " + tr("fix the piece in the GRAFIS model")))
+        tp = table(["Piece", "Order count", "Defect", "Last", "Orders (examples)"])
+        lay.addWidget(tp, 2)
+        lay.addWidget(QLabel(tr("By design option") + " — " + tr("how many of the orders with it were distorted")))
+        to = table(["Option group", "Value", "Distorted", "Orders with it", "Share"])
+        lay.addWidget(to, 2)
+        lay.addWidget(QLabel(tr("By base pattern")))
+        tb = table(["Pattern", "Order count"])
+        lay.addWidget(tb, 1)
+        state = {}
+
+        def show():
+            try:
+                log = distortion_log(self.ws, period.currentData(), who.currentData())
+            except Exception as e:  # noqa: BLE001
+                summary.setText(f"{tr('Error')}: {e}")
+                return
+            state["log"] = log
+            summary.setText(tr("{n} distorted orders of {m} written for CAD ({p:.1f}%)").format(
+                n=log["orders"], m=log["checked"], p=100 * log["rate"]))
+            fill(tp, [[p["piece"], p["orders"], ", ".join(f"{kinds.get(k, k)} ×{n}" for k, n in p["kinds"].items()),
+                       p["last"].replace("T", " ")[:16], ", ".join(p["examples"])] for p in log["pieces"]])
+            fill(to, [[o["group"], o["value"], o["distorted"], o["orders"], f"{100 * o['rate']:.0f}%"]
+                      for o in log["options"]])
+            fill(tb, [[p["pattern"], p["orders"]] for p in log["patterns"]])
+
+        def export():
+            from ..services.sheets import write_xlsx
+            log = state.get("log")
+            if not log:
+                return
+            p, _ = QFileDialog.getSaveFileName(d, tr("Export to Excel"), os.path.join(
+                os.path.expanduser("~"), "Desktop", "distortion log.xlsx"), "Excel (*.xlsx)")
+            if not p:
+                return
+            rows = [[tr("Piece"), p_["piece"], p_["orders"], ", ".join(p_["examples"])] for p_ in log["pieces"]] + \
+                [[tr("Option"), f"{o['group']}={o['value']}", o["distorted"], f"{100 * o['rate']:.0f}%"]
+                 for o in log["options"]] + [[tr("Pattern"), x["pattern"], x["orders"], ""] for x in log["patterns"]]
+            write_xlsx(p if p.lower().endswith(".xlsx") else p + ".xlsx",
+                       [tr("Kind"), tr("Name"), tr("Order count"), tr("More")], rows)
+        b = QPushButton(tr("Export to Excel"))
+        b.clicked.connect(export)
+        top.addWidget(b)
+        period.currentIndexChanged.connect(lambda _i: show())
+        who.currentIndexChanged.connect(lambda _i: show())
         show()
         d.exec()
 

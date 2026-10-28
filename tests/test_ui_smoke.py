@@ -303,3 +303,25 @@ def test_combining_is_switched_on_for_one_customer(ws):
     assert combine_settings(ws, ws.customer()) == {"on": True, "most": 4}
     win.close()
     app.processEvents()
+
+
+def test_copy_settings_and_the_distortion_log_open(ws, monkeypatch):
+    from level7mtm.services import customers
+    from level7mtm.services.auto_cut import customer_gaps, set_customer_gaps
+    from level7mtm.ui import main_window as mw
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    a = customers.add_customer(ws, "Richy", "From Richy")
+    b = customers.add_customer(ws, "Dubai", "From Dubai")
+    set_customer_gaps(ws, a, {"spacing": 3})
+    win = mw.MainWindow(ws)
+    monkeypatch.setattr(mw, "reread_held_question", lambda *a_, **k: None)
+    page = win.pages["Customers"]
+    ws.db.set_setting("ui.customer", b)
+    page.refresh()
+    monkeypatch.setattr(page, "_cid", lambda: b)
+    page.copy_settings(src=a, parts=["nesting"], confirm=False)
+    assert customer_gaps(ws, b)["spacing"] == 3
+    monkeypatch.setattr(mw.QDialog, "exec", lambda self: 0)
+    win.distortion_log()
+    win.close()
+    app.processEvents()

@@ -176,6 +176,14 @@ def _create(ws, name, reference, copy_from, mdl, reseller, parent=None, item="",
         ws.set_active("catalog", ws.save_document("catalog", cat, note))
         if mdl or src_mdl:
             ws.db.set_setting(ws._key("grafis.mdl"), mdl or src_mdl)
+    for k in _NESTING_KEYS + ("measure.checks",):        # his gaps, cutting file formats, checks as the one copied
+        if ws.db.get_setting(f"{k}@{copy_from}") is not None:
+            ws.db.set_setting(f"{k}@{cid}", ws.db.get_setting(f"{k}@{copy_from}"))
+    with ws.for_customer(copy_from):
+        pats = ws.db.get_setting(ws._key("grafis.patterns"))
+    if pats and not mdl:                                 # his patterns too (the same base model)
+        with ws.for_customer(cid):
+            ws.db.set_setting(ws._key("grafis.patterns"), pats)
     entry = {"id": cid, "name": name, "reference": reference, "reseller": reseller}
     if parent:
         entry.update(parent=parent, item=item)
@@ -722,3 +730,61 @@ def basic_sizes_seen(ws, cid: str | None = None) -> list[str]:
         if b and b not in seen:
             seen.append(str(b))
     return seen
+
+
+# ------------------------------------------------------------------ copy settings (owner: "copy a customer's
+# settings to a new customer, then change the differences only")
+COPY_PARTS = ("tables", "nesting", "checks", "model")
+_NESTING_KEYS = ("nesting.gaps", "nesting.combine", "cutting.formats")
+
+
+def copy_settings(ws, src: str, dst: str, parts=COPY_PARTS) -> dict:
+    """The settings of ``src`` given to ``dst`` (also an existing customer / product): ``tables`` = size table,
+    piece options and fixed pieces (his rules and ERP mapping, as new versions — the ones before stay in the
+    library), ``nesting`` = gaps, combining, cutting file formats, ``checks`` = measurement checks, ``model`` =
+    GRAFIS base model and patterns. What makes ``dst`` himself stays his: XML name (Reference), Reseller, Item
+    Number, Measurement-Table-Name and his cutting folder. Returns {part: what was copied}."""
+    from .xtable import _next_version
+    if src == dst:
+        raise WorkflowError("choose another customer to copy from")
+    if get(ws, src) is None and src != DEFAULT_CUSTOMER or get(ws, dst) is None and dst != DEFAULT_CUSTOMER:
+        raise WorkflowError("customer not found")
+    out = {}
+    note = f"settings copied from {name_of(ws, src)}"
+    if "tables" in parts:
+        with ws.for_customer(src):
+            _, sprof = ws.active("mapping")
+            _, scat = ws.active("catalog")
+        with ws.for_customer(dst):
+            _, dprof = ws.active("mapping")
+            _, dcat = ws.active("catalog")
+            prof, cat = copy.deepcopy(sprof), copy.deepcopy(scat)
+            prof["profile_id"], prof["detect"] = dprof["profile_id"], copy.deepcopy(dprof.get("detect", {}))
+            table = dprof.get("measurements", {}).get("measurement_table")
+            prof.setdefault("measurements", {}).pop("measurement_table", None)
+            if table:
+                prof["measurements"]["measurement_table"] = table
+            prof["version"] = _next_version(ws, "mapping", dprof["profile_id"], str(dprof["version"]))
+            cat["catalog_id"] = dcat["catalog_id"]
+            cat["version"] = _next_version(ws, "catalog", dcat["catalog_id"], str(dcat["version"]))
+            ws.set_active("mapping", ws.save_document("mapping", prof, note))
+            ws.set_active("catalog", ws.save_document("catalog", cat, note))
+        out["tables"] = f"{prof['version']} / {cat['version']}"
+    if "nesting" in parts:
+        for k in _NESTING_KEYS:
+            ws.db.set_setting(f"{k}@{dst}", ws.db.get_setting(f"{k}@{src}"))
+        out["nesting"] = True
+    if "checks" in parts:
+        ws.db.set_setting(f"measure.checks@{dst}", ws.db.get_setting(f"measure.checks@{src}"))
+        out["checks"] = True
+    if "model" in parts:
+        with ws.for_customer(src):
+            mdl, pats = ws.grafis_mdl(), ws.db.get_setting(ws._key("grafis.patterns"))
+        with ws.for_customer(dst):
+            if mdl:
+                ws.db.set_setting(ws._key("grafis.mdl"), mdl)
+            ws.db.set_setting(ws._key("grafis.patterns"), pats or [])
+        out["model"] = mdl or ""
+    with ws.db.tx() as c:
+        ws.db.audit(c, ws.actor, "customer.settings_copied", "customer", dst, {"from": src, "parts": list(parts)})
+    return out
