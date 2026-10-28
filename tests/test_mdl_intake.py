@@ -394,3 +394,44 @@ def test_an_older_level7_nesting_nests_each_order_alone(ws, tmp_path, monkeypatc
     set_combine(ws, "level7", True)
     r = register_mdl(ws, p1)
     assert r["status"] == "cutting_done" and "combined" not in r and os.path.exists(p2)
+
+
+@needs_mdl
+def test_two_orders_in_one_marker_with_the_real_level7_nesting(ws, tmp_path, monkeypatch):
+    """End to end with LEVEL7 Nesting itself (when it knows --with): one marker, the garments of both orders."""
+    import subprocess
+    import sys
+
+    import pytest
+
+    from level7mtm.services import auto_cut
+    from level7mtm.services.auto_cut import set_combine
+    src = os.environ.get("LEVEL7_NESTING_SRC") or os.path.join(os.path.dirname(__file__), "..", "..",
+                                                               "level7-nesting")
+    if not os.path.isdir(os.path.join(src, "level7")):
+        pytest.skip("LEVEL7 Nesting source not here")
+    env = dict(os.environ, PYTHONPATH=os.path.abspath(src))
+    helptext = subprocess.run([sys.executable, "-m", "level7.cli", "nest", "--help"], env=env, capture_output=True,
+                              text=True).stdout
+    if "--with" not in helptext:
+        pytest.skip("this LEVEL7 Nesting does not nest several models in one marker yet")
+    monkeypatch.setenv("LEVEL7_NESTING_SRC", os.path.abspath(src))
+    auto_cut._NEST_FLAGS.clear()
+    ws.db.set_setting("grafis.mdl", MDL)
+    ws.db.set_setting("grafis.input", str(tmp_path / "MDL"))
+    ws.db.set_setting("cutting.output", str(tmp_path / "CUT"))
+    ws.db.set_setting("cutting.time_s", 5)
+    ws.db.set_setting("cutting.pattern_check", False)
+    out = import_and_prepare(ws, XML_53)
+    p1, p2 = (g["path"] for g in out.grafis)
+    _saved_by_grafis(p1)
+    _saved_by_grafis(p2, mark=2)
+    os.utime(p1, (1, 1))
+    os.utime(p2, (1, 1))
+    set_combine(ws, "level7", True)
+    r = register_mdl(ws, p1)
+    first = ws.db.one("SELECT info, log FROM cutting_jobs ORDER BY id LIMIT 1")
+    assert r["status"] == "cutting_done" and r.get("combined") == [p2], first["info"] + first["log"][-1500:]
+    cut = r["cutting"]
+    assert cut["garments"] == 2 and cut["placed"] and cut["placed"] % 2 == 0      # both orders on one marker
+    assert {ws.revision(ln["revision_id"])["status"] for ln in out.lines} == {"completed"}
