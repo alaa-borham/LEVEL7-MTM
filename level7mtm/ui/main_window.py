@@ -3205,7 +3205,9 @@ class NestingGapsPanel(QWidget):
         self.combine = QCheckBox(tr("Orders on the same fabric in one marker"))
         self.combine.setToolTip(tr("Orders of this customer waiting for nesting with the same fabric number, colour "
                                    "and width (from the XML) and the same base pattern are nested together in one "
-                                   "marker. An order without a fabric number in the XML is always nested alone."))
+                                   "marker. An order without a fabric number in the XML is always nested alone. "
+                                   "Next to the cutting files: «… - PLAN.pdf», the marker with each piece's order "
+                                   "(the ISO file has no text) — print it for the cutting table."))
         f.addRow(self.combine)
         self.most = QSpinBox()
         self.most.setRange(2, 20)
@@ -5397,6 +5399,8 @@ class MainWindow(QMainWindow):
         if r and r["outputs"] and os.path.isfile(r["outputs"][0]):
             if os.name == "nt":
                 subprocess.Popen(["explorer", "/select,", os.path.normpath(r["outputs"][0])])
+                if r.get("plan") and os.path.isfile(r["plan"]):   # several orders on one marker: its printed plan
+                    os.startfile(r["plan"])                        # (which piece is whose) opens to print
             else:
                 QMessageBox.information(self, tr("Cutting files"), "\n".join(r["outputs"]))
         else:

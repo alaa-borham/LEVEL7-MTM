@@ -92,3 +92,8 @@ file stay apart (their names and labels say which file / order they come from, a
 else (gaps, `--remnant`, JSON printed, `UNPLACED:` lines, exit code) as for one file.
 
 With a LEVEL7 Nesting without `--with` every order is nested alone, as before.
+
+The ISO file (Bullmer) carries no text, so for a marker of several orders LEVEL7 MTM writes next to the cutting
+files `<marker> - PLAN.pdf`: the marker to scale (A3, as many pages as needed), each piece filled with its order's
+colour and marked with its order (from the size tag `<order>:…` / `base:<order>:…`), and a legend of the orders.
+In the PLT file (Algotex) the order is written on each piece by LEVEL7 Nesting under the GRAFIS size text.

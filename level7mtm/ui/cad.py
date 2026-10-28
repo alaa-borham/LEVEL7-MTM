@@ -398,7 +398,8 @@ def order_rows(ws, limit: int = 2000) -> list[dict]:
                 row["nest_queue"] = True
             if cj:
                 ci = json.loads(cj["info"])
-                row.update(l7n=ci.get("l7n"), length_mm=ci.get("length_mm"), efficiency_pct=ci.get("efficiency_pct"),
+                row.update(l7n=ci.get("l7n"), plan=ci.get("plan"), length_mm=ci.get("length_mm"),
+                           efficiency_pct=ci.get("efficiency_pct"),
                            placed=ci.get("placed"), job=cj["id"])          # a new nesting: the canvas reloads
                 if cj["status"] == "done":
                     row["stage"] = "cut"

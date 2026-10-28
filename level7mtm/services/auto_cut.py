@@ -475,9 +475,31 @@ def _auto_cut_inner(ws, chk, scb_path: str, force: bool = False) -> dict:
             result["message"] = f"export {fmt} failed: " + _why("\n".join(log), 1)
             return _save(ws, chk, scb_path, result)
         result["outputs"].append(target)
+    if others:                                            # owner: the ISO file has no text — the printed plan
+        try:                                              # says which piece is whose on the cutting table
+            result["plan"] = _write_plan(ws, chk, scb_path, stem + ".l7n", cut_stem + " - PLAN.pdf", others)
+        except Exception as e:  # noqa: BLE001 - the cutting files are made; the plan is said missing
+            log.append(f"marker plan not written: {type(e).__name__}: {e}")
+            result["plan_error"] = str(e)
     result["status"] = "done"
     result["device_tested"] = False
     return _save(ws, chk, scb_path, result)
+
+
+def _write_plan(ws, chk, scb_path, l7n, out, others) -> str:
+    """The printed plan of a marker of several orders: each piece in its order's colour, marked with its order."""
+    from ..export.marker_plan import write_plan
+    from .customers import names
+    cust = names(ws)
+
+    def tag(path):                                         # the order tag LEVEL7 Nesting gives the model's pieces
+        return os.path.splitext(os.path.basename(path))[0].split("__")[-1]
+    qty_main = sum(int(ln["quantity"] or 0) for ln in chk.lines) - sum(int(w["quantity"] or 0) for w in others)
+    cid = ws.customer_of(chk.lines[0]["revision_id"])
+    who = cust.get(cid, cid)
+    orders = [{"order": tag(scb_path), "text": f"{who} · {qty_main} pcs"}] + \
+             [{"order": tag(w["path"]), "text": f"{who} · {w['quantity']} pcs"} for w in others]
+    return write_plan(l7n, out, os.path.basename(os.path.splitext(out)[0]), orders)
 
 
 def _why(text: str, rc: int) -> str:

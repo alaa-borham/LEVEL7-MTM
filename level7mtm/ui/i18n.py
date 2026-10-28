@@ -27,8 +27,8 @@ AR = {
     "Patterns": "البترونات",
     "Save and close": "حفظ وإغلاق",
     "Orders on the same fabric in one marker": "تجميع أوردرات نفس القماش في ماركر واحد",
-    "Orders of this customer waiting for nesting with the same fabric number, colour and width (from the XML) and the same base pattern are nested together in one marker. An order without a fabric number in the XML is always nested alone.":
-        "أوردرات هذا العميل التي تنتظر التعشيق ولها نفس رقم القماش ولونه وعرضه (من XML) ونفس البترون الأساسي تُعشَّق معًا في ماركر واحد. الأوردر الذي ليس له رقم قماش في XML يُعشَّق وحده دائمًا.",
+    "Orders of this customer waiting for nesting with the same fabric number, colour and width (from the XML) and the same base pattern are nested together in one marker. An order without a fabric number in the XML is always nested alone. Next to the cutting files: «… - PLAN.pdf», the marker with each piece's order (the ISO file has no text) — print it for the cutting table.":
+        "أوردرات هذا العميل التي تنتظر التعشيق ولها نفس رقم القماش ولونه وعرضه (من XML) ونفس البترون الأساسي تُعشَّق معًا في ماركر واحد. الأوردر الذي ليس له رقم قماش في XML يُعشَّق وحده دائمًا. بجوار ملفات القص: «… - PLAN.pdf»، رسم الماركر وعلى كل قطعة رقم أوردرها (ملف ISO لا يحمل نصًا) — اطبعه لطاولة القص.",
     "Most orders in one marker": "أقصى عدد أوردرات في الماركر",
     "This LEVEL7 Nesting cannot nest several orders in one marker yet (update it): each order is nested alone until then":
         "نسخة LEVEL7 Nesting الحالية لا تستطيع بعد تعشيق عدة أوردرات في ماركر واحد (تحتاج تحديث): كل أوردر يُعشَّق وحده حتى ذلك الحين",

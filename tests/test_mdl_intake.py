@@ -436,4 +436,8 @@ def test_two_orders_in_one_marker_with_the_real_level7_nesting(ws, tmp_path, mon
     assert r["status"] == "cutting_done" and r.get("combined") == [p2], first["info"] + first["log"][-1500:]
     cut = r["cutting"]
     assert cut["garments"] == 2 and cut["placed"] and cut["placed"] % 2 == 0      # both orders on one marker
+    plan = cut.get("plan")                                # the printed plan: which piece is whose (ISO: no text)
+    assert plan and plan.endswith(" - PLAN.pdf") and open(plan, "rb").read(5) == b"%PDF-", cut.get("plan_error")
+    from level7mtm.export.marker_plan import read_plan
+    assert {p["order"] for p in read_plan(cut["l7n"])["pieces"]} == {"9-53-1_2", "9-53-2_2"}
     assert {ws.revision(ln["revision_id"])["status"] for ln in out.lines} == {"completed"}
