@@ -3449,9 +3449,6 @@ class CustomersPage(Page):
     def __init__(self, win):
         super().__init__(win)
         lay = QVBoxLayout(self)
-        self.setToolTip(tr("Each customer has his own name in the XML (Reference), his own size table, piece "
-                           "options, fixed pieces and GRAFIS model. An XML is read with the settings of the customer "
-                           "it names; an XML naming no customer goes to ER."))
         body = QHBoxLayout()                          # the list on one side (full height), the settings beside it
         left = QVBoxLayout()
         self.t = table(["Customer / product", "Cutting files folder", "XML name (Reference)", "Reseller in the XML",
